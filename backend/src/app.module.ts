@@ -1,0 +1,50 @@
+import { Module } from "@nestjs/common";
+import { ConfigModule } from "@nestjs/config";
+import { APP_GUARD } from "@nestjs/core";
+import { AppController } from "./app.controller";
+import { AppService } from "./app.service";
+import { AuthModule } from "./modules/auth/auth.module";
+import { EventsModule } from "./modules/events/events.module";
+import { UsersModule } from "./modules/users/users.module";
+import { EntitiesModule } from "./modules/entities/entities.module";
+import { FollowModule } from "./modules/follow/follow.module";
+import { StoreModule } from "./modules/store/store.module";
+import { StreamingModule } from "./modules/streaming/streaming.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+// TODO: Add feature modules as they are implemented
+// import { ToursModule } from "./modules/tours/tours.module";
+// import { AiModule } from "./modules/ai/ai.module";
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ".env",
+    }),
+    AuthModule,
+    EventsModule,
+    UsersModule,
+    EntitiesModule,
+    FollowModule,
+    StoreModule,
+    StreamingModule,
+    NotificationsModule,
+    AnalyticsModule,
+    // TODO: Add feature modules as they are implemented
+    // ToursModule,
+    // AiModule,
+  ],
+  controllers: [AppController],
+  providers: [
+    AppService,
+    // Optional: Make JWT guard global (uncomment if you want all routes protected by default)
+    // {
+    //   provide: APP_GUARD,
+    //   useClass: JwtAuthGuard,
+    // },
+  ],
+})
+export class AppModule {}
+

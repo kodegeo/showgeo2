@@ -1,0 +1,153 @@
+# .cursorrules for Showgeo 2.0
+
+# ========================================================
+# Project Context
+# ========================================================
+project:
+  name: "Showgeo 2.0"
+  description: "A live concert streaming platform rebuilt using React (Vite) frontend, NestJS backend, PostgreSQL, and LiveKit Cloud."
+  goals:
+    - Maintain modular separation between frontend and backend.
+    - Use TypeScript for all new code.
+    - Enable Cursor to generate code aligned with architectural structure.
+  language: "TypeScript"
+  framework: "React (Vite) + NestJS"
+  backend: "Node.js + Prisma + PostgreSQL"
+  frontend: "React (Vite)"
+  streaming: "LiveKit Cloud (WebRTC)"
+  deployment: "Render"
+
+# ========================================================
+# Folder Structure Rules
+# ========================================================
+folders:
+  frontend:
+    root: "frontend"
+    description: "React + Vite application for user and entity experiences."
+    enforce_structure: true
+    structure:
+      - src/features/: "Feature-based folders (auth, events, entities, tours, store, etc.)"
+      - src/components/: "Shared, reusable UI components."
+      - src/pages/: "Top-level pages or views."
+      - src/services/: "API integration layer (axios/react-query hooks)."
+      - src/hooks/: "Custom React hooks."
+      - src/styles/: "Global CSS and Tailwind configurations."
+      - src/assets/: "Images, logos, and static assets."
+    default_language: "TypeScript"
+
+  backend:
+    root: "backend"
+    description: "NestJS API with modular service structure and Prisma ORM."
+    enforce_structure: true
+    structure:
+      - src/main.ts: "NestJS entry point."
+      - src/app.module.ts: "Root module definition."
+      - src/modules/: "Feature modules (users, entities, events, store, etc.)."
+      - src/common/: "Guards, filters, interceptors, decorators, and utils."
+      - src/prisma/: "Database schema and migrations."
+      - prisma/schema.prisma: "Prisma database definition."
+    default_language: "TypeScript"
+
+  shared:
+    root: "shared"
+    description: "Shared TypeScript interfaces, constants, and utility functions between frontend and backend."
+    enforce_structure: true
+
+  requirements:
+    root: "requirements"
+    description: "System and model requirement markdown files guiding Cursor's code generation."
+    include_files: true
+
+# ========================================================
+# Code Generation Rules
+# ========================================================
+generation:
+  enforce_typescript: true
+  use_strict_typing: true
+  backend_style: "NestJS service + controller pattern"
+  frontend_style: "React functional components with hooks"
+  api_style: "RESTful with OpenAPI annotations"
+  prefer_async_await: true
+  use_env_for_secrets: true
+
+# ========================================================
+# Naming Conventions
+# ========================================================
+naming:
+  components: "PascalCase"
+  files: "kebab-case"
+  folders: "kebab-case"
+  database_tables: "snake_case"
+  prisma_models: "PascalCase"
+  variables: "camelCase"
+
+# ========================================================
+# Import & Dependency Rules
+# ========================================================
+imports:
+  frontend:
+    preferred_frameworks:
+      - react
+      - react-router-dom
+      - axios
+      - react-query
+      - tailwindcss
+    avoid:
+      - jquery
+      - redux (prefer Zustand or Context API)
+
+  backend:
+    preferred_frameworks:
+      - "@nestjs/common"
+      - "@nestjs/core"
+      - "@nestjs/swagger"
+      - "@prisma/client"
+      - "class-validator"
+      - "class-transformer"
+    avoid:
+      - "express-session"
+      - "mongoose"
+
+# ========================================================
+# Style and Formatting
+# ========================================================
+style:
+  enforce_prettier: true
+  line_length: 100
+  indentation: 2
+  quote_style: "double"
+  semicolons: true
+  trailing_commas: "all"
+  jsx_brackets: "same-line"
+
+# ========================================================
+# Deployment and Configuration
+# ========================================================
+deployment:
+  provider: "Render"
+  services:
+    - name: "showgeo-ui"
+      type: "static-site"
+      framework: "React (Vite)"
+    - name: "showgeo-api"
+      type: "web-service"
+      framework: "NestJS"
+    - name: "showgeo-db"
+      type: "postgresql"
+    - name: "showgeo-storage"
+      type: "external"
+      provider: "Supabase/S3"
+    - name: "showgeo-streaming"
+      type: "external"
+      provider: "LiveKit Cloud"
+
+# ========================================================
+# AI Assistant Guidance (Cursor)
+# ========================================================
+ai_guidance:
+  - Always reference requirement files from /requirements before generating new modules.
+  - Maintain consistent naming between model schemas and API routes.
+  - Suggest code in modular, testable chunks.
+  - Prioritize composability and reuse over single large files.
+  - Align model relationships with requirements (user, entity, event, store, follow, tour).
+  - Generate Prisma schema updates with migrations when modifying data models.
