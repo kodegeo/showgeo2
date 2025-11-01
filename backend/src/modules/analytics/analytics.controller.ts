@@ -21,8 +21,11 @@ export class AnalyticsController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Owner or Admin only" })
   @ApiResponse({ status: 404, description: "Entity not found" })
-  getEntityAnalytics(@Param("entityId") entityId: string, @CurrentUser() user: User) {
-    // TODO: Validate user is owner or manager of entity
+  async getEntityAnalytics(@Param("entityId") entityId: string, @CurrentUser() user: User) {
+    // Validate user is owner or manager of entity (unless admin)
+    if (user.role !== UserRole.ADMIN) {
+      await this.analyticsService.validateEntityAccess(entityId, user.id);
+    }
     return this.analyticsService.aggregateMetrics(entityId);
   }
 

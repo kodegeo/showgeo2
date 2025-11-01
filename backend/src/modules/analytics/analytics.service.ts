@@ -840,5 +840,36 @@ export class AnalyticsService {
 
     return reasons;
   }
+
+  async validateEntityAccess(entityId: string, userId: string): Promise<void> {
+    // Check if user owns the entity
+    const entity = await this.prisma.entity.findUnique({
+      where: { id: entityId },
+      include: {
+        roles: {
+          where: {
+            userId,
+          },
+        },
+      },
+    });
+
+    if (!entity) {
+      throw new NotFoundException("Entity not found");
+    }
+
+    // Check if user is owner
+    if (entity.ownerId === userId) {
+      return;
+    }
+
+    // Check if user is a manager with ADMIN or MANAGER role
+    const entityRole = entity.roles.find((role) => role.userId === userId);
+    if (entityRole && (entityRole.role === "ADMIN" || entityRole.role === "MANAGER")) {
+      return;
+    }
+
+    throw new ForbiddenException("You do not have permission to view analytics for this entity");
+  }
 }
 

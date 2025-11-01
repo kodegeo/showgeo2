@@ -3,7 +3,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsService } from "./notifications.service";
-import { NotificationGateway } from "./notification.gateway";
+import { NotificationGateway } from "./notifications.gateway";
 import { PrismaService } from "../../prisma/prisma.service";
 import { FollowModule } from "../follow/follow.module";
 
