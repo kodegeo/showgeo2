@@ -12,9 +12,8 @@ import {
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { FollowService } from "./follow.service";
-import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { Public } from "../../common/decorators/public.decorator";
+import { JwtAuthGuard } from "../../common/guards";
+import { CurrentUser, Public } from "../../common/decorators";
 import { User, UserRole } from "@prisma/client";
 
 @ApiTags("follow")

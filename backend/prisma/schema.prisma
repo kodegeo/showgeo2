@@ -39,6 +39,7 @@ model User {
   coordinatedEvents Event[]   @relation("EventCoordinator")
   notifications Notification[] @relation("UserNotifications")
   analyticsSummaries AnalyticsSummary[] @relation("UserAnalytics")
+  orders Order[] @relation("UserOrders")
 
   @@map("users")
 }
@@ -107,6 +108,7 @@ model Entity {
   streamingSessions StreamingSession[] @relation("EntityStreamingSession")
   notifications Notification[] @relation("EntityNotifications")
   analyticsSummaries AnalyticsSummary[] @relation("EntityAnalytics")
+  orders Order[] @relation("EntityOrders")
 
   @@map("entities")
 }
@@ -240,6 +242,7 @@ model Event {
   chatRooms             ChatRoom[]
   streamingSessions      StreamingSession[]  @relation("EventStreamingSession")
   analyticsSummaries    AnalyticsSummary[]  @relation("EventAnalytics")
+  orders                Order[]             @relation("EventOrders")
 
   @@map("events")
 }
@@ -248,6 +251,7 @@ model Ticket {
   id        String   @id @default(uuid())
   userId    String
   eventId   String
+  orderId   String?  // Link to order if purchased
   type      TicketType
   price     Float?   @default(0)
   currency  String   @default("USD")
@@ -258,6 +262,7 @@ model Ticket {
   // Relations
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[] @relation("TicketOrderItem")
 
   @@map("tickets")
 }
@@ -342,6 +347,7 @@ model Store {
   collaboratingEntities Entity[] @relation("StoreCollaborators")
   products      Product[]
   geofencing    Geofencing?     @relation("StoreGeofencing")
+  orders        Order[]         @relation("StoreOrders")
 
   @@map("stores")
 }
@@ -361,6 +367,7 @@ model Product {
 
   // Relations
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[] @relation("ProductOrderItem")
 
   @@map("products")
 }
@@ -512,5 +519,101 @@ model AnalyticsSummary {
   @@unique([eventId, type])
   @@unique([userId, type])
   @@map("analytics_summaries")
+}
+
+// ============================================
+// Payments Models
+// ============================================
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  STRIPE
+  CREDIT_CARD
+  DEBIT_CARD
+}
+
+enum OrderType {
+  TICKET
+  PRODUCT
+  SUBSCRIPTION
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  userId          String
+  entityId        String?
+  eventId         String?
+  storeId         String?
+  type            OrderType
+  status          OrderStatus @default(PENDING)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  currency        String      @default("USD")
+  paymentMethod   PaymentMethod?
+  stripePaymentIntentId String? @unique
+  stripeSessionId String?     @unique
+  metadata        Json?       // Additional order data
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  user     User      @relation("UserOrders", fields: [userId], references: [id], onDelete: Cascade)
+  entity   Entity?   @relation("EntityOrders", fields: [entityId], references: [id], onDelete: Cascade)
+  event    Event?    @relation("EventOrders", fields: [eventId], references: [id], onDelete: Cascade)
+  store    Store?    @relation("StoreOrders", fields: [storeId], references: [id], onDelete: Cascade)
+  items    OrderItem[]
+  payments Payment[] @relation("OrderPayments")
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  ticketId    String?
+  productId   String?
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  totalPrice  Decimal  @db.Decimal(10, 2)
+  name        String   // Product/ticket name at time of purchase
+  description String?
+  metadata    Json?    // Additional item data
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  order   Order   @relation("OrderItems", fields: [orderId], references: [id], onDelete: Cascade)
+  ticket  Ticket? @relation("TicketOrderItem", fields: [ticketId], references: [id], onDelete: SetNull)
+  product Product? @relation("ProductOrderItem", fields: [productId], references: [id], onDelete: SetNull)
+
+  @@map("order_items")
+}
+
+model Payment {
+  id                String      @id @default(uuid())
+  orderId           String
+  amount            Decimal     @db.Decimal(10, 2)
+  currency          String      @default("USD")
+  status            String      // succeeded, pending, failed, refunded
+  paymentMethod     PaymentMethod
+  stripePaymentId  String?     @unique
+  stripeChargeId    String?     @unique
+  refundId          String?     @unique
+  failureReason     String?
+  metadata          Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  // Relations
+  order Order @relation("OrderPayments", fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
 }
 

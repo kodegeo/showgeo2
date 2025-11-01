@@ -12,6 +12,7 @@ import { StoreModule } from "./modules/store/store.module";
 import { StreamingModule } from "./modules/streaming/streaming.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { PaymentsModule } from "./modules/payments/payments.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 // TODO: Add feature modules as they are implemented
 // import { ToursModule } from "./modules/tours/tours.module";
@@ -32,6 +33,7 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
     StreamingModule,
     NotificationsModule,
     AnalyticsModule,
+    PaymentsModule,
     // TODO: Add feature modules as they are implemented
     // ToursModule,
     // AiModule,

@@ -2,9 +2,8 @@ import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards } from "@n
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { RegisterDto, LoginDto, RefreshTokenDto } from "./dto";
-import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { Public } from "../../common/decorators/public.decorator";
+import { JwtAuthGuard } from "../../common/guards";
+import { CurrentUser, Public } from "../../common/decorators";
 import { User } from "@prisma/client";
 
 @ApiTags("auth")

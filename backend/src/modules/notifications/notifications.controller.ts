@@ -15,8 +15,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery }
 import { NotificationsService } from "./notifications.service";
 import { CreateNotificationDto, BroadcastNotificationDto, NotificationQueryDto } from "./dto";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards";
-import { Roles } from "../../common/decorators/roles.decorator";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Roles, CurrentUser } from "../../common/decorators";
 import { User } from "@prisma/client";
 
 @ApiTags("notifications")

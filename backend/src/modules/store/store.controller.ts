@@ -16,9 +16,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery }
 import { StoreService } from "./store.service";
 import { CreateStoreDto, UpdateStoreDto, CreateProductDto, UpdateProductDto, StoreQueryDto } from "./dto";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards";
-import { Roles } from "../../common/decorators/roles.decorator";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { Public } from "../../common/decorators/public.decorator";
+import { Roles, CurrentUser, Public } from "../../common/decorators";
 import { User, UserRole } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 

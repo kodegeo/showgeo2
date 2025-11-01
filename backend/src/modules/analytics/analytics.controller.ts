@@ -2,8 +2,7 @@ import { Controller, Get, Param, UseGuards, Query, Post, ForbiddenException } fr
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { AnalyticsService } from "./analytics.service";
 import { JwtAuthGuard, RolesGuard } from "../../common/guards";
-import { Roles } from "../../common/decorators/roles.decorator";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Roles, CurrentUser } from "../../common/decorators";
 import { User, UserRole } from "@prisma/client";
 
 @ApiTags("analytics")
