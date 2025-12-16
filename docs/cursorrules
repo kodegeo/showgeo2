@@ -5,7 +5,7 @@
 # ========================================================
 project:
   name: "Showgeo 2.0"
-  description: "A live concert streaming platform rebuilt using React (Vite) frontend, NestJS backend, PostgreSQL, and LiveKit Cloud."
+  description: "A live LIVE streaming platform rebuilt using React (Vite) frontend, NestJS backend, PostgreSQL, and LiveKit Cloud."
   goals:
     - Maintain modular separation between frontend and backend.
     - Use TypeScript for all new code.

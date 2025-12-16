@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { Follow } from "@prisma/client";
+import { follows as Follow } from "@prisma/client";
 
 @Injectable()
 export class FollowService {
@@ -8,7 +8,7 @@ export class FollowService {
 
   async followEntity(userId: string, entityId: string): Promise<Follow> {
     // Validate user exists
-    const user = await this.prisma.user.findUnique({
+    const user = await (this.prisma as any).app_users.findUnique({
       where: { id: userId },
     });
 
@@ -17,7 +17,7 @@ export class FollowService {
     }
 
     // Validate entity exists
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: entityId },
     });
 
@@ -31,7 +31,7 @@ export class FollowService {
     }
 
     // Check if already following
-    const existingFollow = await this.prisma.follow.findUnique({
+    const existingFollow = await (this.prisma as any).follows.findUnique({
       where: {
         userId_entityId: {
           userId,
@@ -45,20 +45,20 @@ export class FollowService {
     }
 
     // Create follow relationship
-    const follow = await this.prisma.follow.create({
+    const follow = await (this.prisma as any).follows.create({
       data: {
         userId,
         entityId,
       },
       include: {
-        user: {
+        app_users: {
           select: {
             id: true,
             email: true,
-            profile: true,
+            user_profiles: true,
           },
         },
-        entity: {
+        entities: {
           select: {
             id: true,
             name: true,
@@ -76,7 +76,7 @@ export class FollowService {
 
   async unfollowEntity(userId: string, entityId: string): Promise<{ message: string }> {
     // Validate follow exists
-    const follow = await this.prisma.follow.findUnique({
+    const follow = await (this.prisma as any).follows.findUnique({
       where: {
         userId_entityId: {
           userId,
@@ -90,7 +90,7 @@ export class FollowService {
     }
 
     // Delete follow relationship
-    await this.prisma.follow.delete({
+    await (this.prisma as any).follows.delete({
       where: {
         userId_entityId: {
           userId,
@@ -104,7 +104,7 @@ export class FollowService {
 
   async getFollowers(entityId: string, page = 1, limit = 20) {
     // Validate entity exists
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: entityId },
     });
 
@@ -115,14 +115,14 @@ export class FollowService {
     const skip = (page - 1) * limit;
 
     const [follows, total] = await Promise.all([
-      this.prisma.follow.findMany({
+      (this.prisma as any).follows.findMany({
         where: { entityId },
         include: {
-          user: {
+          app_users: {
             select: {
               id: true,
               email: true,
-              profile: {
+              user_profiles: {
                 select: {
                   id: true,
                   username: true,
@@ -140,7 +140,7 @@ export class FollowService {
         skip,
         take: limit,
       }),
-      this.prisma.follow.count({
+      (this.prisma as any).follows.count({
         where: { entityId },
       }),
     ]);
@@ -151,7 +151,7 @@ export class FollowService {
         userId: follow.userId,
         entityId: follow.entityId,
         createdAt: follow.createdAt,
-        user: follow.user,
+        app_users: follow.app_users,
       })),
       meta: {
         total,
@@ -164,7 +164,7 @@ export class FollowService {
 
   async getFollowing(userId: string, page = 1, limit = 20) {
     // Validate user exists
-    const user = await this.prisma.user.findUnique({
+    const user = await (this.prisma as any).app_users.findUnique({
       where: { id: userId },
     });
 
@@ -175,10 +175,10 @@ export class FollowService {
     const skip = (page - 1) * limit;
 
     const [follows, total] = await Promise.all([
-      this.prisma.follow.findMany({
+      (this.prisma as any).follows.findMany({
         where: { userId },
         include: {
-          entity: {
+          entities: {
             select: {
               id: true,
               name: true,
@@ -192,10 +192,10 @@ export class FollowService {
               tags: true,
               _count: {
                 select: {
-                  followers: true,
-                  events: true,
-                  tours: true,
-                  stores: true,
+                  events_events_entityIdToentities: true,
+                  tours_tours_primaryEntityIdToentities: true,
+                  stores_stores_entityIdToentities: true,
+                  follows: true,
                 },
               },
             },
@@ -205,7 +205,7 @@ export class FollowService {
         skip,
         take: limit,
       }),
-      this.prisma.follow.count({
+      (this.prisma as any).follows.count({
         where: { userId },
       }),
     ]);
@@ -216,7 +216,7 @@ export class FollowService {
         userId: follow.userId,
         entityId: follow.entityId,
         createdAt: follow.createdAt,
-        entity: follow.entity,
+        entities: follow.entities,
       })),
       meta: {
         total,
@@ -228,7 +228,7 @@ export class FollowService {
   }
 
   async isFollowing(userId: string, entityId: string): Promise<boolean> {
-    const follow = await this.prisma.follow.findUnique({
+    const follow = await (this.prisma as any).follows.findUnique({
       where: {
         userId_entityId: {
           userId,
@@ -242,7 +242,7 @@ export class FollowService {
 
   async getFollowCounts(id: string, type: "entity" | "user"): Promise<{ followers: number; following: number }> {
     if (type === "entity") {
-      const followers = await this.prisma.follow.count({
+      const followers = await (this.prisma as any).follows.count({
         where: { entityId: id },
       });
 
@@ -251,7 +251,7 @@ export class FollowService {
         following: 0, // Entities don't have "following" count
       };
     } else {
-      const following = await this.prisma.follow.count({
+      const following = await (this.prisma as any).follows.count({
         where: { userId: id },
       });
 
@@ -263,19 +263,19 @@ export class FollowService {
   }
 
   async getEntityFollowersCount(entityId: string): Promise<number> {
-    return this.prisma.follow.count({
+    return (this.prisma as any).follows.count({
       where: { entityId },
     });
   }
 
   async getUserFollowingCount(userId: string): Promise<number> {
-    return this.prisma.follow.count({
+    return (this.prisma as any).follows.count({
       where: { userId },
     });
   }
 
   async getUserFollowedEntities(userId: string): Promise<string[]> {
-    const follows = await this.prisma.follow.findMany({
+    const follows = await (this.prisma as any).follows.findMany({
       where: { userId },
       select: { entityId: true },
     });
@@ -284,7 +284,7 @@ export class FollowService {
   }
 
   async getEntityFollowers(userId: string): Promise<string[]> {
-    const follows = await this.prisma.follow.findMany({
+    const follows = await (this.prisma as any).follows.findMany({
       where: { entityId: userId },
       select: { userId: true },
     });

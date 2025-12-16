@@ -14,18 +14,36 @@ import {
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { EntitiesService } from "./entities.service";
-import { CreateEntityDto, UpdateEntityDto, AddCollaboratorDto, EntityQueryDto } from "./dto";
-import { JwtAuthGuard, RolesGuard } from "../../common/guards";
+import { CreateEntityDto, UpdateEntityDto, AddCollaboratorDto, EntityQueryDto, CreatorApplicationDto } from "./dto";
+import { RolesGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
-import { User, UserRole } from "@prisma/client";
+
+type User = any;
 
 @ApiTags("entities")
 @Controller("entities")
 export class EntitiesController {
   constructor(private readonly entitiesService: EntitiesService) {}
 
+  @Post("creator-apply")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ 
+    summary: "Apply to become a creator",
+    description: "Creates an Entity with PENDING status. User must wait for admin approval."
+  })
+  @ApiResponse({ status: 201, description: "Creator application submitted successfully" })
+  @ApiResponse({ status: 400, description: "Bad request - user already has pending application" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 409, description: "Entity with this brand name already exists" })
+  async creatorApply(@Body() applicationDto: CreatorApplicationDto, @CurrentUser() user: User) {
+    return this.entitiesService.createCreatorApplication(applicationDto, user.id);
+  }
+
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a new entity" })
@@ -74,7 +92,7 @@ export class EntitiesController {
   }
 
   @Patch(":id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Update entity (Owner or Manager)" })
   @ApiParam({ name: "id", type: String })
@@ -91,7 +109,7 @@ export class EntitiesController {
   }
 
   @Delete(":id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Delete entity (Admin or Owner)" })
@@ -106,7 +124,7 @@ export class EntitiesController {
   }
 
   @Post(":id/collaborators")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Add collaborator to entity (Owner/Manager)" })
   @ApiParam({ name: "id", type: String })
@@ -124,7 +142,7 @@ export class EntitiesController {
   }
 
   @Delete(":id/collaborators/:userId")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Remove collaborator from entity (Owner/Manager)" })

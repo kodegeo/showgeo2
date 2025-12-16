@@ -15,10 +15,13 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { StoreService } from "./store.service";
 import { CreateStoreDto, UpdateStoreDto, CreateProductDto, UpdateProductDto, StoreQueryDto } from "./dto";
-import { JwtAuthGuard, RolesGuard } from "../../common/guards";
+import { RolesGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
-import { User, UserRole } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+
+type User = any;
 
 @ApiTags("stores")
 @Controller("stores")
@@ -29,7 +32,7 @@ export class StoreController {
   ) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a new store (Entity or Admin)" })
@@ -41,7 +44,7 @@ export class StoreController {
   async create(@Body() createStoreDto: CreateStoreDto, @CurrentUser() user: User) {
     // Find user's first owned entity
     // In production, you might want to allow selecting which entity or make entityId required in DTO
-    const ownedEntities = await this.prisma.entity.findMany({
+    const ownedEntities = await (this.prisma as any).entities.findMany({
       where: { ownerId: user.id },
       take: 1,
     });
@@ -98,7 +101,7 @@ export class StoreController {
   }
 
   @Patch(":id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Update store (Owner or Manager)" })
   @ApiParam({ name: "id", type: String })
@@ -111,7 +114,7 @@ export class StoreController {
   }
 
   @Delete(":id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Delete store (Owner or Admin)" })
@@ -125,7 +128,7 @@ export class StoreController {
   }
 
   @Post(":id/products")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Add product to store (Owner or Manager)" })
   @ApiParam({ name: "id", type: String })
@@ -143,7 +146,7 @@ export class StoreController {
   }
 
   @Patch("products/:id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Update product (Owner or Manager)" })
   @ApiParam({ name: "id", type: String })
@@ -156,7 +159,7 @@ export class StoreController {
   }
 
   @Delete("products/:id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Delete product (Owner or Manager)" })

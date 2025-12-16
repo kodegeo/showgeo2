@@ -3,7 +3,7 @@ import { NotFoundException, ForbiddenException, BadRequestException } from "@nes
 import { EventsService } from "./events.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateEventDto, UpdateEventDto, PhaseTransitionDto } from "./dto";
-import { EventPhase, EventStatus, EventType } from "./dto/create-event.dto";
+import { EventPhase, EventStatus, EventType } from "@prisma/client";
 import { TestUtils } from "../../../test/test-utils";
 
 describe("EventsService", () => {
@@ -39,16 +39,22 @@ describe("EventsService", () => {
         entityId: "entity-123",
         name: "Test Event",
         description: "Test description",
-        type: EventType.LIVE,
-        startTime: new Date(),
-        endTime: new Date(Date.now() + 3600000),
-        phase: EventPhase.PRE_CONCERT,
+        eventType: EventType.LIVE,
+        startTime: new Date().toISOString(),
+        endTime: new Date(Date.now() + 3600000).toISOString(),
+        phase: EventPhase.PRE_LIVE,
         status: EventStatus.SCHEDULED,
+        isVirtual: false,
+        geoRestricted: false,
+        ticketRequired: true,
+        entryCodeRequired: false,
+        entryCodeDelivery: false,
+        testingEnabled: false,
       };
 
       const entity = await TestUtils.createTestEntity({ id: createDto.entityId });
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.event.create as jest.Mock).mockResolvedValue({
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
+      (prismaService.events.create as jest.Mock).mockResolvedValue({
         id: "event-123",
         ...createDto,
         createdAt: new Date(),
@@ -58,21 +64,27 @@ describe("EventsService", () => {
       const result = await service.create(createDto, userId);
 
       expect(result).toHaveProperty("name", createDto.name);
-      expect(prismaService.event.create).toHaveBeenCalled();
+      expect(prismaService.events.create).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if entity not found", async () => {
       const createDto: CreateEventDto = {
         entityId: "invalid-entity",
         name: "Test Event",
-        type: EventType.LIVE,
-        startTime: new Date(),
-        endTime: new Date(),
-        phase: EventPhase.PRE_CONCERT,
+        eventType: EventType.LIVE,
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        phase: EventPhase.PRE_LIVE,
         status: EventStatus.SCHEDULED,
+        isVirtual: false,
+        geoRestricted: false,
+        ticketRequired: true,
+        entryCodeRequired: false,
+        entryCodeDelivery: false,
+        testingEnabled: false,
       };
 
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.create(createDto, "user-123")).rejects.toThrow(NotFoundException);
     });
@@ -93,8 +105,8 @@ describe("EventsService", () => {
         },
       ];
 
-      (prismaService.event.findMany as jest.Mock).mockResolvedValue(events);
-      (prismaService.event.count as jest.Mock).mockResolvedValue(2);
+      (prismaService.events.findMany as jest.Mock).mockResolvedValue(events);
+      (prismaService.events.count as jest.Mock).mockResolvedValue(2);
 
       const result = await service.findAll({ page: 1, limit: 10 });
 
@@ -111,16 +123,16 @@ describe("EventsService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(event);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
 
       const result = await service.findOne("event-123");
 
       expect(result).toHaveProperty("id", "event-123");
-      expect(prismaService.event.findUnique).toHaveBeenCalled();
+      expect(prismaService.events.findUnique).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if event not found", async () => {
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findOne("invalid-id")).rejects.toThrow(NotFoundException);
     });
@@ -141,23 +153,23 @@ describe("EventsService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
-      (prismaService.event.update as jest.Mock).mockResolvedValue({
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+      (prismaService.events.update as jest.Mock).mockResolvedValue({
         ...existingEvent,
         ...updateDto,
         updatedAt: new Date(),
       });
 
-      const result = await service.update(eventId, updateDto, "user-123", "USER");
+      const result = await service.update(eventId, updateDto, "user-123");
 
       expect(result).toHaveProperty("name", updateDto.name);
-      expect(prismaService.event.update).toHaveBeenCalled();
+      expect(prismaService.events.update).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if event not found", async () => {
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.update("invalid-id", {}, "user-123", "USER")).rejects.toThrow(NotFoundException);
+      await expect(service.update("invalid-id", {}, "user-123")).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -165,18 +177,28 @@ describe("EventsService", () => {
     it("should successfully transition event phase", async () => {
       const eventId = "event-123";
       const transitionDto: PhaseTransitionDto = {
-        phase: EventPhase.CONCERT,
+        phase: EventPhase.LIVE,
       };
 
       const event = {
         id: eventId,
-        phase: EventPhase.PRE_CONCERT,
+        entityId: "entity-123",
+        phase: EventPhase.PRE_LIVE,
         status: EventStatus.SCHEDULED,
+        ticketRequired: false, // Not required, so no ticket types needed
+        ticketTypes: null,
         createdAt: new Date(),
+        entities_events_entityIdToentities: null,
+        app_users: null,
+        tours: null,
+        entities_EventCollaborators: [],
+        tickets: [],
+        geofencing: null,
+        chat_rooms: [],
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(event);
-      (prismaService.event.update as jest.Mock).mockResolvedValue({
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
+      (prismaService.events.update as jest.Mock).mockResolvedValue({
         ...event,
         phase: transitionDto.phase,
         status: EventStatus.LIVE,
@@ -186,25 +208,108 @@ describe("EventsService", () => {
       const result = await service.transitionPhase(eventId, transitionDto, "user-123");
 
       expect(result).toHaveProperty("phase", transitionDto.phase);
-      expect(prismaService.event.update).toHaveBeenCalled();
+      expect(prismaService.events.update).toHaveBeenCalled();
+    });
+
+    it("should successfully transition to LIVE when ticketRequired is true and ticketTypes exist", async () => {
+      const eventId = "event-123";
+      const transitionDto: PhaseTransitionDto = {
+        phase: EventPhase.LIVE,
+      };
+
+      const event = {
+        id: eventId,
+        entityId: "entity-123",
+        phase: EventPhase.PRE_LIVE,
+        status: EventStatus.SCHEDULED,
+        ticketRequired: true,
+        ticketTypes: [{ name: "General", price: 10, quantity: 100 }], // Required ticket types present
+        createdAt: new Date(),
+        entities_events_entityIdToentities: null,
+        app_users: null,
+        tours: null,
+        entities_EventCollaborators: [],
+        tickets: [],
+        geofencing: null,
+        chat_rooms: [],
+      };
+
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
+      (prismaService.events.update as jest.Mock).mockResolvedValue({
+        ...event,
+        phase: transitionDto.phase,
+        status: EventStatus.LIVE,
+        updatedAt: new Date(),
+      });
+
+      const result = await service.transitionPhase(eventId, transitionDto, "user-123");
+
+      expect(result).toHaveProperty("phase", transitionDto.phase);
+      expect(result).toHaveProperty("status", EventStatus.LIVE);
+    });
+
+    it("should throw BadRequestException when transitioning to LIVE with ticketRequired=true but no ticketTypes", async () => {
+      const eventId = "event-123";
+      const transitionDto: PhaseTransitionDto = {
+        phase: EventPhase.LIVE,
+      };
+
+      const event = {
+        id: eventId,
+        entityId: "entity-123",
+        phase: EventPhase.PRE_LIVE,
+        status: EventStatus.SCHEDULED,
+        ticketRequired: true,
+        ticketTypes: null, // Missing ticket types when required
+        createdAt: new Date(),
+        entities_events_entityIdToentities: null,
+        app_users: null,
+        tours: null,
+        entities_EventCollaborators: [],
+        tickets: [],
+        geofencing: null,
+        chat_rooms: [],
+      };
+
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
+
+      await expect(service.transitionPhase(eventId, transitionDto, "user-123")).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.transitionPhase(eventId, transitionDto, "user-123")).rejects.toThrow(
+        "At least one ticket type is required before going live",
+      );
     });
 
     it("should throw BadRequestException for invalid phase transition", async () => {
       const eventId = "event-123";
       const transitionDto: PhaseTransitionDto = {
-        phase: EventPhase.PRE_CONCERT,
+        phase: EventPhase.PRE_LIVE,
       };
 
       const event = {
         id: eventId,
-        phase: EventPhase.POST_CONCERT,
+        entityId: "entity-123",
+        phase: EventPhase.POST_LIVE,
         status: EventStatus.COMPLETED,
+        ticketRequired: false,
+        ticketTypes: null,
         createdAt: new Date(),
+        entities_events_entityIdToentities: null,
+        app_users: null,
+        tours: null,
+        entities_EventCollaborators: [],
+        tickets: [],
+        geofencing: null,
+        chat_rooms: [],
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(event);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
 
       await expect(service.transitionPhase(eventId, transitionDto, "user-123")).rejects.toThrow(BadRequestException);
+      await expect(service.transitionPhase(eventId, transitionDto, "user-123")).rejects.toThrow(
+        "Invalid phase transition from POST_LIVE to PRE_LIVE",
+      );
     });
   });
 
@@ -217,16 +322,16 @@ describe("EventsService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(event);
-      (prismaService.event.delete as jest.Mock).mockResolvedValue(event);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
+      (prismaService.events.delete as jest.Mock).mockResolvedValue(event);
 
       await service.remove(eventId);
 
-      expect(prismaService.event.delete).toHaveBeenCalledWith({ where: { id: eventId } });
+      expect(prismaService.events.delete).toHaveBeenCalledWith({ where: { id: eventId } });
     });
 
     it("should throw NotFoundException if event not found", async () => {
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.remove("invalid-id")).rejects.toThrow(NotFoundException);
     });

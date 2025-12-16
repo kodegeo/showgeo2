@@ -1,6 +1,9 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from "class-validator";
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsIn } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { UserRole } from "@prisma/client";
+
+// Extract enum values for validation
+const UserRoleValues = Object.values(UserRole) as string[];
 
 export class RegisterDto {
   @ApiProperty()
@@ -12,9 +15,16 @@ export class RegisterDto {
   @MinLength(8)
   password: string;
 
-  @ApiPropertyOptional({ enum: UserRole })
+  @ApiPropertyOptional({ 
+    enum: UserRoleValues,
+    description: "User role", 
+    example: "USER",
+    enumName: "UserRole"
+  })
   @IsOptional()
-  @IsEnum(UserRole)
+  @IsIn(UserRoleValues, { 
+    message: "Role must be one of: USER, ENTITY, MANAGER, COORDINATOR, ADMIN"
+  })
   role?: UserRole;
 
   @ApiPropertyOptional()

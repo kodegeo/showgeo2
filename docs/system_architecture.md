@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Showgeo 2.0** is a next-generation live concert and event streaming platform that connects fans, creators (“Entities”), and managers through immersive, real-time experiences.  
+**Showgeo 2.0** is a next-generation live LIVE and event streaming platform that connects fans, creators (“Entities”), and managers through immersive, real-time experiences.  
 This rebuild is designed for stability, scalability, and maintainability while preserving the original vision of live, social, and monetized events.
 
 ---
@@ -40,7 +40,9 @@ src/
 │   ├── follow/
 │   ├── streaming/
 │   ├── notifications/
-│   └── ai/
+│   ├── analytics/
+│   ├── payments/
+│   └── assets/
 ├── common/
 │   ├── decorators/
 │   ├── filters/
@@ -62,7 +64,9 @@ src/
 | **Follow** | Follow/Unfollow logic, notifications, and engagement tracking. |
 | **Streaming** | Token generation for LiveKit rooms, phase management, viewership analytics. |
 | **Notifications** | Event lifecycle alerts, chat messages, system updates. |
-| **AI** | Recommender system (hashtags, trending events, nearby suggestions). |
+| **Analytics** | Insights, metrics aggregation, engagement scores, and AI recommendations. |
+| **Payments** | Stripe integration for ticketing and store monetization. |
+| **Assets** | File upload and management (images, audio, video, documents). |
 
 ---
 
@@ -139,8 +143,10 @@ Entity ── N:M ── Follows (User follows Entity)
 Event ── 1:N ── Tickets
 Event ── 1:1 ── Geofencing
 Event ── 1:N ── ChatRooms
+Event ── 1:N ── StreamingSessions
 Tour ── 1:N ── Events
 Store ── 1:N ── Products
+User/Entity ── N:1 ── Asset (polymorphic via ownerType)
 ```
 
 ---
@@ -178,5 +184,6 @@ Store ── 1:N ── Products
 > React (Vite) + NestJS + Prisma + PostgreSQL + LiveKit + Stripe + Supabase  
 > hosted on Render for a unified deployment pipeline.
 
-**Author:** ChatGPT (GPT-5) with guidance from Khalid Morris  
-**Date:** November 2025
+**Author:** Auto (Cursor AI) with guidance from Khalid Morris  
+**Last Updated:** November 2025  
+**Version:** 2.0.0

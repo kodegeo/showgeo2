@@ -3,7 +3,8 @@ import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { ConfigModule } from "@nestjs/config";
 import * as bcrypt from "bcrypt";
-import { User, UserRole, Entity, Event, Store, Product, Follow } from "@prisma/client";
+import type { app_users as User, entities as Entity, events as Event, stores as Store, products as Product, follows as Follow } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 
 export class TestUtils {
   static async createTestingModule(moduleMetadata: any): Promise<TestingModule> {

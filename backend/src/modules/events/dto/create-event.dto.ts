@@ -1,43 +1,19 @@
 import { IsString, IsOptional, IsEnum, IsBoolean, IsDateString, IsArray, IsObject, IsUUID, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { EventType, EventPhase, EventStatus, GeofencingAccessLevel, TicketType } from "@prisma/client";
 
-export enum EventType {
-  LIVE = "LIVE",
-  PRERECORDED = "PRERECORDED",
-}
+// Re-export Prisma enums for convenience
+export { EventType, EventPhase, EventStatus, GeofencingAccessLevel, TicketType };
 
-export enum EventPhase {
-  PRE_CONCERT = "PRE_CONCERT",
-  CONCERT = "CONCERT",
-  POST_CONCERT = "POST_CONCERT",
-}
-
-export enum EventStatus {
-  DRAFT = "DRAFT",
-  SCHEDULED = "SCHEDULED",
-  LIVE = "LIVE",
-  COMPLETED = "COMPLETED",
-  CANCELLED = "CANCELLED",
-}
-
-export enum StreamingAccessLevel {
-  LOCAL = "LOCAL",
-  REGIONAL = "REGIONAL",
-  NATIONAL = "NATIONAL",
-  INTERNATIONAL = "INTERNATIONAL",
-}
-
-export enum TicketTypeEnum {
-  FREE = "FREE",
-  GIFTED = "GIFTED",
-  PAID = "PAID",
-}
+// Alias for backward compatibility
+export const StreamingAccessLevel = GeofencingAccessLevel;
+export const TicketTypeEnum = TicketType;
 
 export class TicketTypeDto {
-  @ApiProperty({ enum: TicketTypeEnum })
-  @IsEnum(TicketTypeEnum)
-  type: TicketTypeEnum;
+  @ApiProperty({ enum: TicketType })
+  @IsEnum(TicketType)
+  type: TicketType;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -73,7 +49,7 @@ export class CreateEventDto {
   @IsEnum(EventType)
   eventType: EventType;
 
-  @ApiProperty({ enum: EventPhase, default: EventPhase.PRE_CONCERT })
+  @ApiProperty({ enum: EventPhase, default: "PRE_LIVE" })
   @IsEnum(EventPhase)
   phase: EventPhase;
 
@@ -129,10 +105,10 @@ export class CreateEventDto {
   @IsString()
   videoUrl?: string;
 
-  @ApiPropertyOptional({ enum: StreamingAccessLevel })
+  @ApiPropertyOptional({ enum: GeofencingAccessLevel })
   @IsOptional()
-  @IsEnum(StreamingAccessLevel)
-  streamingAccessLevel?: StreamingAccessLevel;
+  @IsEnum(GeofencingAccessLevel)
+  streamingAccessLevel?: GeofencingAccessLevel;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()

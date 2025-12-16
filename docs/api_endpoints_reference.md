@@ -311,7 +311,7 @@ Authorization: Bearer <token>
   "type": "LIVE",
   "startTime": "2025-01-01T00:00:00.000Z",
   "endTime": "2025-01-01T23:59:59.000Z",
-  "phase": "PRE_CONCERT",
+  "phase": "PRE_LIVE",
   "status": "SCHEDULED"
 }
 ```
@@ -322,7 +322,7 @@ Authorization: Bearer <token>
 
 ### List Events
 ```http
-GET /api/events?page=1&limit=20&entityId=string&phase=PRE_CONCERT&status=SCHEDULED
+GET /api/events?page=1&limit=20&entityId=string&phase=PRE_LIVE&status=SCHEDULED
 ```
 
 **Query Parameters:**
@@ -386,7 +386,7 @@ Authorization: Bearer <token>
 **Request Body:**
 ```json
 {
-  "phase": "CONCERT"
+  "phase": "LIVE"
 }
 ```
 
@@ -877,6 +877,144 @@ Authorization: Bearer <token>
 
 ---
 
+## Assets Endpoints
+
+### Upload Asset
+```http
+POST /api/assets/upload
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+```
+file: <file>
+type: IMAGE | AUDIO | VIDEO | DOCUMENT | OTHER
+ownerType: USER | ENTITY
+ownerId: string
+isPublic?: boolean
+metadata?: object
+```
+
+**Response:** `201 Created`
+```json
+{
+  "id": "string",
+  "ownerId": "string",
+  "ownerType": "USER",
+  "url": "string",
+  "path": "string",
+  "type": "IMAGE",
+  "mimeType": "image/jpeg",
+  "size": 1024000,
+  "width": 1920,
+  "height": 1080,
+  "duration": null,
+  "metadata": {},
+  "isPublic": false,
+  "storageProvider": "SUPABASE",
+  "expiresAt": null,
+  "createdAt": "2025-01-01T00:00:00.000Z",
+  "updatedAt": "2025-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+### List Assets
+```http
+GET /api/assets?page=1&limit=20&type=IMAGE&ownerType=USER&ownerId=string&isPublic=true
+```
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20, max: 100)
+- `type` (optional): Filter by asset type (IMAGE, AUDIO, VIDEO, DOCUMENT, OTHER)
+- `ownerType` (optional): Filter by owner type (USER, ENTITY)
+- `ownerId` (optional): Filter by owner ID
+- `isPublic` (optional): Filter by public visibility
+
+**Response:** `200 OK`
+```json
+{
+  "data": [
+    {
+      "id": "string",
+      "ownerId": "string",
+      "ownerType": "USER",
+      "url": "string",
+      "path": "string",
+      "type": "IMAGE",
+      "mimeType": "image/jpeg",
+      "size": 1024000,
+      "width": 1920,
+      "height": 1080,
+      "isPublic": false,
+      "createdAt": "2025-01-01T00:00:00.000Z"
+    }
+  ],
+  "total": 100,
+  "page": 1,
+  "limit": 20
+}
+```
+
+---
+
+### Get Asset by ID
+```http
+GET /api/assets/:id
+```
+
+**Response:** `200 OK`
+```json
+{
+  "id": "string",
+  "ownerId": "string",
+  "ownerType": "USER",
+  "url": "string",
+  "path": "string",
+  "type": "IMAGE",
+  "mimeType": "image/jpeg",
+  "size": 1024000,
+  "width": 1920,
+  "height": 1080,
+  "duration": null,
+  "metadata": {},
+  "isPublic": false,
+  "storageProvider": "SUPABASE",
+  "expiresAt": null,
+  "createdAt": "2025-01-01T00:00:00.000Z",
+  "updatedAt": "2025-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+### Get Asset URL
+```http
+GET /api/assets/:id/url
+```
+
+**Response:** `200 OK`
+```json
+{
+  "url": "https://storage.example.com/users/user-id/uploads/asset-id.jpg"
+}
+```
+
+---
+
+### Delete Asset
+```http
+DELETE /api/assets/:id
+Authorization: Bearer <token>
+```
+
+**Response:** `204 No Content`
+
+---
+
 ## Payment Endpoints
 
 ### Create Checkout Session
@@ -1025,6 +1163,25 @@ All endpoints may return the following error responses:
 
 ---
 
-**Last Updated:** 2025-01-01  
+**Last Updated:** 2025-11-01  
 **API Version:** 2.0.0
+
+---
+
+## Module Summary
+
+| Module | Endpoints | Status |
+|--------|-----------|--------|
+| Authentication | 4 | ✅ Complete |
+| Users | 7 | ✅ Complete |
+| Entities | 9 | ✅ Complete |
+| Events | 11 | ✅ Complete |
+| Follow | 5 | ✅ Complete |
+| Store | 9 | ✅ Complete |
+| Streaming | 6 | ✅ Complete |
+| Notifications | 5 | ✅ Complete |
+| Analytics | 5 | ✅ Complete |
+| Payments | 5 | ✅ Complete |
+| Assets | 5 | ✅ Complete |
+| **Total** | **66+** | ✅ Complete |
 

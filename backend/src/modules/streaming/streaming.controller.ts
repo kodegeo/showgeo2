@@ -8,13 +8,16 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  Req,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from "@nestjs/swagger";
 import { StreamingService } from "./streaming.service";
 import { CreateSessionDto, GenerateTokenDto, UpdateMetricsDto, ValidateGeofenceDto } from "./dto";
-import { JwtAuthGuard, RolesGuard } from "../../common/guards";
+import { RolesGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
-import { User, UserRole } from "@prisma/client";
+
+type User = any;
 
 @ApiTags("streaming")
 @Controller("streaming")
@@ -22,7 +25,7 @@ export class StreamingController {
   constructor(private readonly streamingService: StreamingService) {}
 
   @Post("session/:eventId")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "COORDINATOR", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create streaming session for event (Entity, Coordinator, Admin)" })
@@ -37,28 +40,42 @@ export class StreamingController {
     @Body() createSessionDto: CreateSessionDto,
     @CurrentUser() user: User,
   ) {
-    return this.streamingService.createSession(createSessionDto, user.id, user.role);
+    return this.streamingService.createSession(eventId, createSessionDto, user.id, user.role);
   }
 
-  @Post("token/:eventId")
-  @UseGuards(JwtAuthGuard)
+  @Post(":eventId/token")
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Generate LiveKit access token (authenticated)" })
+  @ApiOperation({ summary: "Generate LiveKit token for streaming (authenticated users)" })
   @ApiParam({ name: "eventId", type: String })
   @ApiResponse({ status: 200, description: "Token generated successfully" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  @ApiResponse({ status: 403, description: "Access denied due to geofencing or ticket requirement" })
-  @ApiResponse({ status: 404, description: "No active streaming session found" })
-  generateToken(
+  @ApiResponse({ status: 403, description: "Forbidden - Event not live or geofence restriction" })
+  @ApiResponse({ status: 404, description: "Event or active session not found" })
+  async generateToken(
     @Param("eventId") eventId: string,
     @Body() generateTokenDto: GenerateTokenDto,
-    @CurrentUser() user: User,
-  ) {
-    return this.streamingService.generateToken(eventId, generateTokenDto, user.id);
+    @Req() req: any,
+  )
+  {
+    const user = req.user;
+    
+    // ✅ Throw ForbiddenException if user is missing (shouldn't happen with guard, but safety check)
+    if (!user || !user.id) {
+      throw new ForbiddenException("Authentication required");
+    }
+  
+    // 🔑 Populate eventId from route into DTO
+    generateTokenDto.eventId = eventId;
+  
+    // ✅ Call service with EXACTLY two arguments
+    return this.streamingService.generateToken(generateTokenDto, {
+      id: user.id,
+      email: user.email,
+    });
   }
-
   @Post("session/:id/end")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "COORDINATOR", "ADMIN")
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
@@ -91,7 +108,7 @@ export class StreamingController {
   }
 
   @Post(":id/metrics")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("COORDINATOR", "ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Update live streaming metrics (Coordinator/Admin)" })
@@ -109,7 +126,7 @@ export class StreamingController {
   }
 
   @Post("validate-geofence")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Validate geofence access for session" })
   @ApiResponse({ status: 200, description: "Geofence validation result" })

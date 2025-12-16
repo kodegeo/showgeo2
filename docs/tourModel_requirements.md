@@ -2,7 +2,7 @@
 
 ## Overview
 
-A **Tour** is a collection of related Events organized under a unified theme, brand, or campaign. It is created by one primary `Entity` (individual creator or organization) and may involve **multiple other Entities** as collaborators or co-hosts. Tours are typically used for live or prerecorded content series like concert tours, speaker circuits, or brand campaigns.
+A **Tour** is a collection of related Events organized under a unified theme, brand, or campaign. It is created by one primary `Entity` (individual creator or organization) and may involve **multiple other Entities** as collaborators or co-hosts. Tours are typically used for live or prerecorded content series like LIVE tours, speaker circuits, or brand campaigns.
 
 ---
 

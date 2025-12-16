@@ -53,3 +53,8 @@ The UserProfile model stores public-facing, editable information for a User. Thi
 - Profile badges
 - Profile history
 - Engagement stats (likes, follows, etc.)
+
+### Relationship to Entities
+- A `UserProfile` represents the personal identity of a user (avatar, display name, bio).
+- `EntityProfile` represents public-facing brand or artist information.
+- Switching context in the UI determines which profile is editable.

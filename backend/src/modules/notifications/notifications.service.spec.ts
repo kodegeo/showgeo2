@@ -61,8 +61,8 @@ describe("NotificationsService", () => {
       };
 
       const user = await TestUtils.createTestUser({ id: userId });
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.notification.create as jest.Mock).mockResolvedValue({
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
+      (prismaService.notifications.create as jest.Mock).mockResolvedValue({
         id: "notification-123",
         ...createDto,
         isRead: false,
@@ -74,7 +74,7 @@ describe("NotificationsService", () => {
 
       expect(result).toHaveProperty("userId", userId);
       expect(result).toHaveProperty("message", createDto.message);
-      expect(prismaService.notification.create).toHaveBeenCalled();
+      expect(prismaService.notifications.create).toHaveBeenCalled();
       expect(notificationGateway.notifyUser).toHaveBeenCalled();
     });
 
@@ -85,7 +85,7 @@ describe("NotificationsService", () => {
         message: "Test",
       };
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createNotification(createDto)).rejects.toThrow(NotFoundException);
     });
@@ -101,13 +101,13 @@ describe("NotificationsService", () => {
       };
 
       const entity = await TestUtils.createTestEntity({ id: entityId });
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.follow.findMany as jest.Mock).mockResolvedValue([
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
+      (prismaService.follows.findMany as jest.Mock).mockResolvedValue([
         { userId: "user-1" },
         { userId: "user-2" },
       ]);
 
-      (prismaService.notification.create as jest.Mock).mockImplementation(({ data }) => {
+      (prismaService.notifications.create as jest.Mock).mockImplementation(({ data }) => {
         return Promise.resolve({
           id: `notification-${Date.now()}`,
           ...data,
@@ -121,7 +121,7 @@ describe("NotificationsService", () => {
 
       expect(result).toHaveProperty("count", 2);
       expect(result.notifications).toHaveLength(2);
-      expect(prismaService.notification.create).toHaveBeenCalledTimes(2);
+      expect(prismaService.notifications.create).toHaveBeenCalledTimes(2);
     });
 
     it("should throw NotFoundException if entity not found", async () => {
@@ -131,7 +131,7 @@ describe("NotificationsService", () => {
         message: "Test",
       };
 
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.broadcastToFollowers(broadcastDto)).rejects.toThrow(NotFoundException);
     });
@@ -145,8 +145,8 @@ describe("NotificationsService", () => {
       };
 
       const entity = await TestUtils.createTestEntity({ id: entityId });
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.follow.findMany as jest.Mock).mockResolvedValue([]);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
+      (prismaService.follows.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await service.broadcastToFollowers(broadcastDto);
 
@@ -167,8 +167,8 @@ describe("NotificationsService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.notification.findUnique as jest.Mock).mockResolvedValue(notification);
-      (prismaService.notification.update as jest.Mock).mockResolvedValue({
+      (prismaService.notifications.findUnique as jest.Mock).mockResolvedValue(notification);
+      (prismaService.notifications.update as jest.Mock).mockResolvedValue({
         ...notification,
         isRead: true,
         updatedAt: new Date(),
@@ -177,7 +177,7 @@ describe("NotificationsService", () => {
       const result = await service.markAsRead(notificationId, userId);
 
       expect(result).toHaveProperty("isRead", true);
-      expect(prismaService.notification.update).toHaveBeenCalledWith({
+      expect(prismaService.notifications.update).toHaveBeenCalledWith({
         where: { id: notificationId },
         data: { isRead: true },
         include: expect.any(Object),
@@ -185,7 +185,7 @@ describe("NotificationsService", () => {
     });
 
     it("should throw NotFoundException if notification not found", async () => {
-      (prismaService.notification.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.notifications.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.markAsRead("invalid-id", "user-123")).rejects.toThrow(NotFoundException);
     });
@@ -197,7 +197,7 @@ describe("NotificationsService", () => {
         isRead: false,
       };
 
-      (prismaService.notification.findUnique as jest.Mock).mockResolvedValue(notification);
+      (prismaService.notifications.findUnique as jest.Mock).mockResolvedValue(notification);
 
       await expect(service.markAsRead("notification-123", "user-123")).rejects.toThrow(BadRequestException);
     });
@@ -221,9 +221,9 @@ describe("NotificationsService", () => {
         },
       ];
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
-      (prismaService.notification.findMany as jest.Mock).mockResolvedValue(notifications);
-      (prismaService.notification.count as jest.Mock).mockResolvedValue(2).mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
+      (prismaService.notifications.findMany as jest.Mock).mockResolvedValue(notifications);
+      (prismaService.notifications.count as jest.Mock).mockResolvedValue(2).mockResolvedValueOnce(2).mockResolvedValueOnce(1);
 
       const result = await service.getUserNotifications(userId, { page: 1, limit: 20 });
 
@@ -243,9 +243,9 @@ describe("NotificationsService", () => {
         },
       ];
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
-      (prismaService.notification.findMany as jest.Mock).mockResolvedValue(notifications);
-      (prismaService.notification.count as jest.Mock).mockResolvedValue(1);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
+      (prismaService.notifications.findMany as jest.Mock).mockResolvedValue(notifications);
+      (prismaService.notifications.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.getUserNotifications(userId, { unreadOnly: true, page: 1, limit: 20 });
 
@@ -258,19 +258,19 @@ describe("NotificationsService", () => {
     it("should return unread notification count", async () => {
       const userId = "user-123";
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
-      (prismaService.notification.count as jest.Mock).mockResolvedValue(5);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
+      (prismaService.notifications.count as jest.Mock).mockResolvedValue(5);
 
       const result = await service.getUnreadCount(userId);
 
       expect(result).toBe(5);
-      expect(prismaService.notification.count).toHaveBeenCalledWith({
+      expect(prismaService.notifications.count).toHaveBeenCalledWith({
         where: { userId, isRead: false },
       });
     });
 
     it("should throw NotFoundException if user not found", async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.getUnreadCount("invalid-id")).rejects.toThrow(NotFoundException);
     });
@@ -280,25 +280,25 @@ describe("NotificationsService", () => {
     it("should delete all notifications when markAsRead is false", async () => {
       const userId = "user-123";
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
-      (prismaService.notification.deleteMany as jest.Mock).mockResolvedValue({ count: 10 });
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
+      (prismaService.notifications.deleteMany as jest.Mock).mockResolvedValue({ count: 10 });
 
       const result = await service.clearAll(userId, false);
 
       expect(result.count).toBe(10);
-      expect(prismaService.notification.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+      expect(prismaService.notifications.deleteMany).toHaveBeenCalledWith({ where: { userId } });
     });
 
     it("should mark all as read when markAsRead is true", async () => {
       const userId = "user-123";
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
-      (prismaService.notification.updateMany as jest.Mock).mockResolvedValue({ count: 10 });
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(await TestUtils.createTestUser({ id: userId }));
+      (prismaService.notifications.updateMany as jest.Mock).mockResolvedValue({ count: 10 });
 
       const result = await service.clearAll(userId, true);
 
       expect(result.count).toBe(10);
-      expect(prismaService.notification.updateMany).toHaveBeenCalledWith({
+      expect(prismaService.notifications.updateMany).toHaveBeenCalledWith({
         where: { userId, isRead: false },
         data: { isRead: true },
       });

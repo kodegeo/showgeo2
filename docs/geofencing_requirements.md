@@ -10,7 +10,7 @@ This is a **reusable model** used by Events, Tours, and Stores.
 
 ## Use Cases
 
-- Allow only U.S. residents to attend a live concert
+- Allow only U.S. residents to attend a live LIVE
 - Make merchandise available only in EST and PST timezones
 - Block access from a specific country or city
 - Grant international access to virtual events, excluding U.S. viewers

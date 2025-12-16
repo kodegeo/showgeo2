@@ -1,17 +1,63 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  ConflictException,
+  BadRequestException,
+} from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { CreateStoreDto, UpdateStoreDto, CreateProductDto, UpdateProductDto, StoreQueryDto } from "./dto";
-import { Store, StoreStatus, StoreVisibility, UserRole, EntityRoleType } from "@prisma/client";
+import {
+  CreateStoreDto,
+  UpdateStoreDto,
+  CreateProductDto,
+  UpdateProductDto,
+  StoreQueryDto,
+} from "./dto";
+import {
+  stores as Store,
+  StoreStatus,
+  StoreVisibility,
+  UserRole,
+  EntityRoleType,
+} from "@prisma/client";
 
 @Injectable()
 export class StoreService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createStore(createStoreDto: CreateStoreDto, entityId: string): Promise<Store> {
-    const { slug, name, collaborators, eventId, tourId, ...storeData } = createStoreDto;
+  // Helper: map Prisma store shape → frontend shape (Option C)
+  private mapStoreToResponse(store: any) {
+    if (!store) return store;
+
+    const {
+      entities_stores_entityIdToentities,
+      events,
+      tours_stores_tourIdTotours,
+      entities_StoreCollaborators,
+      ...rest
+    } = store;
+
+    return {
+      ...rest,
+      entity: entities_stores_entityIdToentities || null,
+      event: events || null,
+      tour: tours_stores_tourIdTotours || null,
+      collaborators: entities_StoreCollaborators || [],
+    };
+  }
+
+  // ------------------------------------------------------
+  // CREATE STORE
+  // ------------------------------------------------------
+  async createStore(
+    createStoreDto: CreateStoreDto,
+    entityId: string,
+  ): Promise<any> {
+    const { slug, name, collaborators, eventId, tourId, ...storeData } =
+      createStoreDto;
 
     // Check if slug already exists
-    const existingStore = await this.prisma.store.findUnique({
+    const existingStore = await (this.prisma as any).stores.findUnique({
       where: { slug },
     });
 
@@ -20,7 +66,7 @@ export class StoreService {
     }
 
     // Validate entity exists
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: entityId },
     });
 
@@ -30,7 +76,7 @@ export class StoreService {
 
     // Validate event exists if provided
     if (eventId) {
-      const event = await this.prisma.event.findUnique({
+      const event = await (this.prisma as any).events.findUnique({
         where: { id: eventId },
       });
 
@@ -46,7 +92,7 @@ export class StoreService {
 
     // Validate tour exists if provided
     if (tourId) {
-      const tour = await this.prisma.tour.findUnique({
+      const tour = await (this.prisma as any).tours.findUnique({
         where: { id: tourId },
       });
 
@@ -60,7 +106,7 @@ export class StoreService {
       }
     }
 
-    // Prepare collaborators update
+    // Prepare collaborators relation update (Entity IDs)
     const collaboratorsUpdate = collaborators
       ? {
           connect: collaborators.map((id) => ({ id })),
@@ -68,7 +114,7 @@ export class StoreService {
       : undefined;
 
     // Create store
-    const store = await this.prisma.store.create({
+    const store = await (this.prisma as any).stores.create({
       data: {
         ...storeData,
         name,
@@ -76,37 +122,45 @@ export class StoreService {
         entityId,
         eventId,
         tourId,
-        ...(collaboratorsUpdate && { collaboratingEntities: collaboratorsUpdate }),
+        ...(collaboratorsUpdate && {
+          entities_StoreCollaborators: collaboratorsUpdate,
+        }),
       },
       include: {
-        entity: {
+        entities_stores_entityIdToentities: {
           select: {
             id: true,
             name: true,
             slug: true,
             thumbnail: true,
+            type: true,
+            isVerified: true,
+            ownerId: true,
           },
         },
-        event: {
+        events: {
           select: {
             id: true,
             name: true,
             thumbnail: true,
+            startTime: true,
           },
         },
-        tour: {
+        tours_stores_tourIdTotours: {
           select: {
             id: true,
             name: true,
             slug: true,
             thumbnail: true,
+            startDate: true,
           },
         },
-        collaboratingEntities: {
+        entities_StoreCollaborators: {
           select: {
             id: true,
             name: true,
             slug: true,
+            thumbnail: true,
           },
         },
         _count: {
@@ -117,16 +171,19 @@ export class StoreService {
       },
     });
 
-    return store;
+    return this.mapStoreToResponse(store);
   }
 
+  // ------------------------------------------------------
+  // UPDATE STORE
+  // ------------------------------------------------------
   async updateStore(
     id: string,
     updateStoreDto: UpdateStoreDto,
     userId: string,
     userRole: UserRole,
-  ): Promise<Store> {
-    const store = await this.findOne(id);
+  ): Promise<any> {
+    const store = await this.findOneRaw(id); // internal raw fetch
 
     // Check permissions: Owner or Manager with ADMIN/MANAGER role, or Admin
     await this.checkStorePermissions(store, userId, userRole);
@@ -135,7 +192,7 @@ export class StoreService {
 
     // Check slug uniqueness if being updated
     if (slug && slug !== store.slug) {
-      const existingStore = await this.prisma.store.findUnique({
+      const existingStore = await (this.prisma as any).stores.findUnique({
         where: { slug },
       });
 
@@ -152,43 +209,51 @@ export class StoreService {
       : undefined;
 
     // Update store
-    const updated = await this.prisma.store.update({
+    const updated = await (this.prisma as any).stores.update({
       where: { id },
       data: {
         ...updateData,
         ...(slug && { slug }),
         ...(name && { name }),
-        ...(collaboratorsUpdate && { collaboratingEntities: collaboratorsUpdate }),
+        ...(collaboratorsUpdate && {
+          entities_StoreCollaborators: collaboratorsUpdate,
+        }),
       },
       include: {
-        entity: {
+        entities_stores_entityIdToentities: {
           select: {
             id: true,
             name: true,
             slug: true,
             thumbnail: true,
+            type: true,
+            isVerified: true,
+            ownerId: true,
           },
         },
-        event: {
+        events: {
           select: {
             id: true,
             name: true,
             thumbnail: true,
+            startTime: true,
           },
         },
-        tour: {
+        tours_stores_tourIdTotours: {
           select: {
             id: true,
             name: true,
             slug: true,
             thumbnail: true,
+            startDate: true,
           },
         },
-        collaboratingEntities: {
+        entities_StoreCollaborators: {
           select: {
             id: true,
             name: true,
             slug: true,
+            thumbnail: true,
           },
         },
         _count: {
@@ -199,9 +264,12 @@ export class StoreService {
       },
     });
 
-    return updated;
+    return this.mapStoreToResponse(updated);
   }
 
+  // ------------------------------------------------------
+  // LIST / SEARCH STORES
+  // ------------------------------------------------------
   async findAll(query: StoreQueryDto) {
     const {
       search,
@@ -218,8 +286,11 @@ export class StoreService {
 
     const where: any = {};
 
-    // Only show public stores by default (unless admin)
-    if (visibility !== StoreVisibility.UNLISTED && visibility !== StoreVisibility.PRIVATE) {
+    // Only show public stores by default (unless explicitly requesting other visibilities)
+    if (
+      visibility !== StoreVisibility.UNLISTED &&
+      visibility !== StoreVisibility.PRIVATE
+    ) {
       where.visibility = StoreVisibility.PUBLIC;
     }
 
@@ -244,30 +315,34 @@ export class StoreService {
     const skip = (page - 1) * limit;
 
     const [stores, total] = await Promise.all([
-      this.prisma.store.findMany({
+      (this.prisma as any).stores.findMany({
         where,
         include: {
-          entity: {
+          entities_stores_entityIdToentities: {
             select: {
               id: true,
               name: true,
               slug: true,
               thumbnail: true,
+              type: true,
+              isVerified: true,
             },
           },
-          event: {
+          events: {
             select: {
               id: true,
               name: true,
               thumbnail: true,
+              startTime: true,
             },
           },
-          tour: {
+          tours_stores_tourIdTotours: {
             select: {
               id: true,
               name: true,
               slug: true,
               thumbnail: true,
+              startDate: true,
             },
           },
           _count: {
@@ -280,11 +355,11 @@ export class StoreService {
         skip,
         take: limit,
       }),
-      this.prisma.store.count({ where }),
+      (this.prisma as any).stores.count({ where }),
     ]);
 
     return {
-      data: stores,
+      data: stores.map((s: any) => this.mapStoreToResponse(s)),
       meta: {
         total,
         page,
@@ -294,11 +369,29 @@ export class StoreService {
     };
   }
 
-  async findOne(id: string): Promise<Store> {
-    const store = await this.prisma.store.findUnique({
+  // ------------------------------------------------------
+  // INTERNAL RAW FIND (no mapping)
+  // ------------------------------------------------------
+  private async findOneRaw(id: string): Promise<Store> {
+    const store = await (this.prisma as any).stores.findUnique({
+      where: { id },
+    });
+
+    if (!store) {
+      throw new NotFoundException("Store not found");
+    }
+
+    return store;
+  }
+
+  // ------------------------------------------------------
+  // PUBLIC FIND ONE (mapped)
+  // ------------------------------------------------------
+  async findOne(id: string): Promise<any> {
+    const store = await (this.prisma as any).stores.findUnique({
       where: { id },
       include: {
-        entity: {
+        entities_stores_entityIdToentities: {
           select: {
             id: true,
             name: true,
@@ -306,9 +399,10 @@ export class StoreService {
             thumbnail: true,
             type: true,
             isVerified: true,
+            ownerId: true,
           },
         },
-        event: {
+        events: {
           select: {
             id: true,
             name: true,
@@ -316,7 +410,7 @@ export class StoreService {
             startTime: true,
           },
         },
-        tour: {
+        tours_stores_tourIdTotours: {
           select: {
             id: true,
             name: true,
@@ -325,7 +419,7 @@ export class StoreService {
             startDate: true,
           },
         },
-        collaboratingEntities: {
+        entities_StoreCollaborators: {
           select: {
             id: true,
             name: true,
@@ -351,12 +445,15 @@ export class StoreService {
       throw new NotFoundException("Store not found");
     }
 
-    return store;
+    return this.mapStoreToResponse(store);
   }
 
-  async getEntityStore(entityId: string): Promise<Store[]> {
+  // ------------------------------------------------------
+  // GET STORES FOR AN ENTITY
+  // ------------------------------------------------------
+  async getEntityStore(entityId: string): Promise<any[]> {
     // Validate entity exists
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: entityId },
     });
 
@@ -364,22 +461,24 @@ export class StoreService {
       throw new NotFoundException("Entity not found");
     }
 
-    const stores = await this.prisma.store.findMany({
+    const stores = await (this.prisma as any).stores.findMany({
       where: { entityId },
       include: {
-        event: {
+        events: {
           select: {
             id: true,
             name: true,
             thumbnail: true,
+            startTime: true,
           },
         },
-        tour: {
+        tours_stores_tourIdTotours: {
           select: {
             id: true,
             name: true,
             slug: true,
             thumbnail: true,
+            startDate: true,
           },
         },
         _count: {
@@ -391,28 +490,31 @@ export class StoreService {
       orderBy: { createdAt: "desc" },
     });
 
-    return stores;
+    return stores.map((s: any) => this.mapStoreToResponse(s));
   }
 
+  // ------------------------------------------------------
+  // PRODUCTS
+  // ------------------------------------------------------
   async addProduct(
     storeId: string,
     createProductDto: CreateProductDto,
     userId: string,
     userRole: UserRole,
   ) {
-    const store = await this.findOne(storeId);
+    const store = await this.findOneRaw(storeId);
 
     // Check permissions
     await this.checkStorePermissions(store, userId, userRole);
 
     // Create product
-    const product = await this.prisma.product.create({
+    const product = await (this.prisma as any).products.create({
       data: {
         ...createProductDto,
         storeId,
       },
       include: {
-        store: {
+        stores: {
           select: {
             id: true,
             name: true,
@@ -422,7 +524,12 @@ export class StoreService {
       },
     });
 
-    return product;
+    // map relation name → frontend-friendly
+    const { stores, ...rest } = product;
+    return {
+      ...rest,
+      store: stores,
+    };
   }
 
   async updateProduct(
@@ -432,10 +539,10 @@ export class StoreService {
     userRole: UserRole,
   ) {
     // Find product with store
-    const product = await this.prisma.product.findUnique({
+    const product = await (this.prisma as any).products.findUnique({
       where: { id: productId },
       include: {
-        store: true,
+        stores: true,
       },
     });
 
@@ -444,14 +551,14 @@ export class StoreService {
     }
 
     // Check permissions on store
-    await this.checkStorePermissions(product.store, userId, userRole);
+    await this.checkStorePermissions(product.stores, userId, userRole);
 
     // Update product
-    const updated = await this.prisma.product.update({
+    const updated = await (this.prisma as any).products.update({
       where: { id: productId },
       data: updateProductDto,
       include: {
-        store: {
+        stores: {
           select: {
             id: true,
             name: true,
@@ -461,15 +568,23 @@ export class StoreService {
       },
     });
 
-    return updated;
+    const { stores, ...rest } = updated;
+    return {
+      ...rest,
+      store: stores,
+    };
   }
 
-  async removeProduct(productId: string, userId: string, userRole: UserRole) {
+  async removeProduct(
+    productId: string,
+    userId: string,
+    userRole: UserRole,
+  ) {
     // Find product with store
-    const product = await this.prisma.product.findUnique({
+    const product = await (this.prisma as any).products.findUnique({
       where: { id: productId },
       include: {
-        store: true,
+        stores: true,
       },
     });
 
@@ -478,43 +593,68 @@ export class StoreService {
     }
 
     // Check permissions on store
-    await this.checkStorePermissions(product.store, userId, userRole);
+    await this.checkStorePermissions(product.stores, userId, userRole);
 
     // Delete product
-    await this.prisma.product.delete({
+    await (this.prisma as any).products.delete({
       where: { id: productId },
     });
 
     return { message: "Product deleted successfully" };
   }
 
+  // ------------------------------------------------------
+  // DELETE STORE
+  // ------------------------------------------------------
   async delete(id: string, userId: string, userRole: UserRole) {
-    const store = await this.findOne(id);
+    const store = await (this.prisma as any).stores.findUnique({
+      where: { id },
+      include: {
+        entities_stores_entityIdToentities: {
+          select: {
+            id: true,
+            ownerId: true,
+          },
+        },
+      },
+    });
+
+    if (!store) {
+      throw new NotFoundException("Store not found");
+    }
+
+    const ownerId = store.entities_stores_entityIdToentities?.ownerId;
 
     // Only owner or admin can delete
-    if (store.entityId && store.entity.ownerId !== userId && userRole !== UserRole.ADMIN) {
+    if (ownerId && ownerId !== userId && userRole !== UserRole.ADMIN) {
       throw new ForbiddenException("Only owner or admin can delete store");
     }
 
     // Products are cascade deleted automatically
-    await this.prisma.store.delete({
+    await (this.prisma as any).stores.delete({
       where: { id },
     });
 
     return { message: "Store deleted successfully" };
   }
 
-  private async checkStorePermissions(store: Store, userId: string, userRole: UserRole) {
+  // ------------------------------------------------------
+  // PERMISSION CHECK
+  // ------------------------------------------------------
+  private async checkStorePermissions(
+    store: Store,
+    userId: string,
+    userRole: UserRole,
+  ) {
     if (userRole === UserRole.ADMIN) {
       return; // Admin can manage anything
     }
 
-    // Check if user owns the entity
-    const entity = await this.prisma.entity.findUnique({
+    // Check if user owns the entity or has roles on it
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: store.entityId },
       include: {
-        owner: true,
-        roles: {
+        entity_roles: {
           where: {
             userId,
           },
@@ -526,18 +666,25 @@ export class StoreService {
       throw new NotFoundException("Entity not found");
     }
 
+    // Direct owner
     if (entity.ownerId === userId) {
-      return; // Owner can manage
+      return;
     }
 
     // Check if user is a manager with ADMIN or MANAGER role
-    const entityRole = entity.roles.find((role) => role.userId === userId);
+    const entityRole = entity.entity_roles.find(
+      (role: any) =>
+        role.userId === userId &&
+        (role.role === EntityRoleType.ADMIN ||
+          role.role === EntityRoleType.MANAGER),
+    );
 
-    if (entityRole && (entityRole.role === EntityRoleType.ADMIN || entityRole.role === EntityRoleType.MANAGER)) {
-      return; // Manager with ADMIN/MANAGER role can manage
+    if (entityRole) {
+      return;
     }
 
-    throw new ForbiddenException("You do not have permission to manage this store");
+    throw new ForbiddenException(
+      "You do not have permission to manage this store",
+    );
   }
 }
-

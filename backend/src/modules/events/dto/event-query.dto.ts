@@ -1,7 +1,7 @@
 import { IsOptional, IsEnum, IsString, IsDateString, IsUUID, IsBoolean } from "class-validator";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { EventType, EventPhase, EventStatus, StreamingAccessLevel } from "./create-event.dto";
+import { EventType, EventPhase, EventStatus, GeofencingAccessLevel } from "@prisma/client";
 
 export class EventQueryDto {
   @ApiPropertyOptional()
@@ -50,10 +50,10 @@ export class EventQueryDto {
   @IsDateString()
   endDate?: string;
 
-  @ApiPropertyOptional({ enum: StreamingAccessLevel })
+  @ApiPropertyOptional({ enum: GeofencingAccessLevel })
   @IsOptional()
-  @IsEnum(StreamingAccessLevel)
-  streamingAccessLevel?: StreamingAccessLevel;
+  @IsEnum(GeofencingAccessLevel)
+  streamingAccessLevel?: GeofencingAccessLevel;
 
   @ApiPropertyOptional()
   @IsOptional()

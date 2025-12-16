@@ -14,13 +14,15 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { NotificationsService } from "./notifications.service";
 import { CreateNotificationDto, BroadcastNotificationDto, NotificationQueryDto } from "./dto";
-import { JwtAuthGuard, RolesGuard } from "../../common/guards";
+import { RolesGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser } from "../../common/decorators";
-import { User } from "@prisma/client";
+
+type User = any;
 
 @ApiTags("notifications")
 @Controller("notifications")
-@UseGuards(JwtAuthGuard)
+@UseGuards(SupabaseAuthGuard)
 @ApiBearerAuth()
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

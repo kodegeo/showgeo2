@@ -16,9 +16,11 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery, ApiExcludeEndpoint } from "@nestjs/swagger";
 import { PaymentsService } from "./payments.service";
 import { CreateCheckoutDto, CreateRefundDto, PaymentQueryDto } from "./dto";
-import { JwtAuthGuard, RolesGuard } from "../../common/guards";
+import { RolesGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
-import { User, UserRole } from "@prisma/client";
+
+type User = any;
 
 @ApiTags("payments")
 @Controller("payments")
@@ -26,7 +28,7 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post("checkout")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create Stripe checkout session" })
   @ApiResponse({ status: 201, description: "Checkout session created successfully" })
@@ -62,7 +64,7 @@ export class PaymentsController {
   }
 
   @Get("orders")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get orders for current user (paginated)" })
   @ApiQuery({ name: "userId", required: false, type: String })
@@ -79,7 +81,7 @@ export class PaymentsController {
   }
 
   @Get("orders/:id")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get order details (self/Admin)" })
   @ApiParam({ name: "id", type: String })
@@ -92,7 +94,7 @@ export class PaymentsController {
   }
 
   @Post("refund")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create refund for order (self/Admin)" })
   @ApiResponse({ status: 200, description: "Refund created successfully" })

@@ -1,15 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Poppins:wght@300;400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  --color-primary: #cd000e;
+  --color-primary-dark: #860005;
+  --color-accent: #1fb5fc;
+  --color-secondary: #f49600;
+  --color-dark: #0b0b0b;
+  --color-gray-text: #9a9a9a;
+  --font-heading: 'Montserrat', sans-serif;
+  --font-body: 'Poppins', sans-serif;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
+@layer base {
+  body {
+    font-family: var(--font-body);
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  h1 {
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: -0.03em;
+  }
+
+  button, .btn {
+    font-family: var(--font-heading);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+}
+
+@layer utilities {
+  .text-brand-red {
+    color: var(--color-primary);
+  }
+
+  .bg-brand-red {
+    background-color: var(--color-primary);
+  }
+
+  .bg-brand-dark {
+    background-color: var(--color-dark);
+  }
+
+  .text-gray-brand {
+    color: var(--color-gray-text);
+  }
+}
+
+/* Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.8s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.8s ease-out;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.8s ease-out;
+}
+
+.animate-fade-in-up.delay-100 {
+  animation-delay: 0.1s;
+  animation-fill-mode: both;
+}
+
+.animate-fade-in-up.delay-200 {
+  animation-delay: 0.2s;
+  animation-fill-mode: both;
 }
 

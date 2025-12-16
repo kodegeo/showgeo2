@@ -1,6 +1,6 @@
 # Showgeo 2.0
 
-A next-generation live concert and event streaming platform that connects fans, creators ("Entities"), and managers through immersive, real-time experiences.
+A next-generation live LIVE and event streaming platform that connects fans, creators ("Entities"), and managers through immersive, real-time experiences.
 
 ## 🏗️ Architecture
 

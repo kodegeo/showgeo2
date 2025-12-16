@@ -10,29 +10,49 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { EventsService } from "./events.service";
 import { CreateEventDto, UpdateEventDto, EventQueryDto, PhaseTransitionDto } from "./dto";
-import { JwtAuthGuard, RolesGuard } from "../../common/guards";
+import { RolesGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
-import { User } from "@prisma/client";
+
+type User = any;
+
 
 @ApiTags("events")
 @Controller("events")
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
+  // ------------------------------------------------------------
+  // CREATE EVENT
+  // ------------------------------------------------------------
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles("ENTITY", "ADMIN")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Create a new event" })
+  @ApiResponse({ status: 201, description: "Event created successfully" })
+  create(
+    @Body() createEventDto: CreateEventDto,
+    @CurrentUser() user: User
+  ) {
+    return this.eventsService.create(createEventDto, user.id);
+  }    
+  
+  @Post()
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a new event" })
   @ApiResponse({ status: 201, description: "Event created successfully" })
   @ApiResponse({ status: 400, description: "Bad request" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  create(@Body() createEventDto: CreateEventDto, @CurrentUser() user: User) {
-    return this.eventsService.create(createEventDto, user.id);
+  createEvent(@Req() req: Request & { user: User }, @Body() body: CreateEventDto) {
+    return this.eventsService.create(body, req.user.id);
   }
 
   @Get()
@@ -41,7 +61,7 @@ export class EventsController {
   @ApiResponse({ status: 200, description: "List of events" })
   @ApiQuery({ name: "search", required: false, type: String })
   @ApiQuery({ name: "eventType", required: false, enum: ["LIVE", "PRERECORDED"] })
-  @ApiQuery({ name: "phase", required: false, enum: ["PRE_CONCERT", "CONCERT", "POST_CONCERT"] })
+  @ApiQuery({ name: "phase", required: false, enum: ["PRE_LIVE", "LIVE", "POST_LIVE"] })
   @ApiQuery({
     name: "status",
     required: false,
@@ -62,7 +82,7 @@ export class EventsController {
   }
 
   @Get(":id/metrics")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "COORDINATOR", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get event metrics and analytics" })
@@ -75,7 +95,7 @@ export class EventsController {
   }
 
   @Patch(":id")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Update an event" })
@@ -88,7 +108,7 @@ export class EventsController {
   }
 
   @Delete(":id")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "ADMIN")
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -102,7 +122,7 @@ export class EventsController {
   }
 
   @Post(":id/phase/transition")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("COORDINATOR", "ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Transition event to a new phase" })
@@ -120,7 +140,7 @@ export class EventsController {
   }
 
   @Post(":id/phase/extend")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("COORDINATOR", "ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Extend the current phase duration" })
@@ -139,7 +159,7 @@ export class EventsController {
   }
 
   @Post(":id/metrics")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("COORDINATOR", "ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Update live metrics for an event" })
@@ -152,7 +172,7 @@ export class EventsController {
   }
 
   @Post(":id/test-results")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("COORDINATOR", "ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Add a test result log for an event" })

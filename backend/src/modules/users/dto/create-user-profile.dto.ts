@@ -28,6 +28,11 @@ export class CreateUserProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  bannerUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   @MaxLength(500)
   bio?: string;
 

@@ -285,6 +285,16 @@ apiClient.interceptors.response.use(
 | `GET` | `/analytics/overview` | Yes (Admin) | Platform overview |
 | `GET` | `/analytics/recommendations/:userId` | Yes | Get recommendations |
 
+### Assets (`/api/assets`)
+
+| Method | Endpoint | Auth Required | Description |
+|--------|----------|---------------|-------------|
+| `POST` | `/assets/upload` | Yes | Upload asset file (multipart/form-data) |
+| `GET` | `/assets` | No | List assets with filters |
+| `GET` | `/assets/:id` | No | Get asset details |
+| `GET` | `/assets/:id/url` | No | Get asset URL |
+| `DELETE` | `/assets/:id` | Yes (Owner/Admin) | Delete asset |
+
 ### Payments (`/api/payments`)
 
 | Method | Endpoint | Auth Required | Description |
@@ -714,6 +724,67 @@ export const notificationsService = {
 };
 ```
 
+### Assets Service
+
+```typescript
+import { apiClient } from "@/services/api";
+
+export const assetsService = {
+  async upload(file: File, data: {
+    type: "IMAGE" | "AUDIO" | "VIDEO" | "DOCUMENT" | "OTHER";
+    ownerType: "USER" | "ENTITY";
+    ownerId: string;
+    isPublic?: boolean;
+    metadata?: Record<string, any>;
+  }) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("type", data.type);
+    formData.append("ownerType", data.ownerType);
+    formData.append("ownerId", data.ownerId);
+    if (data.isPublic !== undefined) {
+      formData.append("isPublic", String(data.isPublic));
+    }
+    if (data.metadata) {
+      formData.append("metadata", JSON.stringify(data.metadata));
+    }
+
+    const response = await apiClient.post("/assets/upload", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  },
+
+  async getAll(params?: {
+    page?: number;
+    limit?: number;
+    type?: "IMAGE" | "AUDIO" | "VIDEO" | "DOCUMENT" | "OTHER";
+    ownerType?: "USER" | "ENTITY";
+    ownerId?: string;
+    isPublic?: boolean;
+  }) {
+    const response = await apiClient.get("/assets", { params });
+    return response.data;
+  },
+
+  async getById(id: string) {
+    const response = await apiClient.get(`/assets/${id}`);
+    return response.data;
+  },
+
+  async getUrl(id: string) {
+    const response = await apiClient.get(`/assets/${id}/url`);
+    return response.data.url;
+  },
+
+  async delete(id: string) {
+    await apiClient.delete(`/assets/${id}`);
+  },
+};
+```
+
 ### Payments Service
 
 ```typescript
@@ -811,6 +882,6 @@ VITE_FRONTEND_URL=https://showgeo.com
 
 ---
 
-**Last Updated:** 2025-01-01  
+**Last Updated:** 2025-11-01  
 **API Version:** 2.0.0
 

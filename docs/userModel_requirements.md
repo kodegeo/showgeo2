@@ -31,9 +31,9 @@ A **User** is any person who uses the platform. All Entity is a Users, but a Use
   - Chat with other users
   - Provide status updates.
   - Create discussion room or pages.
-  - Search for upcoming concerts.
+  - Search for upcoming LIVEs.
   - Share notifications and or merchandise.
-  - Purchase tickets for a concert.
+  - Purchase tickets for a LIVE.
 
 ### 3. Entity
 
@@ -55,7 +55,7 @@ An **Entity** is a creator account in the system. An Entity can be an individual
   - Provide status updates.
   - Send notifications to users who are following the Entity.
   - Create discussion room or pages.
-  - Search for another Entity's upcoming concerts.
+  - Search for another Entity's upcoming LIVEs.
   - Share notifications and or merchandise.
 
 
@@ -95,6 +95,17 @@ Users can **follow Entity**. This creates a one-way relationship where:
   - A new **Event** or **Tour** is created
   - The Entity sends out a **message or broadcast**
 - This data should be stored in a new `follows` table or join structure, with optional notification preferences
+
+### Relationships
+- A `User` can own multiple `Entities`.
+- A `User` can have multiple `EntityRole` relationships (OWNER, MANAGER, COORDINATOR).
+- A `User` can act in a specific `Context` (personal or entity) for API requests and frontend actions.
+
+### Fields
+| Field | Type | Description |
+|--------|------|-------------|
+| `activeContext` | JSON / Nullable | Stores the current acting mode (user or entity). Used for frontend context switching. |
+
 
 **Schema Suggestion:**
 ```json

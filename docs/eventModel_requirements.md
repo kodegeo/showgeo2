@@ -26,7 +26,7 @@ This document defines the structure and behavior of the `Event` model in the Sho
 | `description`         | text        | Long-form description                                        |
 | `thumbnail`           | string/url  | Main image or thumbnail for the event                        |
 | `event_type`          | enum        | `live`, `prerecorded`                                        |
-| `phase`               | enum        | `'pre-concert' | 'concert' | 'post-concert'`            |
+| `phase`               | enum        | `'pre-LIVE' | 'LIVE' | 'post-LIVE'`            |
 | `start_time`          | datetime    | Scheduled start time                                         |
 | `end_time`            | datetime    | Scheduled or actual end time                                 |
 | `location`            | string      | Virtual or physical location                             |
@@ -48,7 +48,7 @@ This document defines the structure and behavior of the `Event` model in the Sho
 | `is_virtual`               | boolean       | If true, it's a virtual event                                |
 | `location`                 | object        | For physical: venue, address, city, state, country           |
 | `stream_url`               | string        | For virtual events (LiveKit or external platform)            |
-| `test_stream_url`          | string        | For pre-concert testing and sound checks                     |
+| `test_stream_url`          | string        | For pre-LIVE testing and sound checks                     |
 | `video_url`                | string        | For prerecorded event media                                  |
 
 
@@ -151,34 +151,34 @@ This document defines the structure and behavior of the `Event` model in the Sho
 | Phase              | Description                                             | Launch Trigger             | Countdown | Ends When                              |
 |--------------------|---------------------------------------------------------|----------------------------|-----------| ---------------------------------------|
 | pre_event_phase    | Admin sound checks, attendee hangouts, entertainment warm-up | Manual or scheduled        | Yes       | Manually by coordinator or countdown   |
-| live_phase         | Main concert or event; streaming begins                 | Manual or after countdown  | Yes       | Auto/completion of stream or manual    |
+| live_phase         | Main LIVE or event; streaming begins                 | Manual or after countdown  | Yes       | Auto/completion of stream or manual    |
 | post_event_phase   | Meet & greet, attendee chat rooms, post-show interaction     | Manual or auto-after-live  | Optional  | Manually ended or scheduled            |
 
 
 An event is broken into **3 sequential phases**:
 
-### 1. Pre-Concert
+### 1. Pre-LIVE
 
-- Coordinator must **launch** Pre-Concert phase manually or on schedule.
+- Coordinator must **launch** Pre-LIVE phase manually or on schedule.
 - Features:
   - Soundcheck & stream testing (visible only to admins and Entity)
-  - Pre-concert music/video (mp3, mp4, or integrated playlist)
+  - Pre-LIVE music/video (mp3, mp4, or integrated playlist)
   - Comedian (Entity) or entertainment warm-up (video or stream)
   - Hangout rooms for event attendees (auto-close when event starts)
-  - Countdown timer to concert phase
+  - Countdown timer to LIVE phase
   - Coordinator task management & phase preparation
 
-### 2. Concert
+### 2. LIVE
 
 - Live stream begins
-- Coordinator or system triggers transition from Pre-Concert
+- Coordinator or system triggers transition from Pre-LIVE
 - Features:
   - Stream broadcast (via LiveKit)
   - Ability to extend or delay start/end time
   - Entity visibility into select attendees (video wall or Zoom-style)
   - Stream status monitoring
 
-### 3. Post-Concert
+### 3. Post-LIVE
 
 - Manually or automatically launched after event ends
 - Features:
@@ -233,7 +233,7 @@ Trigger notifications for:
 - New Event/Tour announcement (to followers)
 - Phase transitions (especially event launch)
 - Chat room openings
-- Post-concert meetups
+- Post-LIVE meetups
 - follower_notification_enabled: Boolean – whether followers of the Entity are notified
 - notification_types: event_created | event_live | event_update
 

@@ -1,58 +1,115 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from "@nestjs/swagger";
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Get,
+  UseGuards,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
-import { RegisterDto, LoginDto, RefreshTokenDto } from "./dto";
-import { JwtAuthGuard } from "../../common/guards";
-import { CurrentUser, Public } from "../../common/decorators";
-import { User } from "@prisma/client";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
+import { DevOnlyGuard } from "../../common/guards/dev-only.guard";
+import { CurrentUser, Public, DevOnly } from "../../common/decorators";
+import { UserRole } from "@prisma/client";
+
+type User = any;
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post("register")
+  /**
+   * Create app_users record after Supabase Auth registration.
+   * Called by frontend AFTER supabase.auth.signUp() succeeds.
+   */
+  @Post("register-app-user")
   @Public()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: "Register a new user" })
-  @ApiResponse({ status: 201, description: "User registered successfully" })
-  @ApiResponse({ status: 409, description: "User already exists" })
+  @ApiOperation({
+    summary: "Create app_users record after Supabase Auth registration",
+  })
+  @ApiResponse({ status: 201, description: "App user created successfully" })
+  @ApiResponse({
+    status: 409,
+    description: "App user already exists for this auth user",
+  })
   @ApiResponse({ status: 400, description: "Bad request" })
-  async register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  async registerAppUser(
+    @Body()
+    body: {
+      authUserId: string;
+      email: string;
+      firstName?: string;
+      lastName?: string;
+    }
+  ) {
+    return this.authService.createAppUserFromSupabaseAuth(body);
   }
 
-  @Post("login")
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Login with email and password" })
-  @ApiResponse({ status: 200, description: "Login successful" })
-  @ApiResponse({ status: 401, description: "Invalid credentials" })
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
-  }
-
-  @Post("refresh")
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Refresh access token using refresh token" })
-  @ApiResponse({ status: 200, description: "Tokens refreshed successfully" })
-  @ApiResponse({ status: 401, description: "Invalid refresh token" })
-  async refreshToken(@Body() refreshTokenDto: RefreshTokenDto) {
-    return this.authService.refreshToken(refreshTokenDto);
-  }
-
+  /**
+   * Get the current authenticated user (from Supabase JWT).
+   */
   @Get("me")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get current authenticated user" })
   @ApiResponse({ status: 200, description: "Current user information" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   async getMe(@CurrentUser() user: User) {
-    // Return user with profile and entity roles
-    const fullUser = await this.authService.validateUser(user.id);
-    const { password, ...userWithoutPassword } = fullUser;
+    // user is already the Prisma user injected by SupabaseAuthGuard
+    const { password, ...userWithoutPassword } = user as any;
     return userWithoutPassword;
   }
-}
 
+  /**
+   * DEV-ONLY: Create a Supabase auth user and corresponding app_users record.
+   * This endpoint is only available in development mode.
+   * Uses Supabase Admin API to create users.
+   */
+  @Post("dev/create-user")
+  @UseGuards(DevOnlyGuard)
+  @Public()
+  @HttpCode(HttpStatus.CREATED)
+  @DevOnly()
+  @ApiOperation({
+    summary: "[DEV ONLY] Create Supabase auth user and app_users record",
+    description:
+      "Creates both a Supabase auth user and corresponding app_users record. Only available in development mode.",
+  })
+  @ApiResponse({
+    status: 201,
+    description: "User created successfully (dev only)",
+  })
+  @ApiResponse({
+    status: 400,
+    description: "Bad request or failed to create user",
+  })
+  @ApiResponse({
+    status: 403,
+    description: "This endpoint is only available in development mode",
+  })
+  @ApiResponse({
+    status: 409,
+    description: "User with this email already exists",
+  })
+  async createDevUser(
+    @Body()
+    body: {
+      email: string;
+      password: string;
+      firstName?: string;
+      lastName?: string;
+      role?: UserRole;
+    },
+  ) {
+    return this.authService.createDevUser(body);
+  }
+}

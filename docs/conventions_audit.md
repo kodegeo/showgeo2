@@ -113,8 +113,8 @@ module-name/
 ### 6. Guards & Decorators ✅
 
 #### Authentication: ✅ Consistent
-- ✅ `@UseGuards(JwtAuthGuard)` for protected routes
-- ✅ `@UseGuards(JwtAuthGuard, RolesGuard)` for role-based routes
+- ✅ `@UseGuards(SupabaseAuthGuard)` for protected routes
+- ✅ `@UseGuards(RolesGuard)` for role-based routes
 - ✅ `@Roles()` decorator for role specifications
 - ✅ `@CurrentUser()` decorator for injecting current user
 - ✅ `@Public()` decorator for public endpoints

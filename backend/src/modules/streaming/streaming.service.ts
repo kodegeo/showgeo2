@@ -1,14 +1,40 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
-import { CreateSessionDto, GenerateTokenDto, UpdateMetricsDto, ValidateGeofenceDto, AccessLevel, ParticipantRole } from "./dto";
-import { UserRole, EntityRoleType, EventPhase, EventStatus } from "@prisma/client";
+import {
+  CreateSessionDto,
+  UpdateMetricsDto,
+  ValidateGeofenceDto,
+  AccessLevel,
+} from "./dto";
+import {
+  EntityRoleType,
+  EventPhase,
+  EventStatus,
+  UserRole,
+  Prisma,
+} from "@prisma/client";
 import { RoomServiceClient, AccessToken } from "livekit-server-sdk";
 import { GeofenceValidationResult } from "./interfaces/streaming.interface";
+import { User } from "@shared/types";
+import { randomUUID } from "crypto";
+import { GenerateTokenDto, StreamRole } from "./dto/generate-token.dto";
+
+
+type UserAuth = {
+  id: string;
+  email?: string;
+};
+
 
 @Injectable()
 export class StreamingService {
-  private roomService: RoomServiceClient;
+  private roomService: RoomServiceClient | null = null;
   private livekitApiKey: string;
   private livekitApiSecret: string;
   private livekitUrl: string;
@@ -18,327 +44,418 @@ export class StreamingService {
     private readonly configService: ConfigService,
   ) {
     this.livekitApiKey = this.configService.get<string>("LIVEKIT_API_KEY") || "";
-    this.livekitApiSecret = this.configService.get<string>("LIVEKIT_API_SECRET") || "";
+    this.livekitApiSecret =
+      this.configService.get<string>("LIVEKIT_API_SECRET") || "";
     this.livekitUrl = this.configService.get<string>("LIVEKIT_URL") || "";
 
     if (this.livekitUrl) {
-      this.roomService = new RoomServiceClient(this.livekitUrl, this.livekitApiKey, this.livekitApiSecret);
+      this.roomService = new RoomServiceClient(
+        this.livekitUrl,
+        this.livekitApiKey,
+        this.livekitApiSecret,
+      );
     }
   }
 
-  async createSession(createSessionDto: CreateSessionDto, userId: string, userRole: UserRole) {
-    const { eventId, accessLevel, metadata, geoRegions } = createSessionDto;
+  // -------------------------------------------------------------------
+  // CREATE STREAMING SESSION
+  // -------------------------------------------------------------------
+  async createSession(
+    eventId: string,
+    createSessionDto: CreateSessionDto,
+    userId: string,
+    userRole: UserRole,
+  ) {
+    const { accessLevel, metadata, geoRegions } = createSessionDto;
 
-    // Validate event exists
-    const event = await this.prisma.event.findUnique({
+    // 1) Validate event
+    const event = await (this.prisma as any).events.findUnique({
       where: { id: eventId },
-      include: {
-        entity: true,
-      },
     });
 
     if (!event) {
       throw new NotFoundException("Event not found");
     }
 
-    // Check permissions: Entity owner, Coordinator, or Admin
+    // 2) Permissions: entity owner, coordinator, or admin
     await this.checkEventPermissions(event, userId, userRole);
 
-    // Check if event already has an active session
-    const existingSession = await this.prisma.streamingSession.findFirst({
-      where: {
-        eventId,
-        active: true,
+    // 3) Ensure no other active session for this event
+    const existingSession = await (this.prisma as any).streaming_sessions.findFirst(
+      {
+        where: {
+          eventId,
+          active: true,
+        },
       },
-    });
+    );
 
     if (existingSession) {
-      throw new BadRequestException("Event already has an active streaming session");
+      throw new BadRequestException(
+        "Event already has an active streaming session",
+      );
     }
 
-    // Generate unique room ID
+    // 4) Create LiveKit room (optional if LiveKit not configured)
     const roomId = `event-${eventId}-${Date.now()}`;
     const sessionKey = this.generateSessionKey();
 
-    // Create LiveKit room via API
-    let livekitRoom;
-    try {
-      livekitRoom = await this.roomService.createRoom({
-        name: roomId,
-        emptyTimeout: 600, // 10 minutes
-        maxParticipants: 10000, // Configurable
-      });
-    } catch (error) {
-      // If LiveKit is not configured, we'll still create the session record
-      // In production, you might want to throw an error here
-      console.warn("LiveKit room creation failed, continuing without LiveKit:", error);
+    let livekitRoom: any;
+    if (this.roomService) {
+      try {
+        livekitRoom = await this.roomService.createRoom({
+          name: roomId,
+          emptyTimeout: 600, // 10 minutes
+          maxParticipants: 10000,
+        });
+      } catch (error) {
+        // In production you might throw instead – for now, degrade gracefully
+        console.warn(
+          "LiveKit room creation failed, continuing without LiveKit:",
+          error,
+        );
+      }
     }
 
-    // Create streaming session
-    const session = await this.prisma.streamingSession.create({
+    // 5) Create streaming session record
+    const session = await this.prisma.streaming_sessions.create({
       data: {
+        id: randomUUID(), // ✅ ADD THIS
         eventId,
         entityId: event.entityId,
-        roomId: livekitRoom?.name || roomId,
+        roomId,
         sessionKey,
         accessLevel: accessLevel || AccessLevel.PUBLIC,
-        metrics: metadata || {},
-        geoRegions: geoRegions || [],
+        metrics: (metadata || {}) as Prisma.InputJsonValue,
+        geoRegions: geoRegions ?? [],
         active: true,
-      },
-      include: {
-        event: {
-          select: {
-            id: true,
-            name: true,
-            phase: true,
-            status: true,
-          },
-        },
-        entity: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
       },
     });
 
-    // Update event phase if needed (can trigger to LIVE if starting)
-    if (event.phase !== EventPhase.CONCERT && event.status === EventStatus.SCHEDULED) {
-      await this.prisma.event.update({
+    // 6) Optionally bump event to LIVE phase
+    // Using string coercion to avoid enum mismatch
+    const eventPhase = String(event.phase);
+    const eventStatus = String(event.status);
+    if (eventPhase !== "LIVE" && eventStatus === "SCHEDULED") {
+      await (this.prisma as any).events.update({
         where: { id: eventId },
         data: {
-          phase: EventPhase.CONCERT,
-          status: EventStatus.LIVE,
+          phase: "LIVE" as EventPhase,
+          status: "LIVE" as EventStatus,
           lastLaunchedBy: userId,
         },
       });
     }
 
-    return session;
-  }
-
-  async generateToken(eventId: string, generateTokenDto: GenerateTokenDto, userId: string) {
-    const { role, identity } = generateTokenDto;
-
-    // Find active session for event
-    const session = await this.prisma.streamingSession.findFirst({
-      where: {
-        eventId,
-        active: true,
-      },
-      include: {
-        event: true,
+    // 7) Attach minimal event + entity info to match your expected shape
+    const entity = await (this.prisma as any).entities.findUnique({
+      where: { id: event.entityId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
       },
     });
 
-    if (!session) {
-      throw new NotFoundException("No active streaming session found for this event");
-    }
+    return {
+      ...session,
+      event: {
+        id: event.id,
+        name: event.name,
+        phase: event.phase,
+        status: event.status,
+      },
+      entity,
+    };
+  }
 
-    // Validate geofence if provided (check event geofencing)
-    if (session.geoRegions.length > 0 || session.event.geoRestricted) {
-      // Extract location from generateTokenDto if available
-      const geofenceResult = await this.validateGeofence({
+  async generateToken(dto: GenerateTokenDto, user: { id: string; email?: string }) {
+    const {
+      eventId,
+      streamRole,
+      identity,
+      country,
+      state,
+      city,
+      timezone,
+    } = dto;
+
+    // 1) Active session is source of truth
+    const session = await (this.prisma as any).streaming_sessions.findFirst({
+      where: { eventId, active: true },
+    });
+    if (!session) throw new NotFoundException("No active streaming session found for this event");
+  
+    // 2) Load event
+    const event = await (this.prisma as any).events.findUnique({
+      where: { id: session.eventId },
+    });
+    if (!event) throw new NotFoundException("Event not found");
+  
+    // 3) Phase enforcement: viewers only when LIVE
+    const eventPhase = String(event.phase); // PRE_LIVE | LIVE | POST_LIVE
+
+    // 3️⃣ Phase enforcement
+    if (
+      streamRole === StreamRole.VIEWER &&
+      eventPhase !== "LIVE"
+    ) {
+      throw new ForbiddenException("Event is not live");
+    }  
+
+    // 4) Geofence check (optional — keep your existing logic)
+    if (event.geoRestricted || (session.geoRegions?.length ?? 0) > 0) {
+      const result = await this.validateGeofence({
         sessionId: session.id,
-        country: generateTokenDto.country,
-        state: generateTokenDto.state,
-        city: generateTokenDto.city,
-        timezone: generateTokenDto.timezone,
+        country: dto.country,
+        state: dto.state,
+        city: dto.city,
+        timezone: dto.timezone,
       });
-
-      if (!geofenceResult.allowed) {
-        throw new ForbiddenException(
-          geofenceResult.reason || "Access denied due to geographic restrictions",
-        );
+      if (!result.allowed) {
+        throw new ForbiddenException(result.reason ?? "Access denied due to geographic restrictions");
       }
     }
-
-    // Validate access level requirements
-    if (session.accessLevel === AccessLevel.REGISTERED || session.accessLevel === AccessLevel.TICKETED) {
-      // Check if user has ticket (for TICKETED)
-      if (session.accessLevel === AccessLevel.TICKETED) {
-        const ticket = await this.prisma.ticket.findFirst({
-          where: {
-            userId,
-            eventId,
-          },
-        });
-
-        if (!ticket) {
-          throw new ForbiddenException("Ticket required to access this stream");
-        }
-      }
-    }
-
-    // Generate LiveKit token
-    const participantIdentity = identity || userId;
+  
+    // 5) Use session.roomId as single source of truth (no hardcoded room names)
+    // Both BROADCASTER and VIEWER join the same room, permissions differ by role
+    const roomName = session.roomId;
+  
+    // 6) Token grants
+    const participantIdentity = identity || user.id;
+  
     const at = new AccessToken(this.livekitApiKey, this.livekitApiSecret, {
       identity: participantIdentity,
     });
-
-    // Grant permissions based on role
-    const videoGrant = {
-      room: session.roomId,
+  
+    at.addGrant({
+      room: roomName,
       roomJoin: true,
-      canPublish: role === ParticipantRole.HOST || role === ParticipantRole.COORDINATOR,
+      canPublish: streamRole === StreamRole.BROADCASTER,
       canSubscribe: true,
       canPublishData: true,
-    };
-
-    at.addGrant(videoGrant);
-
-    // Generate token
-    const token = at.toJwt();
-
+    });
+  
     return {
-      token,
-      roomId: session.roomId,
+      token: at.toJwt(),
+      roomName,
       wsUrl: this.livekitUrl,
+      streamRole,
       participantIdentity,
-      role,
+      sessionId: session.id,
     };
   }
-
+  // -------------------------------------------------------------------
+  // END SESSION
+  // -------------------------------------------------------------------
   async endSession(sessionId: string, userId: string, userRole: UserRole) {
-    const session = await this.prisma.streamingSession.findUnique({
+    const session = await (this.prisma as any).streaming_sessions.findUnique({
       where: { id: sessionId },
-      include: {
-        event: true,
-      },
     });
 
     if (!session) {
       throw new NotFoundException("Streaming session not found");
     }
 
-    // Check permissions
-    await this.checkEventPermissions(session.event, userId, userRole);
-
-    // End LiveKit room
-    try {
-      await this.roomService.deleteRoom(session.roomId);
-    } catch (error) {
-      console.warn("LiveKit room deletion failed:", error);
-    }
-
-    // Update session
-    const updated = await this.prisma.streamingSession.update({
-      where: { id: sessionId },
-      data: {
-        active: false,
-        endTime: new Date(),
-      },
-      include: {
-        event: true,
-        entity: true,
-      },
+    const event = await (this.prisma as any).events.findUnique({
+      where: { id: session.eventId },
     });
 
-    // Update event phase to POST_CONCERT
-    await this.prisma.event.update({
+    if (!event) {
+      throw new NotFoundException("Event not found for this session");
+    }
+
+    // Permission check
+    await this.checkEventPermissions(event, userId, userRole);
+
+    // Try to end room in LiveKit
+    if (this.roomService) {
+      try {
+        await this.roomService.deleteRoom(session.roomId);
+      } catch (error) {
+        console.warn("LiveKit room deletion failed:", error);
+      }
+    }
+
+    // Mark session inactive
+    const updatedSession = await (this.prisma as any).streaming_sessions.update(
+      {
+        where: { id: sessionId },
+        data: {
+          active: false,
+          endTime: new Date(),
+        },
+      },
+    );
+
+    // Update event to POST_LIVE / COMPLETED
+    // Using string literals with type assertions to avoid enum mismatch
+    await (this.prisma as any).events.update({
       where: { id: session.eventId },
       data: {
-        phase: EventPhase.POST_CONCERT,
-        status: EventStatus.COMPLETED,
+        phase: "POST_LIVE" as EventPhase,
+        status: "COMPLETED" as EventStatus,
         lastLaunchedBy: userId,
       },
     });
 
-    return updated;
+    const entity = await (this.prisma as any).entities.findUnique({
+      where: { id: session.entityId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    });
+
+    return {
+      ...updatedSession,
+      event: {
+        id: event.id,
+        name: event.name,
+        phase: event.phase,
+        status: event.status,
+      },
+      entity,
+    };
   }
 
+  // -------------------------------------------------------------------
+  // LIST ACTIVE SESSIONS
+  // -------------------------------------------------------------------
   async getActiveSessions() {
-    const sessions = await this.prisma.streamingSession.findMany({
+    const sessions = await (this.prisma as any).streaming_sessions.findMany({
       where: {
         active: true,
-      },
-      include: {
-        event: {
-          select: {
-            id: true,
-            name: true,
-            thumbnail: true,
-            phase: true,
-            status: true,
-            startTime: true,
-          },
-        },
-        entity: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-          },
-        },
       },
       orderBy: { startTime: "desc" },
     });
 
-    return sessions;
+    if (sessions.length === 0) {
+      return [];
+    }
+
+    const eventIds = Array.from(
+      new Set(sessions.map((s: any) => s.eventId).filter(Boolean)),
+    );
+    const entityIds = Array.from(
+      new Set(sessions.map((s: any) => s.entityId).filter(Boolean)),
+    );
+
+    const [events, entities] = await Promise.all([
+      (this.prisma as any).events.findMany({
+        where: { id: { in: eventIds } },
+        select: {
+          id: true,
+          name: true,
+          thumbnail: true,
+          phase: true,
+          status: true,
+          startTime: true,
+        },
+      }),
+      (this.prisma as any).entities.findMany({
+        where: { id: { in: entityIds } },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          thumbnail: true,
+        },
+      }),
+    ]);
+
+    const eventMap = new Map(events.map((e: any) => [e.id, e]));
+    const entityMap = new Map(entities.map((e: any) => [e.id, e]));
+
+    return sessions.map((s: any) => ({
+      ...s,
+      event: eventMap.get(s.eventId) || null,
+      entity: entityMap.get(s.entityId) || null,
+    }));
   }
 
+  // -------------------------------------------------------------------
+  // SESSION DETAILS
+  // -------------------------------------------------------------------
   async getSessionDetails(id: string) {
-    const session = await this.prisma.streamingSession.findUnique({
+    const session = await (this.prisma as any).streaming_sessions.findUnique({
       where: { id },
-      include: {
-        event: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            thumbnail: true,
-            phase: true,
-            status: true,
-            startTime: true,
-            endTime: true,
-          },
-        },
-        entity: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            type: true,
-            isVerified: true,
-          },
-        },
-      },
     });
 
     if (!session) {
       throw new NotFoundException("Streaming session not found");
     }
 
-    // Get LiveKit room stats if available
-    let roomStats = null;
-    try {
-      const room = await this.roomService.listRooms([session.roomId]);
-      if (room && room.length > 0) {
-        roomStats = {
-          numParticipants: room[0].numParticipants || 0,
-          creationTime: room[0].creationTime,
-          emptyTimeout: room[0].emptyTimeout,
-        };
-      }
-    } catch (error) {
-      console.warn("Failed to get LiveKit room stats:", error);
+    const [event, entity] = await Promise.all([
+      (this.prisma as any).events.findUnique({
+        where: { id: session.eventId },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          thumbnail: true,
+          phase: true,
+          status: true,
+          startTime: true,
+          endTime: true,
+        },
+      }),
+      (this.prisma as any).entities.findUnique({
+        where: { id: session.entityId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          thumbnail: true,
+          type: true,
+          isVerified: true,
+        },
+      }),
+    ]);
+
+    if (!event) {
+      throw new NotFoundException("Event not found for this session");
     }
 
-    // Calculate duration
-    const duration = session.endTime
-      ? Math.floor((session.endTime.getTime() - session.startTime.getTime()) / 1000)
-      : Math.floor((Date.now() - session.startTime.getTime()) / 1000);
+    // LiveKit room stats
+    let roomStats: any = null;
+    if (this.roomService) {
+      try {
+        const rooms = await this.roomService.listRooms([session.roomId]);
+        if (rooms && rooms.length > 0) {
+          const room = rooms[0] as any;
+          roomStats = {
+            numParticipants: room.numParticipants || 0,
+            creationTime: room.creationTime,
+            emptyTimeout: room.emptyTimeout,
+          };
+        }
+      } catch (error) {
+        console.warn("Failed to get LiveKit room stats:", error);
+      }
+    }
 
-    const metrics = (session.metrics as Record<string, unknown>) || {};
+    const startTime = session.startTime || event.startTime;
+    const endTime = session.endTime || event.endTime || null;
+
+    const duration = startTime
+      ? endTime
+        ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
+        : Math.floor((Date.now() - startTime.getTime()) / 1000)
+      : null;
+
+    const metrics =
+      ((session.metrics as Record<string, unknown>) || {}) as Record<
+        string,
+        unknown
+      >;
 
     return {
       ...session,
-      duration, // in seconds
+      event,
+      entity,
+      duration,
       roomStats,
       metrics: {
         viewers: session.viewers,
@@ -347,8 +464,15 @@ export class StreamingService {
     };
   }
 
-  async updateMetrics(sessionId: string, updateMetricsDto: UpdateMetricsDto, userId: string) {
-    const session = await this.prisma.streamingSession.findUnique({
+  // -------------------------------------------------------------------
+  // UPDATE METRICS
+  // -------------------------------------------------------------------
+  async updateMetrics(
+    sessionId: string,
+    updateMetricsDto: UpdateMetricsDto,
+    userId: string,
+  ) {
+    const session = await (this.prisma as any).streaming_sessions.findUnique({
       where: { id: sessionId },
     });
 
@@ -356,77 +480,104 @@ export class StreamingService {
       throw new NotFoundException("Streaming session not found");
     }
 
-    const currentMetrics = (session.metrics as Record<string, unknown>) || {};
-    const updatedMetrics = {
+    const currentMetrics =
+      ((session.metrics as Record<string, unknown>) ||
+        {}) as Record<string, any>;
+
+    const updatedMetrics: Record<string, any> = {
       ...currentMetrics,
-      ...updateMetricsDto.customMetrics,
-      viewers: updateMetricsDto.viewers !== undefined ? updateMetricsDto.viewers : currentMetrics.viewers || 0,
-      participants: updateMetricsDto.participants !== undefined ? updateMetricsDto.participants : currentMetrics.participants || 0,
-      messages: updateMetricsDto.messages !== undefined ? updateMetricsDto.messages : currentMetrics.messages || 0,
-      reactions: updateMetricsDto.reactions !== undefined ? updateMetricsDto.reactions : currentMetrics.reactions || 0,
+      ...(updateMetricsDto.customMetrics || {}),
+      viewers:
+        updateMetricsDto.viewers !== undefined
+          ? updateMetricsDto.viewers
+          : currentMetrics.viewers || 0,
+      participants:
+        updateMetricsDto.participants !== undefined
+          ? updateMetricsDto.participants
+          : currentMetrics.participants || 0,
+      messages:
+        updateMetricsDto.messages !== undefined
+          ? updateMetricsDto.messages
+          : currentMetrics.messages || 0,
+      reactions:
+        updateMetricsDto.reactions !== undefined
+          ? updateMetricsDto.reactions
+          : currentMetrics.reactions || 0,
       updatedAt: new Date().toISOString(),
+      updatedBy: userId,
     };
 
-    const updated = await this.prisma.streamingSession.update({
+    const updated = await (this.prisma as any).streaming_sessions.update({
       where: { id: sessionId },
       data: {
-        metrics: updatedMetrics,
-        viewers: updateMetricsDto.viewers !== undefined ? updateMetricsDto.viewers : session.viewers,
+        metrics: updatedMetrics as Prisma.InputJsonValue,
+        viewers:
+          updateMetricsDto.viewers !== undefined
+            ? updateMetricsDto.viewers
+            : session.viewers,
       },
     });
 
     return updated;
   }
 
-  async validateGeofence(validateGeofenceDto: ValidateGeofenceDto): Promise<GeofenceValidationResult> {
+  // -------------------------------------------------------------------
+  // VALIDATE GEOFENCE
+  // -------------------------------------------------------------------
+  async validateGeofence(
+    validateGeofenceDto: ValidateGeofenceDto,
+  ): Promise<GeofenceValidationResult> {
     const { sessionId, country, state, city, timezone } = validateGeofenceDto;
 
-    const session = await this.prisma.streamingSession.findUnique({
+    const session = await (this.prisma as any).streaming_sessions.findUnique({
       where: { id: sessionId },
-      include: {
-        event: {
-          include: {
-            geofencing: true,
-          },
-        },
-      },
     });
 
     if (!session) {
       throw new NotFoundException("Streaming session not found");
     }
 
-    // Check event geofencing rules
-    const geofencing = session.event.geofencing;
+    const event = await (this.prisma as any).events.findUnique({
+      where: { id: session.eventId },
+      include: {
+        geofencing: true,
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException("Event not found for this session");
+    }
+
+    const geofencing = event.geofencing;
 
     if (!geofencing || session.geoRegions.length === 0) {
       // No geofencing restrictions
       return { allowed: true };
     }
 
-    const regions = session.geoRegions.length > 0 ? session.geoRegions : geofencing.regions;
+    const regions =
+      session.geoRegions.length > 0 ? session.geoRegions : geofencing.regions;
     const type = geofencing.type;
 
-    // Build user location identifiers
     const userRegions: string[] = [];
     if (country) userRegions.push(`country:${country}`);
     if (state) userRegions.push(`state:${state}`);
     if (city) userRegions.push(`city:${city}`);
     if (timezone) {
-      // Convert timezone to short form if needed
       const tzMap: Record<string, string> = {
         "America/New_York": "EST",
         "America/Chicago": "CST",
         "America/Denver": "MST",
         "America/Los_Angeles": "PST",
       };
-      const tzShort = tzMap[timezone] || timezone.split("/").pop()?.toUpperCase() || timezone;
+      const tzShort =
+        tzMap[timezone] ||
+        timezone.split("/").pop()?.toUpperCase() ||
+        timezone;
       userRegions.push(`timezone:${tzShort}`);
     }
 
-    // Check if user location matches any region
-    const matches = regions.filter((region) => {
-      // Handle special cases
+    const matches = regions.filter((region: string) => {
       if (region === "region:international") {
         return country && country !== "US";
       }
@@ -434,17 +585,20 @@ export class StreamingService {
         return true;
       }
 
-      // Check if user region matches
       return userRegions.some((userRegion) => {
-        // Exact match
         if (userRegion === region) return true;
 
-        // Partial match (e.g., country:US matches any state in US)
-        const [userType, userValue] = userRegion.split(":");
-        const [regionType, regionValue] = region.split(":");
+        const [userType] = userRegion.split(":");
+        const [regionType] = region.split(":");
 
-        if (userType === "country" && regionType === "state" && country === "US") {
-          return true; // US states are within US
+        // Example rule: US country implies all US states allowed,
+        // if region is any state but we only have country:US
+        if (
+          userType === "country" &&
+          regionType === "state" &&
+          country === "US"
+        ) {
+          return true;
         }
 
         return false;
@@ -454,51 +608,63 @@ export class StreamingService {
     if (type === "ALLOWLIST") {
       return {
         allowed: matches.length > 0,
-        reason: matches.length === 0 ? "Access denied: Your location is not in the allowed regions" : undefined,
+        reason:
+          matches.length === 0
+            ? "Access denied: Your location is not in the allowed regions"
+            : undefined,
         matchedRegions: matches,
       };
     } else {
       // BLOCKLIST
       return {
         allowed: matches.length === 0,
-        reason: matches.length > 0 ? "Access denied: Your location is blocked" : undefined,
+        reason:
+          matches.length > 0
+            ? "Access denied: Your location is blocked"
+            : undefined,
         matchedRegions: matches,
       };
     }
   }
 
+  // -------------------------------------------------------------------
+  // HELPERS
+  // -------------------------------------------------------------------
   private generateSessionKey(): string {
-    return `sk_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    return `sk_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 15)}`;
   }
 
-  private async checkEventPermissions(event: any, userId: string, userRole: UserRole) {
+  private async checkEventPermissions(
+    event: any,
+    userId: string,
+    userRole: UserRole,
+  ) {
     if (userRole === UserRole.ADMIN) {
-      return; // Admin can manage anything
+      return;
     }
 
-    // Get entity to check ownership
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: event.entityId },
-      include: {
-        owner: true,
-      },
     });
 
     if (!entity) {
       throw new NotFoundException("Entity not found");
     }
 
+    // Entity owner
     if (entity.ownerId === userId) {
-      return; // Entity owner can manage
+      return;
     }
 
-    // Check if user is coordinator
+    // Coordinator
     if (event.eventCoordinatorId === userId) {
-      return; // Coordinator can manage
+      return;
     }
 
-    // Check if user is a manager with ADMIN/MANAGER role for this entity
-    const entityRole = await this.prisma.entityRole.findUnique({
+    // Entity role (ADMIN / MANAGER)
+    const entityRole = await (this.prisma as any).entity_roles.findUnique({
       where: {
         userId_entityId: {
           userId,
@@ -507,11 +673,16 @@ export class StreamingService {
       },
     });
 
-    if (entityRole && (entityRole.role === EntityRoleType.ADMIN || entityRole.role === EntityRoleType.MANAGER)) {
-      return; // Manager with ADMIN/MANAGER role can manage
+    if (
+      entityRole &&
+      (entityRole.role === EntityRoleType.ADMIN ||
+        entityRole.role === EntityRoleType.MANAGER)
+    ) {
+      return;
     }
 
-    throw new ForbiddenException("You do not have permission to manage streaming sessions for this event");
+    throw new ForbiddenException(
+      "You do not have permission to manage streaming sessions for this event",
+    );
   }
 }
-

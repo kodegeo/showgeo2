@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,107 +7,417 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// User & Authentication Models
-// ============================================
+model analytics_summaries {
+  id              String               @id
+  entityId        String?
+  eventId         String?
+  userId          String?
+  type            AnalyticsSummaryType
+  metrics         Json
+  engagementScore Float?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  entities        entities?            @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  events          events?              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  app_users       app_users?           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-enum UserRole {
-  USER
-  ENTITY
-  MANAGER
-  COORDINATOR
-  ADMIN
+  @@unique([entityId, type])
+  @@unique([eventId, type])
+  @@unique([userId, type])
 }
 
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String?  // Nullable for OAuth users
-  role      UserRole @default(USER)
+model app_users {
+  id                  String                @id(map: "users_pkey")
+  email               String                @unique(map: "users_email_key")
+  password            String?
+  role                UserRole              @default(USER)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  authUserId          String?               @unique @db.Uuid
+
+  isEntity            Boolean               @default(false) @map("is_entity")
+
+  analytics_summaries analytics_summaries[]
+  entities            entities[]
+  entity_roles        entity_roles[]
+  events              events[]
+  follows             follows[]
+  notifications       notifications[]
+  orders              orders[]
+  tickets             tickets[]
+  user_profiles       user_profiles?
+}
+
+model assets {
+  id              String @id      @default(uuid())  
+  ownerId         String
+  ownerType       AssetOwnerType
+  url             String
+  path            String
+  type            AssetType
+  mimeType        String?
+  size            Int?
+  width           Int?
+  height          Int?
+  duration        Int?
+  metadata        Json?
+  isPublic        Boolean         @default(false)
+  storageProvider StorageProvider @default(SUPABASE)
+  expiresAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([isPublic])
+  @@index([ownerId, ownerType])
+  @@index([type])
+}
+
+model chat_rooms {
+  id        String   @id
+  eventId   String
+  name      String?
+  isPrivate Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // Relations
-  profile       UserProfile?
-  ownedEntities Entity[]      @relation("EntityOwner")
-  entityRoles   EntityRole[]
-  follows       Follow[]
-  tickets       Ticket[]
-  coordinatedEvents Event[]   @relation("EventCoordinator")
-  notifications Notification[] @relation("UserNotifications")
-  analyticsSummaries AnalyticsSummary[] @relation("UserAnalytics")
-  orders Order[] @relation("UserOrders")
-
-  @@map("users")
+  events    events   @relation(fields: [eventId], references: [id], onDelete: Cascade)
 }
 
-model UserProfile {
-  id         String   @id @default(uuid())
-  userId     String   @unique
-  username   String?  @unique
-  firstName  String?
-  lastName   String?
-  avatarUrl  String?
-  bio        String?  @db.Text
-  location   String?
-  timezone   String?
-  website    String?
-  socialLinks Json?   // JSONB for social media links
-  preferences Json?   // JSONB for user preferences
-  visibility String   @default("public")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("user_profiles")
+model entities {
+  id                                    String                @id
+  ownerId                               String
+  type                                  EntityType            @default(INDIVIDUAL)
+  name                                  String
+  slug                                  String                @unique
+  bio                                   String?
+  tags                                  String[]
+  thumbnail                             String?
+  bannerImage                           String?
+  location                              String?
+  website                               String?
+  socialLinks                           Json?
+  isVerified                            Boolean               @default(false)
+  isPublic                              Boolean               @default(true)
+  defaultCoordinatorId                  String?
+  createdAt                             DateTime              @default(now())
+  updatedAt                             DateTime              @updatedAt
+  status                                EntityStatus          @default(PENDING)
+  analytics_summaries                   analytics_summaries[]
+  app_users                             app_users             @relation(fields: [ownerId], references: [id])
+  entity_roles                          entity_roles[]
+  events_events_entityIdToentities      events[]              @relation("events_entityIdToentities")
+  follows                               follows[]
+  notifications                         notifications[]
+  orders                                orders[]
+  stores_stores_entityIdToentities      stores[]              @relation("stores_entityIdToentities")
+  streaming_sessions                    streaming_sessions[]
+  tours_tours_primaryEntityIdToentities tours[]               @relation("tours_primaryEntityIdToentities")
+  events_EventCollaborators             events[]              @relation("EventCollaborators")
+  stores_StoreCollaborators             stores[]              @relation("StoreCollaborators")
+  tours_TourCollaborators               tours[]               @relation("TourCollaborators")
 }
 
-// ============================================
-// Entity Models
-// ============================================
+model entity_roles {
+  id        String         @id @default(uuid())
+  userId    String
+  entityId  String
+  role      EntityRoleType @default(ADMIN)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  entities  entities       @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  app_users app_users      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-enum EntityType {
-  INDIVIDUAL
-  ORGANIZATION
+  @@unique([userId, entityId])
 }
 
-model Entity {
-  id               String      @id @default(uuid())
-  ownerId          String
-  type             EntityType  @default(INDIVIDUAL)
-  name             String
-  slug             String      @unique
-  bio              String?     @db.Text
-  tags             String[]
-  thumbnail        String?
-  bannerImage      String?
-  location         String?
-  website          String?
-  socialLinks      Json?       // JSONB for social links
-  isVerified       Boolean     @default(false)
-  isPublic         Boolean     @default(true)
-  defaultCoordinatorId String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+model events {
+  id                                 String                 @id
+  name                               String
+  description                        String?
+  thumbnail                          String?
+  eventType                          EventType              @default(LIVE)
+  phase                              EventPhase             @default(PRE_LIVE)
+  startTime                          DateTime
+  endTime                            DateTime?
+  location                           String?
+  status                             EventStatus            @default(DRAFT)
+  entityId                           String
+  eventCoordinatorId                 String?
+  tourId                             String?
+  isVirtual                          Boolean                @default(false)
+  streamUrl                          String?
+  testStreamUrl                      String?
+  videoUrl                           String?
+  streamingAccessLevel               GeofencingAccessLevel?
+  geoRegions                         String[]
+  geoRestricted                      Boolean                @default(false)
+  ticketRequired                     Boolean                @default(true)
+  ticketTypes                        Json?
+  entryCodeRequired                  Boolean                @default(false)
+  entryCodeDelivery                  Boolean                @default(false)
+  ticketEmailTemplate                String?
+  testingEnabled                     Boolean                @default(false)
+  testResultLogs                     Json?
+  liveMetrics                        Json?
+  customBranding                     Json?
+  createdAt                          DateTime               @default(now())
+  updatedAt                          DateTime               @updatedAt
+  lastLaunchedBy                     String?
+  analytics_summaries                analytics_summaries[]
+  chat_rooms                         chat_rooms[]
+  entities_events_entityIdToentities entities               @relation("events_entityIdToentities", fields: [entityId], references: [id])
+  app_users                          app_users?             @relation(fields: [eventCoordinatorId], references: [id])
+  tours                              tours?                 @relation(fields: [tourId], references: [id])
+  geofencing                         geofencing?
+  orders                             orders[]
+  stores                             stores?
+  streaming_sessions                 streaming_sessions[]
+  tickets                            tickets[]
+  entities_EventCollaborators        entities[]             @relation("EventCollaborators")
+}
 
-  // Relations
-  owner            User        @relation("EntityOwner", fields: [ownerId], references: [id])
-  roles            EntityRole[]
-  events           Event[]
-  tours            Tour[]
-  stores           Store[]
-  followers        Follow[]
-  collaboratingEvents Event[]  @relation("EventCollaborators")
-  collaboratingTours Tour[]    @relation("TourCollaborators")
-  collaboratingStores Store[]  @relation("StoreCollaborators")
-  streamingSessions StreamingSession[] @relation("EntityStreamingSession")
-  notifications Notification[] @relation("EntityNotifications")
-  analyticsSummaries AnalyticsSummary[] @relation("EntityAnalytics")
-  orders Order[] @relation("EntityOrders")
+model follows {
+  id        String    @id
+  userId    String
+  entityId  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime @updatedAt
+  entities  entities  @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  app_users app_users @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("entities")
+  @@unique([userId, entityId])
+}
+
+model geofencing {
+  id          String               @id
+  targetType  GeofencingTargetType
+  targetId    String
+  type        GeofencingType       @default(ALLOWLIST)
+  regions     String[]
+  description String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  eventId     String?              @unique
+  tourId      String?              @unique
+  storeId     String?              @unique
+  events      events?              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  stores      stores?              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  tours       tours?               @relation(fields: [tourId], references: [id], onDelete: Cascade)
+}
+
+model notifications {
+  id        String           @id
+  userId    String
+  entityId  String?
+  type      NotificationType
+  message   String
+  metadata  Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  entities  entities?        @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  app_users app_users        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model order_items {
+  id          String    @id
+  orderId     String
+  ticketId    String?
+  productId   String?
+  quantity    Int       @default(1)
+  unitPrice   Decimal   @db.Decimal(10, 2)
+  totalPrice  Decimal   @db.Decimal(10, 2)
+  name        String
+  description String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      orders    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  products    products? @relation(fields: [productId], references: [id])
+  tickets     tickets?  @relation(fields: [ticketId], references: [id])
+}
+
+model orders {
+  id                    String         @id
+  userId                String
+  entityId              String?
+  eventId               String?
+  storeId               String?
+  type                  OrderType
+  status                OrderStatus    @default(PENDING)
+  totalAmount           Decimal        @db.Decimal(10, 2)
+  currency              String         @default("USD")
+  paymentMethod         PaymentMethod?
+  stripePaymentIntentId String?        @unique
+  stripeSessionId       String?        @unique
+  metadata              Json?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime      @updatedAt
+  order_items           order_items[]
+  entities              entities?      @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  events                events?        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  stores                stores?        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  app_users             app_users      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments              payments[]
+}
+
+model payments {
+  id              String        @id
+  orderId         String
+  amount          Decimal       @db.Decimal(10, 2)
+  currency        String        @default("USD")
+  status          String
+  paymentMethod   PaymentMethod
+  stripePaymentId String?       @unique
+  stripeChargeId  String?       @unique
+  refundId        String?       @unique
+  failureReason   String?
+  metadata        Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime     @updatedAt
+  orders          orders        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model products {
+  id          String        @id
+  storeId     String
+  name        String
+  description String?
+  price       Float
+  currency    String        @default("USD")
+  imageUrl    String?
+  isDigital   Boolean       @default(false)
+  isAvailable Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime     @updatedAt
+  order_items order_items[]
+  stores      stores        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+model stores {
+  id                                 String          @id
+  entityId                           String
+  eventId                            String?         @unique
+  tourId                             String?         @unique
+  name                               String
+  slug                               String          @unique
+  description                        String?
+  bannerImage                        String?
+  logoUrl                            String?
+  currency                           String          @default("USD")
+  status                             StoreStatus     @default(ACTIVE)
+  visibility                         StoreVisibility @default(PUBLIC)
+  collaborators                      String[]
+  tags                               String[]
+  createdAt                          DateTime        @default(now())
+  updatedAt                          DateTime        @updatedAt
+  geofencing                         geofencing?
+  orders                             orders[]
+  products                           products[]
+  entities_stores_entityIdToentities entities        @relation("stores_entityIdToentities", fields: [entityId], references: [id])
+  events                             events?         @relation(fields: [eventId], references: [id])
+  tours_stores_tourIdTotours         tours?          @relation("stores_tourIdTotours", fields: [tourId], references: [id])
+  entities_StoreCollaborators        entities[]      @relation("StoreCollaborators")
+  tours_TourStores                   tours[]         @relation("TourStores")
+}
+
+model streaming_sessions {
+  id          String               @id
+  eventId     String
+  entityId    String
+  roomId      String               @unique
+  sessionKey  String
+  accessLevel StreamingAccessLevel @default(PUBLIC)
+  startTime   DateTime             @default(now())
+  endTime     DateTime?
+  active      Boolean              @default(true)
+  viewers     Int                  @default(0)
+  metrics     Json?
+  geoRegions  String[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  entities    entities             @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  events      events               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+}
+
+model tickets {
+  id          String        @id
+  userId      String
+  eventId     String
+  orderId     String?
+  type        TicketType
+  price       Float?        @default(0)
+  currency    String        @default("USD")
+  entryCode   String?       @unique
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime     @updatedAt
+  order_items order_items[]
+  events      events        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  app_users   app_users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model tours {
+  id                                       String                @id
+  primaryEntityId                          String
+  name                                     String                @unique
+  slug                                     String                @unique
+  description                              String?
+  thumbnail                                String?
+  bannerImage                              String?
+  startDate                                DateTime
+  endDate                                  DateTime?
+  status                                   TourStatus            @default(DRAFT)
+  tags                                     String[]
+  geoRestricted                            Boolean               @default(false)
+  streamingAccessLevel                     StreamingAccessLevel?
+  geoRegions                               String[]
+  createdAt                                DateTime              @default(now())
+  updatedAt                                DateTime              @updatedAt
+  events                                   events[]
+  geofencing                               geofencing?
+  stores_stores_tourIdTotours              stores?               @relation("stores_tourIdTotours")
+  entities_tours_primaryEntityIdToentities entities              @relation("tours_primaryEntityIdToentities", fields: [primaryEntityId], references: [id])
+  entities_TourCollaborators               entities[]            @relation("TourCollaborators")
+  stores_TourStores                        stores[]              @relation("TourStores")
+}
+
+model user_profiles {
+  id          String    @id
+  userId      String    @unique
+  username    String?   @unique
+  firstName   String?
+  lastName    String?
+  avatarUrl   String?
+  bannerUrl   String?
+  bio         String?
+  location    String?
+  timezone    String?
+  website     String?
+  socialLinks Json?
+  preferences Json?
+  visibility  String    @default("public")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  app_users   app_users @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum AnalyticsSummaryType {
+  ENTITY
+  EVENT
+  USER
+  PLATFORM
+}
+
+enum AssetOwnerType {
+  USER
+  ENTITY
+}
+
+enum AssetType {
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  OTHER
 }
 
 enum EntityRoleType {
@@ -120,54 +427,21 @@ enum EntityRoleType {
   COORDINATOR
 }
 
-model EntityRole {
-  id       String         @id @default(uuid())
-  userId   String
-  entityId String
-  role     EntityRoleType @default(ADMIN)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-
-  // Relations
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, entityId])
-  @@map("entity_roles")
+enum EntityStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
-// ============================================
-// Follow Models
-// ============================================
-
-model Follow {
-  id        String   @id @default(uuid())
-  userId    String
-  entityId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, entityId])
-  @@map("follows")
-}
-
-// ============================================
-// Event Models
-// ============================================
-
-enum EventType {
-  LIVE
-  PRERECORDED
+enum EntityType {
+  INDIVIDUAL
+  ORGANIZATION
 }
 
 enum EventPhase {
-  PRE_CONCERT
-  CONCERT
-  POST_CONCERT
+  PRE_LIVE
+  LIVE
+  POST_LIVE
 }
 
 enum EventStatus {
@@ -178,137 +452,66 @@ enum EventStatus {
   CANCELLED
 }
 
-enum StreamingAccessLevel {
+enum EventType {
+  LIVE
+  PRERECORDED
+}
+
+enum GeofencingAccessLevel {
   LOCAL
   REGIONAL
   NATIONAL
   INTERNATIONAL
 }
 
-enum TicketType {
-  FREE
-  GIFTED
-  PAID
+enum GeofencingTargetType {
+  EVENT
+  TOUR
+  STORE
 }
 
-model Event {
-  id                    String              @id @default(uuid())
-  name                  String
-  description           String?             @db.Text
-  thumbnail             String?
-  eventType             EventType           @default(LIVE)
-  phase                 EventPhase          @default(PRE_CONCERT)
-  startTime             DateTime
-  endTime               DateTime?
-  location              String?
-  status                EventStatus         @default(DRAFT)
-  entityId              String
-  eventCoordinatorId    String?
-  tourId                String?
-  
-  // Streaming
-  isVirtual             Boolean             @default(false)
-  streamUrl             String?
-  testStreamUrl         String?
-  videoUrl              String?
-  streamingAccessLevel  StreamingAccessLevel?
-  geoRegions            String[]
-  geoRestricted         Boolean             @default(false)
-  
-  // Ticketing
-  ticketRequired        Boolean             @default(true)
-  ticketTypes           Json?               // Array of ticket type objects
-  entryCodeRequired     Boolean             @default(false)
-  entryCodeDelivery     Boolean             @default(false)
-  ticketEmailTemplate   String?             @db.Text
-  
-  // Event Management
-  testingEnabled        Boolean             @default(false)
-  testResultLogs        Json?               // Array of test logs
-  liveMetrics           Json?               // Real-time metrics
-  customBranding        Json?               // Branding info
-  
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  lastLaunchedBy        String?             // User ID of coordinator
-
-  // Relations
-  entity                Entity              @relation(fields: [entityId], references: [id])
-  coordinator           User?               @relation("EventCoordinator", fields: [eventCoordinatorId], references: [id])
-  tour                  Tour?               @relation(fields: [tourId], references: [id])
-  collaborators         Entity[]            @relation("EventCollaborators")
-  tickets               Ticket[]
-  geofencing            Geofencing?         @relation("EventGeofencing")
-  chatRooms             ChatRoom[]
-  streamingSessions      StreamingSession[]  @relation("EventStreamingSession")
-  analyticsSummaries    AnalyticsSummary[]  @relation("EventAnalytics")
-  orders                Order[]             @relation("EventOrders")
-
-  @@map("events")
+enum GeofencingType {
+  ALLOWLIST
+  BLOCKLIST
 }
 
-model Ticket {
-  id        String   @id @default(uuid())
-  userId    String
-  eventId   String
-  orderId   String?  // Link to order if purchased
-  type      TicketType
-  price     Float?   @default(0)
-  currency  String   @default("USD")
-  entryCode String?  @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  orderItems OrderItem[] @relation("TicketOrderItem")
-
-  @@map("tickets")
+enum NotificationType {
+  LIVE_NOW
+  NEW_DROP
+  PHASE_UPDATE
+  EVENT_CREATED
+  EVENT_UPDATED
+  FOLLOWED_ENTITY_UPDATE
+  CUSTOM
 }
 
-// ============================================
-// Tour Models
-// ============================================
-
-enum TourStatus {
-  DRAFT
-  UPCOMING
-  ACTIVE
+enum OrderStatus {
+  PENDING
+  PROCESSING
   COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
 }
 
-model Tour {
-  id                  String      @id @default(uuid())
-  primaryEntityId     String
-  name                String
-  slug                String      @unique
-  description         String?     @db.Text
-  thumbnail           String?
-  bannerImage         String?
-  startDate           DateTime
-  endDate             DateTime?
-  status              TourStatus  @default(DRAFT)
-  tags                String[]
-  geoRestricted       Boolean     @default(false)
-  streamingAccessLevel StreamingAccessLevel?
-  geoRegions          String[]
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
-  // Relations
-  primaryEntity       Entity      @relation("TourOwner", fields: [primaryEntityId], references: [id])
-  events              Event[]
-  collaborators       Entity[]    @relation("TourCollaborators")
-  store               Store?
-  geofencing          Geofencing? @relation("TourGeofencing")
-
-  @@map("tours")
+enum OrderType {
+  TICKET
+  PRODUCT
+  SUBSCRIPTION
 }
 
-// ============================================
-// Store Models
-// ============================================
+enum PaymentMethod {
+  STRIPE
+  CREDIT_CARD
+  DEBIT_CARD
+}
+
+enum StorageProvider {
+  SUPABASE
+  AWS_S3
+  CLOUDFLARE_R2
+  LOCAL
+}
 
 enum StoreStatus {
   ACTIVE
@@ -322,298 +525,29 @@ enum StoreVisibility {
   PRIVATE
 }
 
-model Store {
-  id            String          @id @default(uuid())
-  entityId      String
-  eventId       String?
-  tourId        String?
-  name          String
-  slug          String          @unique
-  description   String?         @db.Text
-  bannerImage   String?
-  logoUrl       String?
-  currency      String          @default("USD")
-  status        StoreStatus     @default(ACTIVE)
-  visibility    StoreVisibility @default(PUBLIC)
-  collaborators String[]        // Array of entity IDs
-  tags          String[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-
-  // Relations
-  entity        Entity          @relation(fields: [entityId], references: [id])
-  event         Event?
-  tour          Tour?           @relation(fields: [tourId], references: [id])
-  collaboratingEntities Entity[] @relation("StoreCollaborators")
-  products      Product[]
-  geofencing    Geofencing?     @relation("StoreGeofencing")
-  orders        Order[]         @relation("StoreOrders")
-
-  @@map("stores")
-}
-
-model Product {
-  id          String   @id @default(uuid())
-  storeId     String
-  name        String
-  description String?  @db.Text
-  price       Float
-  currency    String   @default("USD")
-  imageUrl    String?
-  isDigital   Boolean  @default(false)
-  isAvailable Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  orderItems OrderItem[] @relation("ProductOrderItem")
-
-  @@map("products")
-}
-
-// ============================================
-// Geofencing Models
-// ============================================
-
-enum GeofencingType {
-  ALLOWLIST
-  BLOCKLIST
-}
-
-enum GeofencingTargetType {
-  EVENT
-  TOUR
-  STORE
-}
-
-model Geofencing {
-  id        String               @id @default(uuid())
-  targetType GeofencingTargetType
-  targetId  String               // Can be eventId, tourId, or storeId (for reference)
-  type      GeofencingType       @default(ALLOWLIST)
-  regions   String[]             // Array of region strings
-  description String?
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-
-  // Optional relations - only one should be set based on targetType
-  eventId String?  @unique
-  tourId  String?  @unique
-  storeId String?  @unique
-
-  event Event? @relation("EventGeofencing", fields: [eventId], references: [id], onDelete: Cascade)
-  tour  Tour?  @relation("TourGeofencing", fields: [tourId], references: [id], onDelete: Cascade)
-  store Store? @relation("StoreGeofencing", fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@map("geofencing")
-}
-
-// ============================================
-// Streaming Models
-// ============================================
-
 enum StreamingAccessLevel {
   PUBLIC
   REGISTERED
   TICKETED
 }
 
-model StreamingSession {
-  id            String              @id @default(uuid())
-  eventId       String
-  entityId      String
-  roomId        String              @unique
-  sessionKey    String
-  accessLevel   StreamingAccessLevel @default(PUBLIC)
-  startTime     DateTime            @default(now())
-  endTime       DateTime?
-  active        Boolean             @default(true)
-  viewers       Int                 @default(0)
-  metrics       Json?               // Real-time metrics (viewers, messages, reactions)
-  geoRegions    String[]            // Allowed regions for geofencing
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-
-  // Relations
-  event Event @relation("EventStreamingSession", fields: [eventId], references: [id], onDelete: Cascade)
-  entity Entity @relation("EntityStreamingSession", fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@map("streaming_sessions")
+enum TicketType {
+  FREE
+  GIFTED
+  PAID
 }
 
-// ============================================
-// Chat & Notifications
-// ============================================
-
-model ChatRoom {
-  id        String   @id @default(uuid())
-  eventId   String
-  name      String?
-  isPrivate Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@map("chat_rooms")
-}
-
-enum NotificationType {
-  LIVE_NOW
-  NEW_DROP
-  PHASE_UPDATE
-  EVENT_CREATED
-  EVENT_UPDATED
-  FOLLOWED_ENTITY_UPDATE
-  CUSTOM
-}
-
-model Notification {
-  id        String           @id @default(uuid())
-  userId    String
-  entityId  String?
-  type      NotificationType
-  message   String
-  metadata  Json?            // Additional data (eventId, productId, etc.)
-  isRead    Boolean          @default(false)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-
-  // Relations
-  user   User    @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
-  entity Entity? @relation("EntityNotifications", fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@map("notifications")
-}
-
-// ============================================
-// Analytics Models
-// ============================================
-
-enum AnalyticsSummaryType {
-  ENTITY
-  EVENT
-  USER
-  PLATFORM
-}
-
-model AnalyticsSummary {
-  id             String                @id @default(uuid())
-  entityId       String?
-  eventId        String?
-  userId         String?
-  type           AnalyticsSummaryType
-  metrics        Json                  // Aggregated data
-  engagementScore Float?
-  createdAt      DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-
-  // Relations
-  entity Entity? @relation("EntityAnalytics", fields: [entityId], references: [id], onDelete: Cascade)
-  event  Event?  @relation("EventAnalytics", fields: [eventId], references: [id], onDelete: Cascade)
-  user   User?   @relation("UserAnalytics", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([entityId, type])
-  @@unique([eventId, type])
-  @@unique([userId, type])
-  @@map("analytics_summaries")
-}
-
-// ============================================
-// Payments Models
-// ============================================
-
-enum OrderStatus {
-  PENDING
-  PROCESSING
+enum TourStatus {
+  DRAFT
+  UPCOMING
+  ACTIVE
   COMPLETED
-  FAILED
-  CANCELLED
-  REFUNDED
 }
 
-enum PaymentMethod {
-  STRIPE
-  CREDIT_CARD
-  DEBIT_CARD
+enum UserRole {
+  USER
+  ENTITY
+  MANAGER
+  COORDINATOR
+  ADMIN
 }
-
-enum OrderType {
-  TICKET
-  PRODUCT
-  SUBSCRIPTION
-}
-
-model Order {
-  id              String      @id @default(uuid())
-  userId          String
-  entityId        String?
-  eventId         String?
-  storeId         String?
-  type            OrderType
-  status          OrderStatus @default(PENDING)
-  totalAmount     Decimal     @db.Decimal(10, 2)
-  currency        String      @default("USD")
-  paymentMethod   PaymentMethod?
-  stripePaymentIntentId String? @unique
-  stripeSessionId String?     @unique
-  metadata        Json?       // Additional order data
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-
-  // Relations
-  user     User      @relation("UserOrders", fields: [userId], references: [id], onDelete: Cascade)
-  entity   Entity?   @relation("EntityOrders", fields: [entityId], references: [id], onDelete: Cascade)
-  event    Event?    @relation("EventOrders", fields: [eventId], references: [id], onDelete: Cascade)
-  store    Store?    @relation("StoreOrders", fields: [storeId], references: [id], onDelete: Cascade)
-  items    OrderItem[]
-  payments Payment[] @relation("OrderPayments")
-
-  @@map("orders")
-}
-
-model OrderItem {
-  id          String   @id @default(uuid())
-  orderId     String
-  ticketId    String?
-  productId   String?
-  quantity    Int      @default(1)
-  unitPrice   Decimal  @db.Decimal(10, 2)
-  totalPrice  Decimal  @db.Decimal(10, 2)
-  name        String   // Product/ticket name at time of purchase
-  description String?
-  metadata    Json?    // Additional item data
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  order   Order   @relation("OrderItems", fields: [orderId], references: [id], onDelete: Cascade)
-  ticket  Ticket? @relation("TicketOrderItem", fields: [ticketId], references: [id], onDelete: SetNull)
-  product Product? @relation("ProductOrderItem", fields: [productId], references: [id], onDelete: SetNull)
-
-  @@map("order_items")
-}
-
-model Payment {
-  id                String      @id @default(uuid())
-  orderId           String
-  amount            Decimal     @db.Decimal(10, 2)
-  currency          String      @default("USD")
-  status            String      // succeeded, pending, failed, refunded
-  paymentMethod     PaymentMethod
-  stripePaymentId  String?     @unique
-  stripeChargeId    String?     @unique
-  refundId          String?     @unique
-  failureReason     String?
-  metadata          Json?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-
-  // Relations
-  order Order @relation("OrderPayments", fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@map("payments")
-}
-

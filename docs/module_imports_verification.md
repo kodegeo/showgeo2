@@ -65,7 +65,7 @@ All modules follow consistent structure:
 ### Guards ✅
 
 **All modules using guards import correctly:**
-- ✅ `JwtAuthGuard` - `from "../../common/guards"`
+- ✅ `SupabaseAuthGuard` - `from "../../common/guards"`
 - ✅ `RolesGuard` - `from "../../common/guards"`
 
 **Files verified:**

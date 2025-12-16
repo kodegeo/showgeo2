@@ -8,10 +8,6 @@ export enum AccessLevel {
 }
 
 export class CreateSessionDto {
-  @ApiProperty()
-  @IsString()
-  eventId: string;
-
   @ApiPropertyOptional({ enum: AccessLevel, default: AccessLevel.PUBLIC })
   @IsOptional()
   @IsEnum(AccessLevel)

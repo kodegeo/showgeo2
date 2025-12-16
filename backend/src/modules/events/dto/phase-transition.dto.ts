@@ -1,6 +1,6 @@
 import { IsEnum, IsOptional, IsDateString } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { EventPhase } from "./create-event.dto";
+import { EventPhase } from "@prisma/client";
 
 export class PhaseTransitionDto {
   @ApiProperty({ enum: EventPhase })

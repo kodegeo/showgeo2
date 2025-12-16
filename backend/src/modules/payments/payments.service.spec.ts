@@ -36,7 +36,7 @@ describe("PaymentsService", () => {
       },
     } as any;
 
-    (Stripe as jest.Mock).mockImplementation(() => mockStripe);
+    (Stripe as unknown as jest.Mock).mockImplementation(() => mockStripe);
 
     const module: TestingModule = await TestUtils.createTestingModule({
       imports: [],
@@ -91,8 +91,8 @@ describe("PaymentsService", () => {
         entityId: "entity-123",
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(event);
-      (prismaService.order.create as jest.Mock).mockResolvedValue({
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
+      (prismaService.orders.create as jest.Mock).mockResolvedValue({
         id: "order-123",
         userId,
         ...createDto,
@@ -111,7 +111,7 @@ describe("PaymentsService", () => {
       expect(result).toHaveProperty("sessionId");
       expect(result).toHaveProperty("url");
       expect(mockStripe.checkout.sessions.create).toHaveBeenCalled();
-      expect(prismaService.order.create).toHaveBeenCalled();
+      expect(prismaService.orders.create).toHaveBeenCalled();
     });
 
     it("should throw BadRequestException if no items provided", async () => {
@@ -136,7 +136,7 @@ describe("PaymentsService", () => {
         ],
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createCheckoutSession(createDto, "user-123")).rejects.toThrow(NotFoundException);
     });
@@ -145,7 +145,7 @@ describe("PaymentsService", () => {
       // Create service without Stripe
       const serviceWithoutStripe = new PaymentsService(prismaService, {
         get: () => undefined,
-      } as ConfigService);
+      } as unknown as ConfigService);
 
       const createDto: CreateCheckoutDto = {
         type: OrderType.TICKET,
@@ -185,7 +185,7 @@ describe("PaymentsService", () => {
         ],
       };
 
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(order);
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(order);
 
       (mockStripe.refunds.create as jest.Mock).mockResolvedValue({
         id: "refund-123",
@@ -204,7 +204,7 @@ describe("PaymentsService", () => {
         orderId: "invalid-order",
       };
 
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createRefund(createRefundDto, "user-123", UserRole.USER)).rejects.toThrow(
         NotFoundException,
@@ -224,7 +224,7 @@ describe("PaymentsService", () => {
         payments: [],
       };
 
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(order);
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(order);
 
       await expect(service.createRefund(createRefundDto, "user-123", UserRole.USER)).rejects.toThrow(
         ForbiddenException,
@@ -250,7 +250,7 @@ describe("PaymentsService", () => {
         ],
       };
 
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(order);
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(order);
 
       (mockStripe.refunds.create as jest.Mock).mockResolvedValue({
         id: "refund-123",
@@ -282,8 +282,8 @@ describe("PaymentsService", () => {
         },
       ];
 
-      (prismaService.order.findMany as jest.Mock).mockResolvedValue(orders);
-      (prismaService.order.count as jest.Mock).mockResolvedValue(2);
+      (prismaService.orders.findMany as jest.Mock).mockResolvedValue(orders);
+      (prismaService.orders.count as jest.Mock).mockResolvedValue(2);
 
       const result = await service.getOrders({}, userId, UserRole.USER);
 
@@ -307,8 +307,8 @@ describe("PaymentsService", () => {
         },
       ];
 
-      (prismaService.order.findMany as jest.Mock).mockResolvedValue(orders);
-      (prismaService.order.count as jest.Mock).mockResolvedValue(2);
+      (prismaService.orders.findMany as jest.Mock).mockResolvedValue(orders);
+      (prismaService.orders.count as jest.Mock).mockResolvedValue(2);
 
       const result = await service.getOrders({ userId: "user-1" }, "admin-123", UserRole.ADMIN);
 
@@ -329,16 +329,16 @@ describe("PaymentsService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(order);
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(order);
 
       const result = await service.getOrder(orderId, userId, UserRole.USER);
 
       expect(result).toHaveProperty("id", orderId);
-      expect(prismaService.order.findUnique).toHaveBeenCalled();
+      expect(prismaService.orders.findUnique).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if order not found", async () => {
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.getOrder("invalid-id", "user-123", UserRole.USER)).rejects.toThrow(NotFoundException);
     });
@@ -350,7 +350,7 @@ describe("PaymentsService", () => {
         status: OrderStatus.COMPLETED,
       };
 
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(order);
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(order);
 
       await expect(service.getOrder("order-123", "user-123", UserRole.USER)).rejects.toThrow(ForbiddenException);
     });
@@ -390,9 +390,9 @@ describe("PaymentsService", () => {
         ],
       };
 
-      (prismaService.order.findUnique as jest.Mock).mockResolvedValue(order);
-      (prismaService.order.update as jest.Mock).mockResolvedValue({ ...order, status: OrderStatus.COMPLETED });
-      (prismaService.payment.create as jest.Mock).mockResolvedValue({
+      (prismaService.orders.findUnique as jest.Mock).mockResolvedValue(order);
+      (prismaService.orders.update as jest.Mock).mockResolvedValue({ ...order, status: OrderStatus.COMPLETED });
+      (prismaService.payments.create as jest.Mock).mockResolvedValue({
         id: "payment-123",
         orderId: "order-123",
       });
@@ -400,7 +400,7 @@ describe("PaymentsService", () => {
       await service.handleWebhook(payload, signature);
 
       expect(mockStripe.webhooks.constructEvent).toHaveBeenCalled();
-      expect(prismaService.order.update).toHaveBeenCalled();
+      expect(prismaService.orders.update).toHaveBeenCalled();
     });
 
     it("should throw BadRequestException if webhook secret not configured", async () => {

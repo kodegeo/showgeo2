@@ -8,7 +8,7 @@
 \f0\fs24 \cf0 # Showgeo Requirements & Development Plan\
 \
 ## Executive Summary\
-Showgeo is a live concert streaming platform that empowers Entity, fans, and managers to connect through shared digital events. It offers live events, chat, virtual commerce, fan management, and AI-based recommendations to enrich every event experience.\
+Showgeo is a live LIVE streaming platform that empowers Entity, fans, and managers to connect through shared digital events. It offers live events, chat, virtual commerce, fan management, and AI-based recommendations to enrich every event experience.\
 \
 ## Core Objectives\
 - Unite: Create shared experiences between fans, Entity, and audiences.\
@@ -51,7 +51,7 @@ Showgeo is a live concert streaming platform that empowers Entity, fans, and man
 ### Streaming & Events\
 - Live event streaming (Agora, Zoom, Webcam support)\
 - Phased event launch
-	- Pre-concert testing and entertainment launch
+	- Pre-LIVE testing and entertainment launch
 	- Stream phase lifecycle and coordinator controls
 	- Post-event fan meetups
 - Real-time event viewer count & chat\
@@ -153,7 +153,7 @@ Showgeo is a live concert streaming platform that empowers Entity, fans, and man
 
 - Events progress through structured **phases**:
   - Pre-Event (testing, hangouts, warmups)
-  - Live Concert (streaming, interaction, performance)
+  - Live LIVE (streaming, interaction, performance)
   - Post-Event (attendee chat, meet-and-greet)
 - Coordinators can launch, delay, or extend each phase.
 

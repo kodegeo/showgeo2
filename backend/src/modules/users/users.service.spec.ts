@@ -43,20 +43,20 @@ describe("UsersService", () => {
       };
 
       const user = await TestUtils.createTestUser({ id: userId });
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue({
         ...user,
         profile: null,
       });
-      (prismaService.userProfile.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.user_profiles.findUnique as jest.Mock).mockResolvedValue(null);
 
       const result = await service.createUserProfile(userId, createDto);
 
       expect(result).toHaveProperty("username", createDto.username);
-      expect(prismaService.userProfile.create).toHaveBeenCalled();
+      expect(prismaService.user_profiles.create).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if user not found", async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createUserProfile("invalid-id", {} as CreateUserProfileDto)).rejects.toThrow(
         NotFoundException,
@@ -66,7 +66,7 @@ describe("UsersService", () => {
     it("should throw ConflictException if profile already exists", async () => {
       const userId = "user-123";
       const user = await TestUtils.createTestUser({ id: userId });
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue({
         ...user,
         profile: { id: "profile-123" },
       });
@@ -84,8 +84,8 @@ describe("UsersService", () => {
       };
 
       const user = await TestUtils.createTestUser({ id: userId });
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.userProfile.findUnique as jest.Mock).mockResolvedValue({
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
+      (prismaService.user_profiles.findUnique as jest.Mock).mockResolvedValue({
         id: "profile-123",
         userId,
         bio: "Old bio",
@@ -94,11 +94,11 @@ describe("UsersService", () => {
       const result = await service.updateProfile(userId, updateDto);
 
       expect(result).toHaveProperty("bio", updateDto.bio);
-      expect(prismaService.userProfile.update).toHaveBeenCalled();
+      expect(prismaService.user_profiles.update).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if user not found", async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.updateProfile("invalid-id", {} as UpdateUserProfileDto)).rejects.toThrow(NotFoundException);
     });
@@ -107,30 +107,30 @@ describe("UsersService", () => {
   describe("findAll", () => {
     it("should return paginated list of users", async () => {
       const users = [await TestUtils.createTestUser(), await TestUtils.createTestUser()];
-      (prismaService.user.findMany as jest.Mock).mockResolvedValue(users);
-      (prismaService.user.count as jest.Mock).mockResolvedValue(2);
+      (prismaService.app_users.findMany as jest.Mock).mockResolvedValue(users);
+      (prismaService.app_users.count as jest.Mock).mockResolvedValue(2);
 
-      const result = await service.findAll({ page: 1, limit: 10 });
+      const result = await service.findAll(1, 10);
 
       expect(result.data).toHaveLength(2);
       expect(result.meta.total).toBe(2);
-      expect(prismaService.user.findMany).toHaveBeenCalled();
+      expect(prismaService.app_users.findMany).toHaveBeenCalled();
     });
   });
 
   describe("findOne", () => {
     it("should return user by id", async () => {
       const user = await TestUtils.createTestUser();
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(user);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
 
       const result = await service.findOne(user.id);
 
       expect(result).toHaveProperty("id", user.id);
-      expect(prismaService.user.findUnique).toHaveBeenCalledWith({ where: { id: user.id } });
+      expect(prismaService.app_users.findUnique).toHaveBeenCalledWith({ where: { id: user.id } });
     });
 
     it("should throw NotFoundException if user not found", async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findOne("invalid-id")).rejects.toThrow(NotFoundException);
     });
@@ -139,16 +139,16 @@ describe("UsersService", () => {
   describe("delete", () => {
     it("should successfully delete user", async () => {
       const user = await TestUtils.createTestUser();
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.user.delete as jest.Mock).mockResolvedValue(user);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
+      (prismaService.app_users.delete as jest.Mock).mockResolvedValue(user);
 
       await service.delete(user.id);
 
-      expect(prismaService.user.delete).toHaveBeenCalledWith({ where: { id: user.id } });
+      expect(prismaService.app_users.delete).toHaveBeenCalledWith({ where: { id: user.id } });
     });
 
     it("should throw NotFoundException if user not found", async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.delete("invalid-id")).rejects.toThrow(NotFoundException);
     });

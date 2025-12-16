@@ -12,9 +12,10 @@ import {
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { FollowService } from "./follow.service";
-import { JwtAuthGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { CurrentUser, Public } from "../../common/decorators";
-import { User, UserRole } from "@prisma/client";
+
+type User = any;
 
 @ApiTags("follow")
 @Controller("follow")
@@ -22,7 +23,7 @@ export class FollowController {
   constructor(private readonly followService: FollowService) {}
 
   @Post(":entityId")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Follow an entity (authenticated)" })
   @ApiParam({ name: "entityId", type: String })
@@ -36,7 +37,7 @@ export class FollowController {
   }
 
   @Delete(":entityId")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Unfollow an entity (authenticated)" })
@@ -85,7 +86,7 @@ export class FollowController {
   }
 
   @Get("status/:entityId")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Check if current user follows entity (authenticated)" })
   @ApiParam({ name: "entityId", type: String })

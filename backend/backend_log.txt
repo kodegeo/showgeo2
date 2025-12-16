@@ -1,0 +1,651 @@
+
+> showgeo-api@2.0.0 start:dev
+> nest start --watch
+
+
+ Info  Webpack is building your sources...
+
+webpack 5.97.1 compiled [1m[32msuccessfully[39m[22m in 489 ms
+(node:89212) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Type-checking in progress...
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:55 AM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPassportModule dependencies initialized[39m[38;5;3m +20ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +29ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJwtModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mEventsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mUsersModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mEntitiesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mFollowModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mStoreModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAnalyticsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAssetsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mStreamingModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPaymentsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mNotificationsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[WebSocketsController] [39m[32mNotificationGateway subscribed to the "ping" message[39m[38;5;3m +26ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/api}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/health, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/api/auth}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/register, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/login, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/refresh, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/auth/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mEventsController {/api/events}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id/metrics, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id/phase/transition, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id/phase/extend, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id/metrics, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/events/:id/test-results, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mUsersController {/api/users}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/username/:username, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id/entities, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id/convert-to-entity, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/users/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mEntitiesController {/api/entities}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities/slug/:slug, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities/:id/collaborators, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities/:id/collaborators/:userId, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/entities/:id/collaborators, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mFollowController {/api/follow}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/follow/:entityId, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/follow/:entityId, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/follow/:entityId/followers, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/follow/user/:userId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/follow/status/:entityId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/follow/counts/entity/:entityId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/follow/counts/user/:userId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mStoreController {/api/stores}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores/entity/:entityId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores/:id/products, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores/products/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/stores/products/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mStreamingController {/api/streaming}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/streaming/session/:eventId, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/streaming/token/:eventId, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/streaming/session/:id/end, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/streaming/active, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/streaming/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/streaming/:id/metrics, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/streaming/validate-geofence, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mNotificationsController {/api/notifications}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/notifications, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/notifications/unread-count, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/notifications/:id/read, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/notifications/clear, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/notifications/test, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAnalyticsController {/api/analytics}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/analytics/entity/:entityId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/analytics/event/:eventId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/analytics/user/:userId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/analytics/overview, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/analytics/recommendations/:userId, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/analytics/update, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mPaymentsController {/api/payments}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/payments/checkout, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/payments/webhook, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/payments/orders, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/payments/orders/:id, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/payments/refund, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAssetsController {/api/assets}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/assets/upload, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/assets, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/assets/:id, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/assets/:id/url, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 89229  - [39m11/02/2025, 5:16:56 AM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/api/assets/:id, DELETE} route[39m[38;5;3m +0ms[39m
+/Users/khalidmorris/dev/web/showgeo-2/backend/node_modules/@prisma/client/runtime/library.js:112
+You may have to run ${qe("prisma generate")} for your changes to take effect.`,this.config.clientVersion);return t}}parseEngineResponse(t){if(!t)throw new B("Response from the Engine was empty",{clientVersion:this.config.clientVersion});try{return JSON.parse(t)}catch{throw new B("Unable to JSON.parse response from engine",{clientVersion:this.config.clientVersion})}}async loadEngine(){if(!this.engine){this.QueryEngineConstructor||(this.library=await this.libraryLoader.loadLibrary(this.config),this.QueryEngineConstructor=this.library.QueryEngine);try{let t=new WeakRef(this),{adapter:r}=this.config;r&&Ae("Using driver adapter: %O",r),this.engine=new this.QueryEngineConstructor({datamodel:this.datamodel,env:process.env,logQueries:this.config.logQueries??!1,ignoreEnvVarErrors:!0,datasourceOverrides:this.datasourceOverrides??{},logLevel:this.logLevel,configDir:this.config.cwd,engineProtocol:"json"},n=>{t.deref()?.logger(n)},r)}catch(t){let r=t,n=this.parseInitError(r.message);throw typeof n=="string"?r:new R(n.message,this.config.clientVersion,n.error_code)}}}logger(t){let r=this.parseEngineResponse(t);if(r){if("span"in r){this.config.tracingHelper.createEngineSpan(r);return}r.level=r?.level.toLowerCase()??"unknown",fm(r)?this.logEmitter.emit("query",{timestamp:new Date,query:r.query,params:r.params,duration:Number(r.duration_ms),target:r.module_path}):gm(r)?this.loggerRustPanic=new le(lo(this,`${r.message}: ${r.reason} in ${r.file}:${r.line}:${r.column}`),this.config.clientVersion):this.logEmitter.emit(r.level,{timestamp:new Date,message:r.message,target:r.module_path})}}parseInitError(t){try{return JSON.parse(t)}catch{}return t}parseRequestError(t){try{return JSON.parse(t)}catch{}return t}onBeforeExit(){throw new Error('"beforeExit" hook is not applicable to the library engine since Prisma 5.0.0, it is only relevant and implemented for the binary engine. Please add your event listener to the `process` object directly instead.')}async start(){if(await this.libraryInstantiationPromise,await this.libraryStoppingPromise,this.libraryStartingPromise)return Ae(`library already starting, this.libraryStarted: ${this.libraryStarted}`),this.libraryStartingPromise;if(this.libraryStarted)return;let t=async()=>{Ae("library starting");try{let r={traceparent:this.config.tracingHelper.getTraceParent()};await this.engine?.connect(JSON.stringify(r)),this.libraryStarted=!0,Ae("library started")}catch(r){let n=this.parseInitError(r.message);throw typeof n=="string"?r:new R(n.message,this.config.clientVersion,n.error_code)}finally{this.libraryStartingPromise=void 0}};return this.libraryStartingPromise=this.config.tracingHelper.runInChildSpan("connect",t),this.libraryStartingPromise}async stop(){if(await this.libraryStartingPromise,await this.executingQueryPromise,this.libraryStoppingPromise)return Ae("library is already stopping"),this.libraryStoppingPromise;if(!this.libraryStarted)return;let t=async()=>{await new Promise(n=>setTimeout(n,5)),Ae("library stopping");let r={traceparent:this.config.tracingHelper.getTraceParent()};await this.engine?.disconnect(JSON.stringify(r)),this.libraryStarted=!1,this.libraryStoppingPromise=void 0,Ae("library stopped")};return this.libraryStoppingPromise=this.config.tracingHelper.runInChildSpan("disconnect",t),this.libraryStoppingPromise}version(){return this.versionInfo=this.library?.version(),this.versionInfo?.version??"unknown"}debugPanic(t){return this.library?.debugPanic(t)}async request(t,{traceparent:r,interactiveTransaction:n}){Ae(`sending request, this.libraryStarted: ${this.libraryStarted}`);let i=JSON.stringify({traceparent:r}),o=JSON.stringify(t);try{await this.start(),this.executingQueryPromise=this.engine?.query(o,i,n?.id),this.lastQuery=o;let s=this.parseEngineResponse(await this.executingQueryPromise);if(s.errors)throw s.errors.length===1?this.buildQueryError(s.errors[0]):new B(JSON.stringify(s.errors),{clientVersion:this.config.clientVersion});if(this.loggerRustPanic)throw this.loggerRustPanic;return{data:s,elapsed:0}}catch(s){if(s instanceof R)throw s;if(s.code==="GenericFailure"&&s.message?.startsWith("PANIC:"))throw new le(lo(this,s.message),this.config.clientVersion);let a=this.parseRequestError(s.message);throw typeof a=="string"?s:new B(`${a.message}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+
+PrismaClientInitializationError: Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+    at t (/Users/khalidmorris/dev/web/showgeo-2/backend/node_modules/@prisma/client/runtime/library.js:112:2488)
+    at async Proxy.onModuleInit (/Users/khalidmorris/dev/web/showgeo-2/backend/dist/main.js:9433:9)
+    at async Promise.all (index 0)
+    at async callModuleInitHook (/Users/khalidmorris/dev/web/showgeo-2/backend/node_modules/@nestjs/core/hooks/on-module-init.hook.js:43:5)
+    at async NestApplication.callInitHook (/Users/khalidmorris/dev/web/showgeo-2/backend/node_modules/@nestjs/core/nest-application-context.js:234:13)
+    at async NestApplication.init (/Users/khalidmorris/dev/web/showgeo-2/backend/node_modules/@nestjs/core/nest-application.js:100:9)
+    at async NestApplication.listen (/Users/khalidmorris/dev/web/showgeo-2/backend/node_modules/@nestjs/core/nest-application.js:170:13)
+    at async bootstrap (/Users/khalidmorris/dev/web/showgeo-2/backend/dist/main.js:9700:5) {
+  clientVersion: '5.22.0',
+  errorCode: 'P1001'
+}
+
+Node.js v24.10.0
+ERROR in ./src/modules/analytics/analytics.service.ts:279:39
+TS2615: Type of property 'AND' circularly references itself in mapped type '{ [K in keyof { AND?: NotificationScalarWhereWithAggregatesInput | NotificationScalarWhereWithAggregatesInput[]; ... 10 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never : {} extends FieldPaths<...> ?...'.
+    277 |
+    278 |     // Get most engaged entities (by notifications received)
+  > 279 |     const entityNotifications = await this.prisma.notification.groupBy({
+        |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 280 |       by: ["entityId"],
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 281 |       where: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 282 |         userId,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 283 |         entityId: { not: null },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 284 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 285 |       _count: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 286 |         id: true,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 287 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 288 |       orderBy: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 289 |         _count: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 290 |           id: "desc",
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 291 |         },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 292 |         take: 5,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 293 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 294 |     });
+        | ^^^^^^^
+    295 |
+    296 |     const mostEngagedEntities = await Promise.all(
+    297 |       entityNotifications.map(async (notif) => {
+
+ERROR in ./src/modules/analytics/analytics.service.ts:279:39
+TS2615: Type of property 'NOT' circularly references itself in mapped type '{ [K in keyof { AND?: NotificationScalarWhereWithAggregatesInput | NotificationScalarWhereWithAggregatesInput[]; ... 10 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never : {} extends FieldPaths<...> ?...'.
+    277 |
+    278 |     // Get most engaged entities (by notifications received)
+  > 279 |     const entityNotifications = await this.prisma.notification.groupBy({
+        |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 280 |       by: ["entityId"],
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 281 |       where: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 282 |         userId,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 283 |         entityId: { not: null },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 284 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 285 |       _count: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 286 |         id: true,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 287 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 288 |       orderBy: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 289 |         _count: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 290 |           id: "desc",
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 291 |         },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 292 |         take: 5,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 293 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 294 |     });
+        | ^^^^^^^
+    295 |
+    296 |     const mostEngagedEntities = await Promise.all(
+    297 |       entityNotifications.map(async (notif) => {
+
+ERROR in ./src/modules/analytics/analytics.service.ts:279:39
+TS2615: Type of property 'OR' circularly references itself in mapped type '{ [K in keyof { AND?: NotificationScalarWhereWithAggregatesInput | NotificationScalarWhereWithAggregatesInput[]; ... 10 more ...; updatedAt?: string | ... 1 more ... | DateTimeWithAggregatesFilter<...>; }]: Or<...> extends 1 ? { ...; }[K] extends infer TK ? GetHavingFields<...> : never : {} extends FieldPaths<...> ?...'.
+    277 |
+    278 |     // Get most engaged entities (by notifications received)
+  > 279 |     const entityNotifications = await this.prisma.notification.groupBy({
+        |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 280 |       by: ["entityId"],
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 281 |       where: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 282 |         userId,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 283 |         entityId: { not: null },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 284 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 285 |       _count: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 286 |         id: true,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 287 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 288 |       orderBy: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 289 |         _count: {
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 290 |           id: "desc",
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 291 |         },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 292 |         take: 5,
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 293 |       },
+        | ^^^^^^^^^^^^^^^^^^^^^^^
+  > 294 |     });
+        | ^^^^^^^
+    295 |
+    296 |     const mostEngagedEntities = await Promise.all(
+    297 |       entityNotifications.map(async (notif) => {
+
+ERROR in ./src/modules/analytics/analytics.service.ts:468:32
+TS2339: Property 'type' does not exist on type '{ name: string; thumbnail: string; slug: string; }'.
+    466 |       entityName: event.entity.name,
+    467 |       entitySlug: event.entity.slug,
+  > 468 |       entityType: event.entity.type || "ENTITY",
+        |                                ^^^^
+    469 |       score: 0.8, // Base score for upcoming events
+    470 |       reasons: [`Upcoming event: ${event.name}`, `From ${event.entity.name}`],
+    471 |       thumbnail: event.thumbnail || event.entity.thumbnail || undefined,
+
+ERROR in ./src/modules/assets/assets.controller.ts:75:35
+TS2694: Namespace 'global.Express' has no exported member 'Multer'.
+    73 |   @ApiResponse({ status: 403, description: "Forbidden - insufficient permissions" })
+    74 |   async upload(
+  > 75 |     @UploadedFile() file: Express.Multer.File,
+       |                                   ^^^^^^
+    76 |     @Body() uploadDto: UploadAssetDto,
+    77 |     @CurrentUser() user: User,
+    78 |   ) {
+
+ERROR in ./src/modules/assets/assets.service.ts:28:19
+TS2694: Namespace 'global.Express' has no exported member 'Multer'.
+    26 |    */
+    27 |   async uploadAsset(
+  > 28 |     file: Express.Multer.File,
+       |                   ^^^^^^
+    29 |     uploadDto: UploadAssetDto,
+    30 |     userId: string,
+    31 |     userRole: UserRole,
+
+ERROR in ./src/modules/assets/assets.service.ts:204:38
+TS2694: Namespace 'global.Express' has no exported member 'Multer'.
+    202 |    * Validate file against type constraints
+    203 |    */
+  > 204 |   private validateFile(file: Express.Multer.File, type: AssetType): void {
+        |                                      ^^^^^^
+    205 |     const allowedMimeTypes: Record<AssetType, string[]> = {
+    206 |       [AssetType.IMAGE]: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"],
+    207 |       [AssetType.AUDIO]: ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/webm"],
+
+ERROR in ./src/modules/assets/assets.service.ts:261:141
+TS2345: Argument of type 'EntityRoleType' is not assignable to parameter of type '"MANAGER" | "ADMIN" | "OWNER"'.
+  Type '"COORDINATOR"' is not assignable to type '"MANAGER" | "ADMIN" | "OWNER"'.
+    259 |       const hasAccess =
+    260 |         entity.ownerId === userId ||
+  > 261 |         entity.roles.some((role) => role.userId === userId && [EntityRoleType.OWNER, EntityRoleType.ADMIN, EntityRoleType.MANAGER].includes(role.role)) ||
+        |                                                                                                                                             ^^^^^^^^^
+    262 |         userRole === UserRole.ADMIN;
+    263 |
+    264 |       if (!hasAccess) {
+
+ERROR in ./src/modules/assets/assets.service.ts:285:139
+TS2345: Argument of type 'EntityRoleType' is not assignable to parameter of type '"MANAGER" | "ADMIN" | "OWNER"'.
+  Type '"COORDINATOR"' is not assignable to type '"MANAGER" | "ADMIN" | "OWNER"'.
+    283 |     return (
+    284 |       entity.ownerId === userId ||
+  > 285 |       entity.roles.some((role) => role.userId === userId && [EntityRoleType.OWNER, EntityRoleType.ADMIN, EntityRoleType.MANAGER].includes(role.role))
+        |                                                                                                                                           ^^^^^^^^^
+    286 |     );
+    287 |   }
+    288 |
+
+ERROR in ./src/modules/assets/assets.service.ts:304:19
+TS2694: Namespace 'global.Express' has no exported member 'Multer'.
+    302 |    */
+    303 |   private async uploadToStorage(
+  > 304 |     file: Express.Multer.File,
+        |                   ^^^^^^
+    305 |     filePath: string,
+    306 |     provider: StorageProvider,
+    307 |   ): Promise<string> {
+
+ERROR in ./src/modules/assets/assets.service.ts:331:41
+TS2694: Namespace 'global.Express' has no exported member 'Multer'.
+    329 |    * Extract metadata from file
+    330 |    */
+  > 331 |   private extractMetadata(file: Express.Multer.File, type: AssetType): Record<string, any> {
+        |                                         ^^^^^^
+    332 |     const metadata: Record<string, any> = {
+    333 |       originalName: file.originalname,
+    334 |     };
+
+ERROR in ./src/modules/auth/auth.service.spec.ts:174:49
+TS2345: Argument of type 'string' is not assignable to parameter of type 'RefreshTokenDto'.
+    172 |       (jwtService.verify as jest.Mock).mockReturnValue({ sub: user.id, email: user.email });
+    173 |
+  > 174 |       const result = await service.refreshToken(refreshTokenDto.refreshToken);
+        |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    175 |
+    176 |       expect(result).toHaveProperty("accessToken");
+    177 |       expect(result).toHaveProperty("refreshToken");
+
+ERROR in ./src/modules/auth/auth.service.spec.ts:186:41
+TS2345: Argument of type 'string' is not assignable to parameter of type 'RefreshTokenDto'.
+    184 |       });
+    185 |
+  > 186 |       await expect(service.refreshToken("invalid-token")).rejects.toThrow(UnauthorizedException);
+        |                                         ^^^^^^^^^^^^^^^
+    187 |     });
+    188 |   });
+    189 | });
+
+ERROR in ./src/modules/events/events.service.spec.ts:43:9
+TS2322: Type 'Date' is not assignable to type 'string'.
+    41 |         description: "Test description",
+    42 |         type: EventType.LIVE,
+  > 43 |         startTime: new Date(),
+       |         ^^^^^^^^^
+    44 |         endTime: new Date(Date.now() + 3600000),
+    45 |         phase: EventPhase.PRE_LIVE,
+    46 |         status: EventStatus.SCHEDULED,
+
+ERROR in ./src/modules/events/events.service.spec.ts:44:9
+TS2322: Type 'Date' is not assignable to type 'string'.
+    42 |         type: EventType.LIVE,
+    43 |         startTime: new Date(),
+  > 44 |         endTime: new Date(Date.now() + 3600000),
+       |         ^^^^^^^
+    45 |         phase: EventPhase.PRE_LIVE,
+    46 |         status: EventStatus.SCHEDULED,
+    47 |       };
+
+ERROR in ./src/modules/events/events.service.spec.ts:69:9
+TS2322: Type 'Date' is not assignable to type 'string'.
+    67 |         name: "Test Event",
+    68 |         type: EventType.LIVE,
+  > 69 |         startTime: new Date(),
+       |         ^^^^^^^^^
+    70 |         endTime: new Date(),
+    71 |         phase: EventPhase.PRE_LIVE,
+    72 |         status: EventStatus.SCHEDULED,
+
+ERROR in ./src/modules/events/events.service.spec.ts:70:9
+TS2322: Type 'Date' is not assignable to type 'string'.
+    68 |         type: EventType.LIVE,
+    69 |         startTime: new Date(),
+  > 70 |         endTime: new Date(),
+       |         ^^^^^^^
+    71 |         phase: EventPhase.PRE_LIVE,
+    72 |         status: EventStatus.SCHEDULED,
+    73 |       };
+
+ERROR in ./src/modules/events/events.service.spec.ts:151:75
+TS2554: Expected 3 arguments, but got 4.
+    149 |       });
+    150 |
+  > 151 |       const result = await service.update(eventId, updateDto, "user-123", "USER");
+        |                                                                           ^^^^^^
+    152 |
+    153 |       expect(result).toHaveProperty("name", updateDto.name);
+    154 |       expect(prismaService.event.update).toHaveBeenCalled();
+
+ERROR in ./src/modules/events/events.service.spec.ts:160:65
+TS2554: Expected 3 arguments, but got 4.
+    158 |       (prismaService.event.findUnique as jest.Mock).mockResolvedValue(null);
+    159 |
+  > 160 |       await expect(service.update("invalid-id", {}, "user-123", "USER")).rejects.toThrow(NotFoundException);
+        |                                                                 ^^^^^^
+    161 |     });
+    162 |   });
+    163 |
+
+ERROR in ./src/modules/events/events.service.ts:20:7
+TS2322: Type '{ ticketTypes: any; geoRegions: string[]; lastLaunchedBy: string; collaborators: { connect: { id: string; }[]; }; name: string; description?: string; thumbnail?: string; eventType: EventType; phase: EventPhase; ... 18 more ...; customBranding?: Record<string, unknown>; }' is not assignable to type '(Without<EventCreateInput, EventUncheckedCreateInput> & EventUncheckedCreateInput) | (Without<...> & EventCreateInput)'.
+  Type '{ ticketTypes: any; geoRegions: string[]; lastLaunchedBy: string; collaborators: { connect: { id: string; }[]; }; name: string; description?: string; thumbnail?: string; eventType: EventType; phase: EventPhase; ... 18 more ...; customBranding?: Record<string, unknown>; }' is not assignable to type 'Without<EventUncheckedCreateInput, EventCreateInput> & EventCreateInput'.
+    Type '{ ticketTypes: any; geoRegions: string[]; lastLaunchedBy: string; collaborators: { connect: { id: string; }[]; }; name: string; description?: string; thumbnail?: string; eventType: EventType; phase: EventPhase; ... 18 more ...; customBranding?: Record<string, unknown>; }' is not assignable to type 'Without<EventUncheckedCreateInput, EventCreateInput>'.
+      Types of property 'entityId' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+    18 |
+    19 |     const event = await this.prisma.event.create({
+  > 20 |       data: {
+       |       ^^^^
+    21 |         ...eventData,
+    22 |         ticketTypes: ticketTypesJson,
+    23 |         geoRegions,
+
+ERROR in ./src/modules/events/events.service.ts:181:7
+TS2322: Type '{ collaborators: { set: { id: string; }[]; }; lastLaunchedBy: string; ticketTypes: any; name?: string; description?: string; thumbnail?: string; eventType?: EventType; phase?: EventPhase; startTime?: string; ... 18 more ...; customBranding?: Record<string, unknown>; }' is not assignable to type '(Without<EventUpdateInput, EventUncheckedUpdateInput> & EventUncheckedUpdateInput) | (Without<...> & EventUpdateInput)'.
+  Type '{ collaborators: { set: { id: string; }[]; }; lastLaunchedBy: string; ticketTypes: any; name?: string; description?: string; thumbnail?: string; eventType?: EventType; phase?: EventPhase; startTime?: string; ... 18 more ...; customBranding?: Record<string, unknown>; }' is not assignable to type 'Without<EventUncheckedUpdateInput, EventUpdateInput> & EventUpdateInput'.
+    Type '{ collaborators: { set: { id: string; }[]; }; lastLaunchedBy: string; ticketTypes: any; name?: string; description?: string; thumbnail?: string; eventType?: EventType; phase?: EventPhase; startTime?: string; ... 18 more ...; customBranding?: Record<string, unknown>; }' is not assignable to type 'Without<EventUncheckedUpdateInput, EventUpdateInput>'.
+      Types of property 'entityId' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+    179 |     const updated = await this.prisma.event.update({
+    180 |       where: { id },
+  > 181 |       data: {
+        |       ^^^^
+    182 |         ...updateData,
+    183 |         ...(ticketTypesJson && { ticketTypes: ticketTypesJson }),
+    184 |         lastLaunchedBy: updatedBy,
+
+ERROR in ./src/modules/events/events.service.ts:212:60
+TS2345: Argument of type 'import("/Users/khalidmorris/dev/web/showgeo-2/backend/node_modules/.prisma/client/index").$Enums.EventPhase' is not assignable to parameter of type 'import("/Users/khalidmorris/dev/web/showgeo-2/backend/src/modules/events/dto/create-event.dto").EventPhase'.
+  Type '"PRE_LIVE"' is not assignable to type 'EventPhase'.
+    210 |
+    211 |     // Validate phase transition
+  > 212 |     const validTransitions = this.getValidPhaseTransitions(event.phase);
+        |                                                            ^^^^^^^^^^^
+    213 |     if (!validTransitions.includes(phaseTransitionDto.phase)) {
+    214 |       throw new BadRequestException(
+    215 |         `Invalid phase transition from ${event.phase} to ${phaseTransitionDto.phase}`,
+
+ERROR in ./src/modules/events/events.service.ts:302:26
+TS2322: Type 'Record<string, unknown>' is not assignable to type 'InputJsonValue'.
+  Type 'Record<string, unknown>' is missing the following properties from type 'readonly InputJsonValue[]': length, concat, join, slice, and 20 more.
+    300 |       where: { id },
+    301 |       data: {
+  > 302 |         testResultLogs: [...currentLogs, newLog],
+        |                          ^^^^^^^^^^^^^^
+    303 |         lastLaunchedBy: userId,
+    304 |       },
+    305 |     });
+
+ERROR in ./src/modules/events/events.service.ts:302:42
+TS2322: Type 'Record<string, unknown> | { timestamp: string; userId: string; }' is not assignable to type 'InputJsonValue'.
+  Type 'Record<string, unknown>' is not assignable to type 'InputJsonValue'.
+    Type 'Record<string, unknown>' is missing the following properties from type 'readonly InputJsonValue[]': length, concat, join, slice, and 20 more.
+    300 |       where: { id },
+    301 |       data: {
+  > 302 |         testResultLogs: [...currentLogs, newLog],
+        |                                          ^^^^^^
+    303 |         lastLaunchedBy: userId,
+    304 |       },
+    305 |     });
+
+ERROR in ./src/modules/notifications/notifications.service.ts:47:9
+TS2322: Type 'Record<string, unknown>' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue'.
+  Type 'Record<string, unknown>' is missing the following properties from type 'readonly InputJsonValue[]': length, concat, join, slice, and 20 more.
+    45 |         type,
+    46 |         message,
+  > 47 |         metadata: metadata || {},
+       |         ^^^^^^^^
+    48 |         isRead: false,
+    49 |       },
+    50 |       include: {
+
+ERROR in ./src/modules/notifications/notifications.service.ts:105:13
+TS2322: Type 'Record<string, unknown>' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue'.
+  Type 'Record<string, unknown>' is missing the following properties from type 'readonly InputJsonValue[]': length, concat, join, slice, and 20 more.
+    103 |             type,
+    104 |             message,
+  > 105 |             metadata: metadata || {},
+        |             ^^^^^^^^
+    106 |             isRead: false,
+    107 |           },
+    108 |           include: {
+
+ERROR in ./src/modules/payments/payments.service.spec.ts:39:6
+TS2352: Conversion of type 'typeof Stripe' to type 'Mock<any, any, any>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'typeof Stripe' is missing the following properties from type 'Mock<any, any, any>': getMockName, mock, mockClear, mockReset, and 13 more.
+    37 |     } as any;
+    38 |
+  > 39 |     (Stripe as jest.Mock).mockImplementation(() => mockStripe);
+       |      ^^^^^^^^^^^^^^^^^^^
+    40 |
+    41 |     const module: TestingModule = await TestUtils.createTestingModule({
+    42 |       imports: [],
+
+ERROR in ./src/modules/payments/payments.service.spec.ts:146:71
+TS2352: Conversion of type '{ get: () => any; }' to type 'ConfigService<Record<string, unknown>, false>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ get: () => any; }' is missing the following properties from type 'ConfigService<Record<string, unknown>, false>': internalConfig, isCacheEnabled, cache, _changes$, and 13 more.
+    144 |     it("should throw BadRequestException if Stripe not configured", async () => {
+    145 |       // Create service without Stripe
+  > 146 |       const serviceWithoutStripe = new PaymentsService(prismaService, {
+        |                                                                       ^
+  > 147 |         get: () => undefined,
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  > 148 |       } as ConfigService);
+        | ^^^^^^^^^^^^^^^^^^^^^^^^^
+    149 |
+    150 |       const createDto: CreateCheckoutDto = {
+    151 |         type: OrderType.TICKET,
+
+ERROR in ./src/modules/payments/payments.service.ts:19:9
+TS2322: Type '"2024-10-28.acacia"' is not assignable to type '"2023-10-16"'.
+    17 |     if (stripeSecretKey) {
+    18 |       this.stripe = new Stripe(stripeSecretKey, {
+  > 19 |         apiVersion: "2024-10-28.acacia",
+       |         ^^^^^^^^^^
+    20 |       });
+    21 |     }
+    22 |   }
+
+ERROR in ./src/modules/payments/payments.service.ts:230:15
+TS2322: Type '{ userId: string; eventId: string; orderId: string; }' is not assignable to type '(Without<TicketCreateInput, TicketUncheckedCreateInput> & TicketUncheckedCreateInput) | (Without<...> & TicketCreateInput)'.
+  Type '{ userId: string; eventId: string; orderId: string; }' is not assignable to type 'Without<TicketUncheckedCreateInput, TicketCreateInput> & TicketCreateInput'.
+    Type '{ userId: string; eventId: string; orderId: string; }' is not assignable to type 'Without<TicketUncheckedCreateInput, TicketCreateInput>'.
+      Types of property 'userId' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+    228 |           for (let i = 0; i < item.quantity; i++) {
+    229 |             await this.prisma.ticket.create({
+  > 230 |               data: {
+        |               ^^^^
+    231 |                 userId: order.userId,
+    232 |                 eventId: order.eventId!,
+    233 |                 orderId,
+
+ERROR in ./src/modules/store/store.service.spec.ts:232:21
+TS2339: Property 'removeStore' does not exist on type 'StoreService'.
+    230 |       (prismaService.store.delete as jest.Mock).mockResolvedValue(store);
+    231 |
+  > 232 |       await service.removeStore(storeId, "user-123", UserRole.USER);
+        |                     ^^^^^^^^^^^
+    233 |
+    234 |       expect(prismaService.store.delete).toHaveBeenCalledWith({ where: { id: storeId } });
+    235 |     });
+
+ERROR in ./src/modules/store/store.service.spec.ts:240:28
+TS2339: Property 'removeStore' does not exist on type 'StoreService'.
+    238 |       (prismaService.store.findUnique as jest.Mock).mockResolvedValue(null);
+    239 |
+  > 240 |       await expect(service.removeStore("invalid-id", "user-123", UserRole.USER)).rejects.toThrow(NotFoundException);
+        |                            ^^^^^^^^^^^
+    241 |     });
+    242 |   });
+    243 | });
+
+ERROR in ./src/modules/store/store.service.ts:495:33
+TS2551: Property 'entity' does not exist on type '{ name: string; description: string; id: string; createdAt: Date; updatedAt: Date; visibility: StoreVisibility; tags: string[]; currency: string; status: StoreStatus; ... 6 more ...; logoUrl: string; }'. Did you mean 'entityId'?
+    493 |
+    494 |     // Only owner or admin can delete
+  > 495 |     if (store.entityId && store.entity.ownerId !== userId && userRole !== UserRole.ADMIN) {
+        |                                 ^^^^^^
+    496 |       throw new ForbiddenException("Only owner or admin can delete store");
+    497 |     }
+    498 |
+
+ERROR in ./src/modules/streaming/streaming.service.ts:85:9
+TS2322: Type 'Record<string, unknown>' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue'.
+  Type 'Record<string, unknown>' is missing the following properties from type 'readonly InputJsonValue[]': length, concat, join, slice, and 20 more.
+    83 |         sessionKey,
+    84 |         accessLevel: accessLevel || AccessLevel.PUBLIC,
+  > 85 |         metrics: metadata || {},
+       |         ^^^^^^^
+    86 |         geoRegions: geoRegions || [],
+    87 |         active: true,
+    88 |       },
+
+ERROR in ./src/modules/streaming/streaming.service.ts:373:9
+TS2322: Type '{ viewers: unknown; participants: unknown; messages: unknown; reactions: unknown; updatedAt: string; }' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue'.
+  Type '{ viewers: unknown; participants: unknown; messages: unknown; reactions: unknown; updatedAt: string; }' is not assignable to type 'InputJsonObject'.
+    Property 'viewers' is incompatible with index signature.
+      Type 'unknown' is not assignable to type 'InputJsonValue'.
+    371 |       where: { id: sessionId },
+    372 |       data: {
+  > 373 |         metrics: updatedMetrics,
+        |         ^^^^^^^
+    374 |         viewers: updateMetricsDto.viewers !== undefined ? updateMetricsDto.viewers : session.viewers,
+    375 |       },
+    376 |     });
+
+ERROR in ./src/modules/users/users.service.spec.ts:113:44
+TS2345: Argument of type '{ page: number; limit: number; }' is not assignable to parameter of type 'number'.
+    111 |       (prismaService.user.count as jest.Mock).mockResolvedValue(2);
+    112 |
+  > 113 |       const result = await service.findAll({ page: 1, limit: 10 });
+        |                                            ^^^^^^^^^^^^^^^^^^^^^^
+    114 |
+    115 |       expect(result.data).toHaveLength(2);
+    116 |       expect(result.meta.total).toBe(2);
+
+ERROR in ./src/modules/users/users.service.ts:39:7
+TS2322: Type '{ username?: string; firstName?: string; lastName?: string; avatarUrl?: string; bio?: string; location?: string; timezone?: string; website?: string; socialLinks?: Record<string, string>; preferences?: Record<string, unknown>; visibility?: string; userId: string; }' is not assignable to type '(Without<UserProfileCreateInput, UserProfileUncheckedCreateInput> & UserProfileUncheckedCreateInput) | (Without<...> & UserProfileCreateInput)'.
+  Type '{ username?: string; firstName?: string; lastName?: string; avatarUrl?: string; bio?: string; location?: string; timezone?: string; website?: string; socialLinks?: Record<string, string>; preferences?: Record<string, unknown>; visibility?: string; userId: string; }' is not assignable to type 'Without<UserProfileUncheckedCreateInput, UserProfileCreateInput> & UserProfileCreateInput'.
+    Type '{ username?: string; firstName?: string; lastName?: string; avatarUrl?: string; bio?: string; location?: string; timezone?: string; website?: string; socialLinks?: Record<string, string>; preferences?: Record<string, unknown>; visibility?: string; userId: string; }' is not assignable to type 'Without<UserProfileUncheckedCreateInput, UserProfileCreateInput>'.
+      Types of property 'userId' are incompatible.
+        Type 'string' is not assignable to type 'never'.
+    37 |     // Create profile
+    38 |     const profile = await this.prisma.userProfile.create({
+  > 39 |       data: {
+       |       ^^^^
+    40 |         userId,
+    41 |         ...createUserProfileDto,
+    42 |       },
+
+ERROR in ./src/modules/users/users.service.ts:83:7
+TS2322: Type 'UpdateUserProfileDto' is not assignable to type '(Without<UserProfileUpdateInput, UserProfileUncheckedUpdateInput> & UserProfileUncheckedUpdateInput) | (Without<...> & UserProfileUpdateInput)'.
+  Type 'UpdateUserProfileDto' is not assignable to type 'Without<UserProfileUncheckedUpdateInput, UserProfileUpdateInput> & UserProfileUpdateInput'.
+    Type 'UpdateUserProfileDto' is not assignable to type 'UserProfileUpdateInput'.
+      Types of property 'preferences' are incompatible.
+        Type 'Record<string, unknown>' is not assignable to type 'NullableJsonNullValueInput | InputJsonValue'.
+          Type 'Record<string, unknown>' is missing the following properties from type 'readonly InputJsonValue[]': length, concat, join, slice, and 20 more.
+    81 |     const updated = await this.prisma.userProfile.update({
+    82 |       where: { userId },
+  > 83 |       data: updateUserProfileDto,
+       |       ^^^^
+    84 |       include: {
+    85 |         user: {
+    86 |           select: {
+
+Found 38 errors in 2495 ms.

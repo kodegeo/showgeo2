@@ -24,10 +24,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@shared/*": ["../shared/*"]
+      "@shared": ["../packages/shared"],
+      "@shared/*": ["../packages/shared/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "../backend/src/debug"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
 

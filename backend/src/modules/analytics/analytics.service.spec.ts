@@ -35,25 +35,25 @@ describe("AnalyticsService", () => {
       const entityId = "entity-123";
       const entity = await TestUtils.createTestEntity({ id: entityId });
 
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.event.count as jest.Mock).mockResolvedValue(10);
-      (prismaService.follow.count as jest.Mock).mockResolvedValue(50);
-      (prismaService.product.count as jest.Mock).mockResolvedValue(25);
-      (prismaService.product.aggregate as jest.Mock).mockResolvedValue({ _sum: { price: 1000 } });
-      (prismaService.streamingSession.aggregate as jest.Mock).mockResolvedValue({ _avg: { viewers: 500 } });
-      (prismaService.notification.count as jest.Mock).mockResolvedValue(100);
-      (prismaService.ticket.count as jest.Mock).mockResolvedValue(200);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
+      (prismaService.events.count as jest.Mock).mockResolvedValue(10);
+      (prismaService.follows.count as jest.Mock).mockResolvedValue(50);
+      (prismaService.products.count as jest.Mock).mockResolvedValue(25);
+      (prismaService.products.aggregate as jest.Mock).mockResolvedValue({ _sum: { price: 1000 } });
+      (prismaService.streaming_sessions.aggregate as jest.Mock).mockResolvedValue({ _avg: { viewers: 500 } });
+      (prismaService.notifications.count as jest.Mock).mockResolvedValue(100);
+      (prismaService.tickets.count as jest.Mock).mockResolvedValue(200);
 
       const result = await service.aggregateMetrics(entityId);
 
       expect(result).toHaveProperty("eventsCount");
       expect(result).toHaveProperty("activeFollowers");
       expect(result).toHaveProperty("engagementScore");
-      expect(prismaService.entity.findUnique).toHaveBeenCalled();
+      expect(prismaService.entities.findUnique).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if entity not found", async () => {
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.aggregateMetrics("invalid-entity")).rejects.toThrow(NotFoundException);
     });
@@ -77,7 +77,7 @@ describe("AnalyticsService", () => {
         tickets: [{ id: "ticket-1" }, { id: "ticket-2" }],
       };
 
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(event);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(event);
 
       const result = await service.getEventPerformance(eventId);
 
@@ -85,11 +85,11 @@ describe("AnalyticsService", () => {
       expect(result).toHaveProperty("messages");
       expect(result).toHaveProperty("reactions");
       expect(result).toHaveProperty("ticketsSold");
-      expect(prismaService.event.findUnique).toHaveBeenCalled();
+      expect(prismaService.events.findUnique).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if event not found", async () => {
-      (prismaService.event.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.getEventPerformance("invalid-id")).rejects.toThrow(NotFoundException);
     });
@@ -100,12 +100,12 @@ describe("AnalyticsService", () => {
       const userId = "user-123";
       const user = await TestUtils.createTestUser({ id: userId });
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.ticket.count as jest.Mock).mockResolvedValue(5);
-      (prismaService.streamingSession.count as jest.Mock).mockResolvedValue(10);
-      (prismaService.follow.count as jest.Mock).mockResolvedValue(15);
-      (prismaService.follow.findMany as jest.Mock).mockResolvedValue([]);
-      (prismaService.notification.groupBy as jest.Mock).mockResolvedValue([]);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
+      (prismaService.tickets.count as jest.Mock).mockResolvedValue(5);
+      (prismaService.streaming_sessions.count as jest.Mock).mockResolvedValue(10);
+      (prismaService.follows.count as jest.Mock).mockResolvedValue(15);
+      (prismaService.follows.findMany as jest.Mock).mockResolvedValue([]);
+      (prismaService.notifications.groupBy as jest.Mock).mockResolvedValue([]);
 
       const result = await service.getUserEngagement(userId);
 
@@ -113,11 +113,11 @@ describe("AnalyticsService", () => {
       expect(result).toHaveProperty("streamsWatched");
       expect(result).toHaveProperty("entitiesFollowed");
       expect(result).toHaveProperty("engagementScore");
-      expect(prismaService.user.findUnique).toHaveBeenCalled();
+      expect(prismaService.app_users.findUnique).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if user not found", async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.getUserEngagement("invalid-id")).rejects.toThrow(NotFoundException);
     });
@@ -125,15 +125,15 @@ describe("AnalyticsService", () => {
 
   describe("getPlatformOverview", () => {
     it("should successfully get platform overview", async () => {
-      (prismaService.user.count as jest.Mock).mockResolvedValue(1000);
-      (prismaService.entity.count as jest.Mock).mockResolvedValue(100);
-      (prismaService.event.count as jest.Mock).mockResolvedValue(500);
-      (prismaService.streamingSession.count as jest.Mock).mockResolvedValue(25);
-      (prismaService.analyticsSummary.findMany as jest.Mock).mockResolvedValue([]);
-      (prismaService.user.count as jest.Mock).mockResolvedValue(100);
-      (prismaService.event.count as jest.Mock).mockResolvedValue(50);
-      (prismaService.product.count as jest.Mock).mockResolvedValue(200);
-      (prismaService.streamingSession.findMany as jest.Mock).mockResolvedValue([]);
+      (prismaService.app_users.count as jest.Mock).mockResolvedValue(1000);
+      (prismaService.entities.count as jest.Mock).mockResolvedValue(100);
+      (prismaService.events.count as jest.Mock).mockResolvedValue(500);
+      (prismaService.streaming_sessions.count as jest.Mock).mockResolvedValue(25);
+      (prismaService.analytics_summaries.findMany as jest.Mock).mockResolvedValue([]);
+      (prismaService.app_users.count as jest.Mock).mockResolvedValue(100);
+      (prismaService.events.count as jest.Mock).mockResolvedValue(50);
+      (prismaService.products.count as jest.Mock).mockResolvedValue(200);
+      (prismaService.streaming_sessions.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await service.getPlatformOverview();
 
@@ -151,8 +151,8 @@ describe("AnalyticsService", () => {
       const userId = "user-123";
       const user = await TestUtils.createTestUser({ id: userId });
 
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.entity.findMany as jest.Mock).mockResolvedValue([
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
+      (prismaService.entities.findMany as jest.Mock).mockResolvedValue([
         {
           id: "entity-1",
           name: "Entity 1",
@@ -163,11 +163,11 @@ describe("AnalyticsService", () => {
           followers: [{ userId: "other-user" }],
         },
       ]);
-      (prismaService.follow.count as jest.Mock).mockResolvedValue(5);
-      (prismaService.ticket.count as jest.Mock).mockResolvedValue(10);
-      (prismaService.streamingSession.count as jest.Mock).mockResolvedValue(3);
-      (prismaService.notification.count as jest.Mock).mockResolvedValue(20);
-      (prismaService.event.findMany as jest.Mock).mockResolvedValue([]);
+      (prismaService.follows.count as jest.Mock).mockResolvedValue(5);
+      (prismaService.tickets.count as jest.Mock).mockResolvedValue(10);
+      (prismaService.streaming_sessions.count as jest.Mock).mockResolvedValue(3);
+      (prismaService.notifications.count as jest.Mock).mockResolvedValue(20);
+      (prismaService.events.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await service.getRecommendations(userId);
 
@@ -178,7 +178,7 @@ describe("AnalyticsService", () => {
     });
 
     it("should throw NotFoundException if user not found", async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.getRecommendations("invalid-id")).rejects.toThrow(NotFoundException);
     });
@@ -190,7 +190,7 @@ describe("AnalyticsService", () => {
       const userId = "user-123";
 
       const entity = await TestUtils.createTestEntity({ id: entityId, ownerId: userId });
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue({
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue({
         ...entity,
         roles: [],
       });
@@ -199,7 +199,7 @@ describe("AnalyticsService", () => {
     });
 
     it("should throw NotFoundException if entity not found", async () => {
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.validateEntityAccess("invalid-entity", "user-123")).rejects.toThrow(NotFoundException);
     });
@@ -209,7 +209,7 @@ describe("AnalyticsService", () => {
       const userId = "user-123";
 
       const entity = await TestUtils.createTestEntity({ id: entityId, ownerId: "other-user" });
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue({
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue({
         ...entity,
         roles: [],
       });

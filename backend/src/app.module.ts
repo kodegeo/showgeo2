@@ -13,7 +13,11 @@ import { StreamingModule } from "./modules/streaming/streaming.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
-import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+import { AssetsModule } from "./modules/assets/assets.module";
+import { UploadModule } from "./modules/upload/upload.module";
+import { SupabaseAuthGuard } from "./common/guards/supabase-auth.guard";
+import { SupabaseModule } from "./modules/supabase/supabase.module";
+import { PrismaService } from "./prisma/prisma.service";
 // TODO: Add feature modules as they are implemented
 // import { ToursModule } from "./modules/tours/tours.module";
 // import { AiModule } from "./modules/ai/ai.module";
@@ -34,6 +38,9 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
     NotificationsModule,
     AnalyticsModule,
     PaymentsModule,
+    AssetsModule,
+    UploadModule,
+    SupabaseModule,
     // TODO: Add feature modules as they are implemented
     // ToursModule,
     // AiModule,
@@ -41,10 +48,11 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
   controllers: [AppController],
   providers: [
     AppService,
+    PrismaService, // ✅ ADD THIS LINE
     // Optional: Make JWT guard global (uncomment if you want all routes protected by default)
     // {
     //   provide: APP_GUARD,
-    //   useClass: JwtAuthGuard,
+    //   useClass: SupabaseAuthGuard,
     // },
   ],
 })

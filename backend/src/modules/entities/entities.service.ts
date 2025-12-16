@@ -1,7 +1,36 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  ConflictException,
+  BadRequestException,
+} from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { CreateEntityDto, UpdateEntityDto, AddCollaboratorDto, EntityQueryDto } from "./dto";
-import { Entity, EntityRoleType, UserRole } from "@prisma/client";
+import {
+  CreateEntityDto,
+  UpdateEntityDto,
+  AddCollaboratorDto,
+  EntityQueryDto,
+  CreatorApplicationDto,
+} from "./dto";
+import {
+  EntityRoleType,
+  UserRole,
+  EntityType,
+  Prisma,
+} from "@prisma/client";
+import { randomUUID } from "crypto";
+
+
+type Entity = any;
+
+// Define EntityStatus locally to match Prisma schema
+type EntityStatus = "PENDING" | "APPROVED" | "REJECTED";
+const EntityStatusEnum = {
+  PENDING: "PENDING" as EntityStatus,
+  APPROVED: "APPROVED" as EntityStatus,
+  REJECTED: "REJECTED" as EntityStatus,
+};
 
 @Injectable()
 export class EntitiesService {
@@ -11,7 +40,7 @@ export class EntitiesService {
     const { slug, name } = createEntityDto;
 
     // Check if slug already exists
-    const existingEntity = await this.prisma.entity.findUnique({
+    const existingEntity = await (this.prisma as any).entities.findUnique({
       where: { slug },
     });
 
@@ -20,7 +49,7 @@ export class EntitiesService {
     }
 
     // Check if name already exists
-    const existingByName = await this.prisma.entity.findFirst({
+    const existingByName = await (this.prisma as any).entities.findFirst({
       where: { name },
     });
 
@@ -28,13 +57,18 @@ export class EntitiesService {
       throw new ConflictException("Entity with this name already exists");
     }
 
-    // Create entity with owner
-    const entity = await this.prisma.entity.create({
+    // Create entity with owner - ensure JSON fields are properly typed
+    const { socialLinks, ...restDto } = createEntityDto;
+    const createData: any = { ...restDto, ownerId };
+    if (socialLinks !== undefined) {
+      createData.socialLinks = socialLinks as Prisma.InputJsonValue;
+    }
+
+    const entity = await (this.prisma as any).entities.create({
       data: {
-        ...createEntityDto,
-        ownerId,
+        ...createData,
         // Create owner role automatically
-        roles: {
+        entity_roles: {
           create: {
             userId: ownerId,
             role: EntityRoleType.OWNER,
@@ -42,20 +76,20 @@ export class EntitiesService {
         },
       },
       include: {
-        owner: {
+        app_users: {
           select: {
             id: true,
             email: true,
-            profile: true,
+            user_profiles: true,
           },
         },
-        roles: {
+        entity_roles: {
           include: {
-            user: {
+            app_users: {
               select: {
                 id: true,
                 email: true,
-                profile: true,
+                user_profiles: true,
               },
             },
           },
@@ -79,7 +113,7 @@ export class EntitiesService {
 
     // Check slug uniqueness if being updated
     if (updateEntityDto.slug && updateEntityDto.slug !== entity.slug) {
-      const existingEntity = await this.prisma.entity.findUnique({
+      const existingEntity = await (this.prisma as any).entities.findUnique({
         where: { slug: updateEntityDto.slug },
       });
 
@@ -90,7 +124,7 @@ export class EntitiesService {
 
     // Check name uniqueness if being updated
     if (updateEntityDto.name && updateEntityDto.name !== entity.name) {
-      const existingEntity = await this.prisma.entity.findFirst({
+      const existingEntity = await (this.prisma as any).entities.findFirst({
         where: { name: updateEntityDto.name },
       });
 
@@ -99,25 +133,31 @@ export class EntitiesService {
       }
     }
 
-    // Update entity
-    const updated = await this.prisma.entity.update({
+    // Update entity - ensure JSON fields are properly typed
+    const { socialLinks, ...restDto } = updateEntityDto;
+    const updateData: any = { ...restDto };
+    if (socialLinks !== undefined) {
+      updateData.socialLinks = socialLinks as Prisma.InputJsonValue;
+    }
+
+    const updated = await (this.prisma as any).entities.update({
       where: { id },
-      data: updateEntityDto,
+      data: updateData,
       include: {
-        owner: {
+        app_users: {
           select: {
             id: true,
             email: true,
-            profile: true,
+            user_profiles: true,
           },
         },
-        roles: {
+        entity_roles: {
           include: {
-            user: {
+            app_users: {
               select: {
                 id: true,
                 email: true,
-                profile: true,
+                user_profiles: true,
               },
             },
           },
@@ -142,7 +182,7 @@ export class EntitiesService {
 
     const where: any = {};
 
-    // Only show public entities by default (unless admin)
+    // Default: Only show public entities
     if (isPublic !== false) {
       where.isPublic = true;
     }
@@ -157,36 +197,37 @@ export class EntitiesService {
 
     if (type) where.type = type;
     if (isVerified !== undefined) where.isVerified = isVerified;
-    if (location) where.location = { contains: location, mode: "insensitive" };
+    if (location)
+      where.location = { contains: location, mode: "insensitive" };
     if (tag) where.tags = { has: tag };
 
     const skip = (page - 1) * limit;
 
     const [entities, total] = await Promise.all([
-      this.prisma.entity.findMany({
+      (this.prisma as any).entities.findMany({
         where,
         include: {
-          owner: {
+          app_users: {
             select: {
               id: true,
               email: true,
-              profile: true,
+              user_profiles: true,
             },
           },
           _count: {
             select: {
-              events: true,
-              tours: true,
-              stores: true,
-              followers: true,
-            },
+              events_events_entityIdToentities: true,
+              tours_tours_primaryEntityIdToentities: true,
+              stores_stores_entityIdToentities: true,
+              follows: true,
+              },
           },
         },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
       }),
-      this.prisma.entity.count({ where }),
+      (this.prisma as any).entities.count({ where }),
     ]);
 
     return {
@@ -200,29 +241,181 @@ export class EntitiesService {
     };
   }
 
-  async findOne(id: string): Promise<Entity> {
-    const entity = await this.prisma.entity.findUnique({
-      where: { id },
+  /**
+   * Create a creator application (Entity with PENDING status)
+   * Called when a user applies to become a creator
+   */
+  async createCreatorApplication(
+    applicationDto: CreatorApplicationDto,
+    userId: string
+  ): Promise<Entity> {
+    const {
+      brandName,
+      category,
+      socialLinks,
+      purpose,
+      website,
+      thumbnail,
+      bannerImage,
+      termsAccepted,
+    } = applicationDto;
+
+    // Must accept terms
+    if (!termsAccepted) {
+      throw new BadRequestException(
+        "You must accept the terms and conditions to submit a creator application."
+      );
+    }
+
+    // Check if user already has a pending application
+    const existingPending = await (this.prisma as any).entities.findFirst({
+      where: {
+        ownerId: userId,
+        status: EntityStatusEnum.PENDING,
+      } as any, // Type assertion needed until Prisma client is fully regenerated
+    });
+
+    if (existingPending) {
+      throw new BadRequestException(
+        "You already have a pending creator application. Please wait for approval."
+      );
+    }
+
+    // Generate slug
+    const slug = this.generateSlug(brandName);
+
+    // Check slug uniqueness
+    const existingSlug = await (this.prisma as any).entities.findUnique({
+      where: { slug },
+    });
+    if (existingSlug) {
+      throw new ConflictException(
+        "An entity with this brand name already exists. Please choose a different name."
+      );
+    }
+
+    // Check brand name uniqueness
+    const existingName = await (this.prisma as any).entities.findFirst({
+      where: { name: brandName },
+    });
+    if (existingName) {
+      throw new ConflictException(
+        "An entity with this brand name already exists. Please choose a different name."
+      );
+    }
+
+    // Fetch user to determine entity type
+    const user = await (this.prisma as any).app_users.findUnique({
+      where: { id: userId },
+      include: { user_profiles: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    // Determine entity type automatically
+    const userDisplayName =
+      user.user_profiles?.firstName && user.user_profiles?.lastName
+        ? `${user.user_profiles.firstName} ${user.user_profiles.lastName}`
+        : user.email.split("@")[0];
+
+    const entityType =
+      brandName.toLowerCase() !== userDisplayName.toLowerCase()
+        ? EntityType.ORGANIZATION
+        : EntityType.INDIVIDUAL;
+
+    // Prepare creation data
+    // Map 'purpose' from DTO to 'bio' field in Entity model
+    const createData: any = {
+      id: randomUUID(), // 👈 REQUIRED FOR PRISMA
+      name: brandName,
+      slug,
+      ownerId: userId,
+      type: entityType,
+      status: EntityStatusEnum.PENDING,
+      isPublic: false,
+      bio: purpose, // Map purpose → bio
+      website,
+      thumbnail,
+      bannerImage,
+      tags: [category],
+    };
+
+    if (socialLinks !== undefined) {
+      createData.socialLinks = socialLinks as Prisma.InputJsonValue;
+    }
+
+    // Create entity + owner role
+    const entity = await (this.prisma as any).entities.create({
+      data: {
+        ...createData,
+        entity_roles: {
+          create: {
+            userId,
+            role: EntityRoleType.OWNER,
+          },
+        },
+      },
       include: {
-        owner: {
+        app_users: {
           select: {
             id: true,
             email: true,
-            profile: true,
+            user_profiles: true,
           },
         },
-        roles: {
+        entity_roles: {
           include: {
-            user: {
+            app_users: {
               select: {
                 id: true,
                 email: true,
-                profile: true,
+                user_profiles: true,
               },
             },
           },
         },
-        events: {
+      },
+    });
+
+    return entity;
+  }
+  /**
+   * Generate a URL-friendly slug from a string
+   */
+  private generateSlug(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "") // Remove special characters
+      .replace(/[\s_-]+/g, "-") // Replace spaces and underscores with hyphens
+      .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
+  }
+
+  async findOne(id: string): Promise<Entity> {
+    const entity = await (this.prisma as any).entities.findUnique({
+      where: { id },
+      include: {
+        app_users: {
+          select: {
+            id: true,
+            email: true,
+            user_profiles: true,
+          },
+        },
+        entity_roles: {
+          include: {
+            app_users: {
+              select: {
+                id: true,
+                email: true,
+                user_profiles: true,
+              },
+            },
+          },
+        },
+        events_events_entityIdToentities: {
           select: {
             id: true,
             name: true,
@@ -235,7 +428,7 @@ export class EntitiesService {
           orderBy: { startTime: "desc" },
           take: 10,
         },
-        tours: {
+        tours_tours_primaryEntityIdToentities: {
           select: {
             id: true,
             name: true,
@@ -248,7 +441,7 @@ export class EntitiesService {
           orderBy: { startDate: "desc" },
           take: 10,
         },
-        stores: {
+        stores_stores_entityIdToentities: {
           select: {
             id: true,
             name: true,
@@ -260,10 +453,10 @@ export class EntitiesService {
         },
         _count: {
           select: {
-            events: true,
-            tours: true,
-            stores: true,
-            followers: true,
+            events_events_entityIdToentities: true,
+            tours_tours_primaryEntityIdToentities: true,
+            stores_stores_entityIdToentities: true,
+            follows: true,
           },
         },
       },
@@ -277,28 +470,28 @@ export class EntitiesService {
   }
 
   async findBySlug(slug: string): Promise<Entity> {
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { slug },
       include: {
-        owner: {
+        app_users: {
           select: {
             id: true,
             email: true,
-            profile: true,
+            user_profiles: true,
           },
         },
-        roles: {
+        entity_roles: {
           include: {
-            user: {
+            app_users: {
               select: {
                 id: true,
                 email: true,
-                profile: true,
+                user_profiles: true,
               },
             },
           },
         },
-        events: {
+        events_events_entityIdToentities: {
           select: {
             id: true,
             name: true,
@@ -311,7 +504,7 @@ export class EntitiesService {
           orderBy: { startTime: "desc" },
           take: 10,
         },
-        tours: {
+        tours_tours_primaryEntityIdToentities: {
           select: {
             id: true,
             name: true,
@@ -324,7 +517,7 @@ export class EntitiesService {
           orderBy: { startDate: "desc" },
           take: 10,
         },
-        stores: {
+        stores_stores_entityIdToentities: {
           select: {
             id: true,
             name: true,
@@ -336,10 +529,10 @@ export class EntitiesService {
         },
         _count: {
           select: {
-            events: true,
-            tours: true,
-            stores: true,
-            followers: true,
+            events_events_entityIdToentities: true,
+            tours_tours_primaryEntityIdToentities: true,
+            stores_stores_entityIdToentities: true,
+            follows: true,
           },
         },
       },
@@ -366,7 +559,7 @@ export class EntitiesService {
     const { userId: collaboratorUserId, role } = addCollaboratorDto;
 
     // Check if user exists
-    const user = await this.prisma.user.findUnique({
+    const user = await (this.prisma as any).app_users.findUnique({
       where: { id: collaboratorUserId },
     });
 
@@ -375,7 +568,7 @@ export class EntitiesService {
     }
 
     // Check if already a collaborator
-    const existingRole = await this.prisma.entityRole.findUnique({
+    const existingRole = await (this.prisma as any).entity_roles.findUnique({
       where: {
         userId_entityId: {
           userId: collaboratorUserId,
@@ -394,18 +587,18 @@ export class EntitiesService {
     }
 
     // Create collaborator role
-    const entityRole = await this.prisma.entityRole.create({
+    const entityRole = await (this.prisma as any).entity_roles.create({
       data: {
         entityId,
         userId: collaboratorUserId,
         role,
       },
       include: {
-        user: {
+        app_users: {
           select: {
             id: true,
             email: true,
-            profile: true,
+            user_profiles: true,
           },
         },
         entity: {
@@ -433,7 +626,7 @@ export class EntitiesService {
     }
 
     // Check if collaborator exists
-    const entityRole = await this.prisma.entityRole.findUnique({
+    const entityRole = await (this.prisma as any).entity_roles.findUnique({
       where: {
         userId_entityId: {
           userId: collaboratorUserId,
@@ -447,7 +640,7 @@ export class EntitiesService {
     }
 
     // Remove collaborator
-    await this.prisma.entityRole.delete({
+    await (this.prisma as any).entity_roles.delete({
       where: {
         userId_entityId: {
           userId: collaboratorUserId,
@@ -462,14 +655,14 @@ export class EntitiesService {
   async getCollaborators(entityId: string) {
     const entity = await this.findOne(entityId);
 
-    const collaborators = await this.prisma.entityRole.findMany({
+    const collaborators = await (this.prisma as any).entity_roles.findMany({
       where: { entityId },
       include: {
-        user: {
+        app_users: {
           select: {
             id: true,
             email: true,
-            profile: true,
+            user_profiles: true,
           },
         },
       },
@@ -492,7 +685,7 @@ export class EntitiesService {
 
     // Soft delete - set isPublic to false and optionally mark for deletion
     // For now, we'll do a hard delete (can be changed to soft delete)
-    await this.prisma.entity.delete({
+    await (this.prisma as any).entities.delete({
       where: { id },
     });
 
@@ -509,7 +702,7 @@ export class EntitiesService {
     }
 
     // Check if user is a manager with ADMIN role for this entity
-    const entityRole = await this.prisma.entityRole.findUnique({
+    const entityRole = await (this.prisma as any).entity_roles.findUnique({
       where: {
         userId_entityId: {
           userId,
@@ -535,7 +728,7 @@ export class EntitiesService {
     }
 
     // Check if user is a manager with ADMIN role for this entity
-    const entityRole = await this.prisma.entityRole.findUnique({
+    const entityRole = await (this.prisma as any).entity_roles.findUnique({
       where: {
         userId_entityId: {
           userId,

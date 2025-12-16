@@ -23,7 +23,8 @@ The platform architecture is built on **NestJS (Backend)**, **React + Vite (Fron
   │     ├── streaming/
   │     ├── notifications/
   │     ├── analytics/
-  │     └── payments/  ← future
+  │     ├── payments/
+  │     └── assets/
   ├── prisma/
   ├── main.ts
   ├── app.module.ts
@@ -67,6 +68,8 @@ The platform architecture is built on **NestJS (Backend)**, **React + Vite (Fron
 | 7️⃣ | **StreamingModule** | Live video/audio experiences | LiveKit integration, access levels, geofencing, metrics |
 | 8️⃣ | **NotificationsModule** | Real-time communication | WebSocket gateway, unread counts, broadcasts |
 | 9️⃣ | **AnalyticsModule** | Insights, metrics, and AI | Aggregation, engagement scores, recommendations |
+| 🔟 | **PaymentsModule** | Ticketing and commerce | Stripe integration, checkout sessions, refunds, webhooks |
+| 1️⃣1️⃣ | **AssetsModule** | File upload and management | Multi-type uploads (image/audio/video/doc), storage abstraction, access control |
 
 ---
 
@@ -81,6 +84,8 @@ The platform architecture is built on **NestJS (Backend)**, **React + Vite (Fron
 | **AnalyticsModule** | All | Aggregate metrics across modules |
 | **AuthModule** | All | Provides JWT-based authentication |
 | **EntitiesModule** | All | Ownership validation and scoping |
+| **AssetsModule** | Users, Entities | File uploads for profiles, galleries, events |
+| **PaymentsModule** | Store, Events | Checkout processing, order management |
 
 ---
 
@@ -179,9 +184,9 @@ npm run dev
 ## 🧩 Future Enhancements
 
 ### 1. PaymentsModule
-- Stripe Checkout + Webhooks  
-- Order + Revenue tracking  
-- Analytics integration for revenue  
+- ✅ Stripe Checkout + Webhooks - **IMPLEMENTED**
+- ✅ Order + Revenue tracking - **IMPLEMENTED**
+- ✅ Analytics integration for revenue - **IMPLEMENTED**  
 
 ### 2. AI Assistant Integration
 - Suggest content scheduling, event timing  
@@ -191,8 +196,8 @@ npm run dev
 - Caching metrics, fan-out jobs, notification queue  
 
 ### 4. Media Services
-- File uploads (S3/Supabase Storage)  
-- Image optimization pipeline  
+- ✅ File uploads (S3/Supabase Storage) - **IMPLEMENTED**  
+- ⏳ Image optimization pipeline (Sharp integration pending)  
 
 ### 5. Automated Testing
 - Jest + Supertest API coverage  

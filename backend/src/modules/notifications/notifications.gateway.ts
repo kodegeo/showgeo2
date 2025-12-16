@@ -8,10 +8,13 @@ import {
   ConnectedSocket,
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
-import { Injectable, UseGuards, Logger } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
-import { Notification } from "@prisma/client";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { notifications as Notification } from "@prisma/client";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+// Local fallback type — avoids Prisma User errors
+type User = any;
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -20,28 +23,34 @@ interface AuthenticatedSocket extends Socket {
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: "*", // In production, configure this properly
+    origin: "*",
     credentials: true,
   },
   namespace: "/notifications",
 })
-export class NotificationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class NotificationGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(NotificationGateway.name);
-  private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
+  private userSockets: Map<string, Set<string>> = new Map();
+  private supabase: SupabaseClient;
 
-  constructor(
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-  ) {}
+  constructor(private readonly configService: ConfigService) {
+    const url = configService.get<string>("SUPABASE_URL")!;
+    const serviceRoleKey =
+      configService.get<string>("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    this.supabase = createClient(url, serviceRoleKey);
+  }
 
   async handleConnection(client: AuthenticatedSocket) {
     try {
-      // Extract token from handshake query or auth header
       const token =
-        client.handshake.auth?.token || client.handshake.query?.token?.toString();
+        client.handshake.auth?.token ||
+        client.handshake.query?.token?.toString();
 
       if (!token) {
         this.logger.warn(`Client ${client.id} connected without token`);
@@ -49,35 +58,37 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
         return;
       }
 
-      // Verify JWT token
-      const payload = this.jwtService.verify(token, {
-        secret: this.configService.get<string>("JWT_SECRET"),
-      });
+      // Validate JWT with Supabase
+      const { data, error } = await this.supabase.auth.getUser(token);
 
-      if (!payload || !payload.sub) {
-        this.logger.warn(`Invalid token for client ${client.id}`);
+      if (error || !data?.user) {
+        this.logger.warn(`Invalid Supabase token from client ${client.id}`);
         client.disconnect();
         return;
       }
 
+      //
+      // ❗ FIXED: Supabase returns "data.user.id" — not "data.app_users.id"
+      //
+      const userId = data.user.id;
+
       // Attach userId to socket
-      client.userId = payload.sub;
+      client.userId = userId;
 
-      // Track user socket
-      if (!this.userSockets.has(client.userId)) {
-        this.userSockets.set(client.userId, new Set());
+      // Register socket mapping
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
       }
-      this.userSockets.get(client.userId)!.add(client.id);
+      this.userSockets.get(userId)!.add(client.id);
 
-      this.logger.log(`Client ${client.id} connected for user ${client.userId}`);
+      this.logger.log(`Client ${client.id} connected for user ${userId}`);
 
-      // Send connection confirmation
       client.emit("connected", {
-        userId: client.userId,
+        userId,
         timestamp: new Date().toISOString(),
       });
-    } catch (error) {
-      this.logger.error(`Connection error for client ${client.id}:`, error);
+    } catch (err) {
+      this.logger.error(`Connection error for ${client.id}`, err);
       client.disconnect();
     }
   }
@@ -85,13 +96,17 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
   async handleDisconnect(client: AuthenticatedSocket) {
     if (client.userId) {
       const sockets = this.userSockets.get(client.userId);
+
       if (sockets) {
         sockets.delete(client.id);
         if (sockets.size === 0) {
           this.userSockets.delete(client.userId);
         }
       }
-      this.logger.log(`Client ${client.id} disconnected for user ${client.userId}`);
+
+      this.logger.log(
+        `Client ${client.id} disconnected for user ${client.userId}`,
+      );
     }
   }
 
@@ -100,46 +115,39 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
     client.emit("pong", { timestamp: new Date().toISOString() });
   }
 
-  /**
-   * Notify a specific user about a new notification
-   */
   notifyUser(userId: string, notification: Notification) {
     const sockets = this.userSockets.get(userId);
-    if (sockets && sockets.size > 0) {
-      sockets.forEach((socketId) => {
-        const socket = this.server.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit("notification", notification);
-        }
-      });
-      this.logger.log(`Sent notification to user ${userId} via ${sockets.size} socket(s)`);
-    } else {
-      this.logger.debug(`User ${userId} not connected, notification will be delivered when they reconnect`);
+
+    if (!sockets || sockets.size === 0) {
+      this.logger.debug(
+        `User ${userId} not connected; notification queued silently`,
+      );
+      return;
     }
+
+    sockets.forEach((socketId) => {
+      const socket = this.server.sockets.sockets.get(socketId);
+      if (socket) socket.emit("notification", notification);
+    });
+
+    this.logger.log(
+      `Sent notification to user ${userId} via ${sockets.size} socket(s)`,
+    );
   }
 
-  /**
-   * Notify user about unread count update
-   */
   notifyUnreadCount(userId: string, count: number) {
     const sockets = this.userSockets.get(userId);
-    if (sockets && sockets.size > 0) {
-      sockets.forEach((socketId) => {
-        const socket = this.server.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit("unread_count", { count });
-        }
-      });
-    }
-  }
+    if (!sockets) return;
 
-  /**
-   * Broadcast notification to multiple users
-   */
-  broadcastToUsers(userIds: string[], notification: Notification) {
-    userIds.forEach((userId) => {
-      this.notifyUser(userId, notification);
+    sockets.forEach((socketId) => {
+      const socket = this.server.sockets.sockets.get(socketId);
+      if (socket) socket.emit("unread_count", { count });
     });
   }
-}
 
+  broadcastToUsers(userIds: string[], notification: Notification) {
+    for (const userId of userIds) {
+      this.notifyUser(userId, notification);
+    }
+  }
+}

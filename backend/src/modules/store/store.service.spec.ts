@@ -44,9 +44,9 @@ describe("StoreService", () => {
       };
 
       const entity = await TestUtils.createTestEntity({ id: entityId });
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(null);
-      (prismaService.store.create as jest.Mock).mockResolvedValue({
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.stores.create as jest.Mock).mockResolvedValue({
         id: "store-123",
         entityId,
         ...createDto,
@@ -58,11 +58,11 @@ describe("StoreService", () => {
 
       expect(result).toHaveProperty("name", createDto.name);
       expect(result).toHaveProperty("entityId", entityId);
-      expect(prismaService.store.create).toHaveBeenCalled();
+      expect(prismaService.stores.create).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if entity not found", async () => {
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.createStore({} as CreateStoreDto, "invalid-entity")).rejects.toThrow(NotFoundException);
     });
@@ -75,8 +75,8 @@ describe("StoreService", () => {
       };
 
       const entity = await TestUtils.createTestEntity({ id: entityId });
-      (prismaService.entity.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue({
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue({
         id: "existing-store-id",
         slug: "existing-store",
       });
@@ -103,8 +103,8 @@ describe("StoreService", () => {
         status: StoreStatus.ACTIVE,
       };
 
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(store);
-      (prismaService.product.create as jest.Mock).mockResolvedValue({
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(store);
+      (prismaService.products.create as jest.Mock).mockResolvedValue({
         id: "product-123",
         storeId,
         ...createDto,
@@ -116,11 +116,11 @@ describe("StoreService", () => {
 
       expect(result).toHaveProperty("name", createDto.name);
       expect(result).toHaveProperty("storeId", storeId);
-      expect(prismaService.product.create).toHaveBeenCalled();
+      expect(prismaService.products.create).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if store not found", async () => {
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.addProduct("invalid-store", {} as CreateProductDto, "user-123", UserRole.USER)).rejects.toThrow(
         NotFoundException,
@@ -147,8 +147,8 @@ describe("StoreService", () => {
         },
       ];
 
-      (prismaService.store.findMany as jest.Mock).mockResolvedValue(stores);
-      (prismaService.store.count as jest.Mock).mockResolvedValue(2);
+      (prismaService.stores.findMany as jest.Mock).mockResolvedValue(stores);
+      (prismaService.stores.count as jest.Mock).mockResolvedValue(2);
 
       const result = await service.findAll({ page: 1, limit: 10 });
 
@@ -167,16 +167,16 @@ describe("StoreService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(store);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(store);
 
       const result = await service.findOne(storeId);
 
       expect(result).toHaveProperty("id", storeId);
-      expect(prismaService.store.findUnique).toHaveBeenCalled();
+      expect(prismaService.stores.findUnique).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if store not found", async () => {
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.findOne("invalid-id")).rejects.toThrow(NotFoundException);
     });
@@ -197,8 +197,8 @@ describe("StoreService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(existingStore);
-      (prismaService.store.update as jest.Mock).mockResolvedValue({
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(existingStore);
+      (prismaService.stores.update as jest.Mock).mockResolvedValue({
         ...existingStore,
         ...updateDto,
         updatedAt: new Date(),
@@ -207,11 +207,11 @@ describe("StoreService", () => {
       const result = await service.updateStore(storeId, updateDto, "user-123", UserRole.USER);
 
       expect(result).toHaveProperty("name", updateDto.name);
-      expect(prismaService.store.update).toHaveBeenCalled();
+      expect(prismaService.stores.update).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException if store not found", async () => {
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.updateStore("invalid-id", {}, "user-123", UserRole.USER)).rejects.toThrow(NotFoundException);
     });
@@ -226,18 +226,18 @@ describe("StoreService", () => {
         createdAt: new Date(),
       };
 
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(store);
-      (prismaService.store.delete as jest.Mock).mockResolvedValue(store);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(store);
+      (prismaService.stores.delete as jest.Mock).mockResolvedValue(store);
 
-      await service.removeStore(storeId, "user-123", UserRole.USER);
+      await service.delete(storeId, "user-123", UserRole.USER);
 
-      expect(prismaService.store.delete).toHaveBeenCalledWith({ where: { id: storeId } });
+      expect(prismaService.stores.delete).toHaveBeenCalledWith({ where: { id: storeId } });
     });
 
     it("should throw NotFoundException if store not found", async () => {
-      (prismaService.store.findUnique as jest.Mock).mockResolvedValue(null);
+      (prismaService.stores.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.removeStore("invalid-id", "user-123", UserRole.USER)).rejects.toThrow(NotFoundException);
+      await expect(service.delete("invalid-id", "user-123", UserRole.USER)).rejects.toThrow(NotFoundException);
     });
   });
 });

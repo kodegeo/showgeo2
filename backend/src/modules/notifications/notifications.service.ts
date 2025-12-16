@@ -1,8 +1,18 @@
-import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  forwardRef,
+} from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { FollowService } from "../follow/follow.service";
-import { CreateNotificationDto, BroadcastNotificationDto, NotificationQueryDto } from "./dto";
-import { Notification, NotificationType } from "@prisma/client";
+import {
+  CreateNotificationDto,
+  BroadcastNotificationDto,
+  NotificationQueryDto,
+} from "./dto";
+import { NotificationType, Prisma } from "@prisma/client";
 import { NotificationGateway } from "./notifications.gateway";
 
 @Injectable()
@@ -14,11 +24,23 @@ export class NotificationsService {
     private readonly notificationGateway: NotificationGateway,
   ) {}
 
-  async createNotification(createNotificationDto: CreateNotificationDto): Promise<Notification> {
+  /**
+   * Convenience accessor to treat PrismaService as any
+   * so we can use snake_case models (app_users, entities, notifications, etc.)
+   * without TypeScript errors.
+   */
+  private get p(): any {
+    return this.prisma as any;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Create a single notification
+  // ---------------------------------------------------------------------------
+  async createNotification(createNotificationDto: CreateNotificationDto): Promise<any> {
     const { userId, entityId, type, message, metadata } = createNotificationDto;
 
-    // Validate user exists
-    const user = await this.prisma.user.findUnique({
+    // Validate user exists (app_users)
+    const user = await this.p.app_users.findUnique({
       where: { id: userId },
     });
 
@@ -26,9 +48,9 @@ export class NotificationsService {
       throw new NotFoundException("User not found");
     }
 
-    // Validate entity exists if provided
+    // Validate entity exists if provided (entities)
     if (entityId) {
-      const entity = await this.prisma.entity.findUnique({
+      const entity = await this.p.entities.findUnique({
         where: { id: entityId },
       });
 
@@ -37,18 +59,18 @@ export class NotificationsService {
       }
     }
 
-    // Create notification
-    const notification = await this.prisma.notification.create({
+    const notification = await this.p.notifications.create({
       data: {
         userId,
         entityId,
         type,
         message,
-        metadata: metadata || {},
+        metadata: (metadata || {}) as Prisma.InputJsonValue,
         isRead: false,
       },
       include: {
-        entity: {
+        // Relation name from schema: `entities`
+        entities: {
           select: {
             id: true,
             name: true,
@@ -65,13 +87,17 @@ export class NotificationsService {
     return notification;
   }
 
+  // ---------------------------------------------------------------------------
+  // Broadcast to all followers of an entity
+  // ---------------------------------------------------------------------------
   async broadcastToFollowers(
     broadcastNotificationDto: BroadcastNotificationDto,
-  ): Promise<{ count: number; notifications: Notification[] }> {
+  ): Promise<{ count: number; notifications: any[] }> {
     const { entityId, type, message, metadata } = broadcastNotificationDto;
+    const metadataJson = (metadata || {}) as Prisma.InputJsonValue;
 
     // Validate entity exists
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await this.p.entities.findUnique({
       where: { id: entityId },
     });
 
@@ -80,14 +106,12 @@ export class NotificationsService {
     }
 
     // Get all followers of the entity
-    // Using getFollowers which returns paginated results
-    // We need to fetch all followers, so we'll query directly
-    const followers = await this.prisma.follow.findMany({
+    const followers = await this.p.follows.findMany({
       where: { entityId },
       select: { userId: true },
     });
 
-    if (followers.length === 0) {
+    if (!followers.length) {
       return { count: 0, notifications: [] };
     }
 
@@ -96,17 +120,17 @@ export class NotificationsService {
     // Create notifications for all followers
     const notifications = await Promise.all(
       userIds.map((userId) =>
-        this.prisma.notification.create({
+        this.p.notifications.create({
           data: {
             userId,
             entityId,
             type,
             message,
-            metadata: metadata || {},
+            metadata: metadataJson,
             isRead: false,
           },
           include: {
-            entity: {
+            entities: {
               select: {
                 id: true,
                 name: true,
@@ -130,9 +154,11 @@ export class NotificationsService {
     };
   }
 
-  async markAsRead(notificationId: string, userId: string): Promise<Notification> {
-    // Find notification and verify ownership
-    const notification = await this.prisma.notification.findUnique({
+  // ---------------------------------------------------------------------------
+  // Mark a notification as read
+  // ---------------------------------------------------------------------------
+  async markAsRead(notificationId: string, userId: string): Promise<any> {
+    const notification = await this.p.notifications.findUnique({
       where: { id: notificationId },
     });
 
@@ -141,15 +167,16 @@ export class NotificationsService {
     }
 
     if (notification.userId !== userId) {
-      throw new BadRequestException("You can only mark your own notifications as read");
+      throw new BadRequestException(
+        "You can only mark your own notifications as read",
+      );
     }
 
-    // Update notification
-    const updated = await this.prisma.notification.update({
+    const updated = await this.p.notifications.update({
       where: { id: notificationId },
       data: { isRead: true },
       include: {
-        entity: {
+        entities: {
           select: {
             id: true,
             name: true,
@@ -163,14 +190,26 @@ export class NotificationsService {
     return updated;
   }
 
+  // ---------------------------------------------------------------------------
+  // Get paginated notifications for a user
+  // ---------------------------------------------------------------------------
   async getUserNotifications(
     userId: string,
     query: NotificationQueryDto,
-  ): Promise<{ data: Notification[]; meta: { total: number; page: number; limit: number; totalPages: number; unreadCount: number } }> {
+  ): Promise<{
+    data: any[];
+    meta: {
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      unreadCount: number;
+    };
+  }> {
     const { unreadOnly, page = 1, limit = 20 } = query;
 
     // Validate user exists
-    const user = await this.prisma.user.findUnique({
+    const user = await this.p.app_users.findUnique({
       where: { id: userId },
     });
 
@@ -180,19 +219,16 @@ export class NotificationsService {
 
     const where: any = {
       userId,
+      ...(unreadOnly ? { isRead: false } : {}),
     };
-
-    if (unreadOnly) {
-      where.isRead = false;
-    }
 
     const skip = (page - 1) * limit;
 
     const [notifications, total, unreadCount] = await Promise.all([
-      this.prisma.notification.findMany({
+      this.p.notifications.findMany({
         where,
         include: {
-          entity: {
+          entities: {
             select: {
               id: true,
               name: true,
@@ -208,8 +244,8 @@ export class NotificationsService {
         skip,
         take: limit,
       }),
-      this.prisma.notification.count({ where }),
-      this.prisma.notification.count({
+      this.p.notifications.count({ where }),
+      this.p.notifications.count({
         where: { userId, isRead: false },
       }),
     ]);
@@ -226,9 +262,12 @@ export class NotificationsService {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Get unread count for a user
+  // ---------------------------------------------------------------------------
   async getUnreadCount(userId: string): Promise<number> {
     // Validate user exists
-    const user = await this.prisma.user.findUnique({
+    const user = await this.p.app_users.findUnique({
       where: { id: userId },
     });
 
@@ -236,7 +275,7 @@ export class NotificationsService {
       throw new NotFoundException("User not found");
     }
 
-    const count = await this.prisma.notification.count({
+    const count = await this.p.notifications.count({
       where: {
         userId,
         isRead: false,
@@ -246,9 +285,15 @@ export class NotificationsService {
     return count;
   }
 
-  async clearAll(userId: string, markAsRead = false): Promise<{ count: number }> {
+  // ---------------------------------------------------------------------------
+  // Clear all notifications (mark read or delete)
+  // ---------------------------------------------------------------------------
+  async clearAll(
+    userId: string,
+    markAsRead = false,
+  ): Promise<{ count: number }> {
     // Validate user exists
-    const user = await this.prisma.user.findUnique({
+    const user = await this.p.app_users.findUnique({
       where: { id: userId },
     });
 
@@ -257,27 +302,27 @@ export class NotificationsService {
     }
 
     if (markAsRead) {
-      // Mark all as read
-      const result = await this.prisma.notification.updateMany({
+      const result = await this.p.notifications.updateMany({
         where: { userId, isRead: false },
         data: { isRead: true },
       });
 
       return { count: result.count };
-    } else {
-      // Delete all notifications
-      const result = await this.prisma.notification.deleteMany({
-        where: { userId },
-      });
-
-      return { count: result.count };
     }
+
+    const result = await this.p.notifications.deleteMany({
+      where: { userId },
+    });
+
+    return { count: result.count };
   }
 
-  // Helper methods for integration with other modules
+  // ---------------------------------------------------------------------------
+  // Helper hooks for other modules
+  // ---------------------------------------------------------------------------
 
   async notifyStreamingSessionStarted(eventId: string, entityId: string) {
-    const event = await this.prisma.event.findUnique({
+    const event = await this.p.events.findUnique({
       where: { id: eventId },
       select: { name: true, thumbnail: true },
     });
@@ -293,11 +338,15 @@ export class NotificationsService {
         type: "streaming_session_started",
         eventName: event.name,
         eventThumbnail: event.thumbnail,
-      },
+      } as Record<string, unknown>,
     });
   }
 
-  async notifyProductAdded(entityId: string, productId: string, productName: string) {
+  async notifyProductAdded(
+    entityId: string,
+    productId: string,
+    productName: string,
+  ) {
     await this.broadcastToFollowers({
       entityId,
       type: NotificationType.NEW_DROP,
@@ -306,11 +355,16 @@ export class NotificationsService {
         productId,
         productName,
         type: "product_added",
-      },
+      } as Record<string, unknown>,
     });
   }
 
-  async notifyEventPhaseUpdate(eventId: string, entityId: string, phase: string, eventName: string) {
+  async notifyEventPhaseUpdate(
+    eventId: string,
+    entityId: string,
+    phase: string,
+    eventName: string,
+  ) {
     await this.broadcastToFollowers({
       entityId,
       type: NotificationType.PHASE_UPDATE,
@@ -320,8 +374,7 @@ export class NotificationsService {
         phase,
         eventName,
         type: "phase_update",
-      },
+      } as Record<string, unknown>,
     });
   }
 }
-

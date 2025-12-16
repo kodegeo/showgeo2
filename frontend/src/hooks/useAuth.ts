@@ -1,0 +1,209 @@
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { authService } from "@/services";
+import type { RegisterRequest, LoginRequest } from "@/services";
+import type { User, UserProfile } from "../../../packages/shared/types/user.types";
+import type { Entity } from "../../../packages/shared/types/entity.types";
+import { handleApiError } from "@/services";
+import { supabase } from "@/lib/supabase";
+
+interface AuthState {
+  user: (User & { profile?: UserProfile }) | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+}
+
+export function useAuth() {
+  const [authState, setAuthState] = useState<AuthState>({
+    user: null,
+    isLoading: true,
+    isAuthenticated: false,
+  });
+
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
+  const [entityRoles, setEntityRoles] = useState<any[] | null>(null);
+  const [ownedEntity, setOwnedEntity] = useState<any | null>(null);
+
+  const queryClient = useQueryClient();
+
+  // ------------------------------------------------------------
+  // 1️⃣ PRISMA "me" QUERY (core user, includes isEntity)
+  // ------------------------------------------------------------
+  const {
+    data: prismaUser,
+    isLoading: isLoadingUser,
+    refetch: refetchUser,
+  } = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => authService.getCurrentUser(),
+    enabled: hasSession === true,
+    retry: 1,
+  });
+
+  // ------------------------------------------------------------
+  // 2️⃣ LOAD ENTITY ROLES AFTER prismaUser IS LOADED
+  //     (authorization / permissions — NOT identity)
+  // NOTE: This was removed useAuth should answer “who are you?”, not “what are you authorized to do?”
+  // ------------------------------------------------------------
+
+  // ------------------------------------------------------------
+  // 3️⃣ LISTEN FOR SESSION CHANGES & SYNC USER STATE
+  // ------------------------------------------------------------
+  useEffect(() => {
+    const loadSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      const loggedIn = !!data.session;
+
+      setHasSession(loggedIn);
+      setAuthState((prev) => ({
+        ...prev,
+        isLoading: false,
+        isAuthenticated: loggedIn,
+      }));
+    };
+
+    loadSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const loggedIn = !!session;
+      setHasSession(loggedIn);
+
+      if (!loggedIn) {
+        setAuthState({
+          user: null,
+          isLoading: false,
+          isAuthenticated: false,
+        });
+        queryClient.setQueryData(["auth", "me"], null);
+        setEntityRoles(null);
+        setOwnedEntity(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [queryClient]);
+
+  // ------------------------------------------------------------
+  // 4️⃣ SYNC prismaUser → authState
+  //     (identity now includes isEntity)
+  // ------------------------------------------------------------
+  useEffect(() => {
+    if (prismaUser) {
+      setAuthState({
+        user: prismaUser,
+        isLoading: false,
+        isAuthenticated: true,
+      });
+    }
+  }, [prismaUser]);
+
+  // ------------------------------------------------------------
+  // 5️⃣ REGISTER
+  // ------------------------------------------------------------
+  const registerMutation = useMutation({
+    mutationFn: async ({ email, password, firstName, lastName }: RegisterRequest) => {
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+
+      if (data.user) {
+        await authService.registerAppUser({
+          authUserId: data.user.id,
+          email,
+          firstName,
+          lastName,
+        });
+      }
+
+      return data.user;
+    },
+    onSuccess: async () => {
+      const { data } = await supabase.auth.getSession();
+      setHasSession(!!data.session);
+      if (data.session) await refetchUser();
+    },
+  });
+
+  // ------------------------------------------------------------
+  // 6️⃣ LOGIN
+  // ------------------------------------------------------------
+  const loginMutation = useMutation({
+    mutationFn: async ({ email, password }: LoginRequest) => {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    },
+    onSuccess: async () => {
+      const { data } = await supabase.auth.getSession();
+      setHasSession(!!data.session);
+      if (data.session) await refetchUser();
+    },
+    onError: (error) => {
+      console.error("[useAuth.login] ❌", error);
+    },
+  });
+
+  // ------------------------------------------------------------
+  // 7️⃣ LOGOUT
+  // ------------------------------------------------------------
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setAuthState({
+      user: null,
+      isLoading: false,
+      isAuthenticated: false,
+    });
+    queryClient.clear();
+    setEntityRoles(null);
+    setOwnedEntity(null);
+  }, [queryClient]);
+
+  // ------------------------------------------------------------
+  // 8️⃣ PROFILE COMPLETENESS CHECK (USER ONLY)
+  // ------------------------------------------------------------
+  const profile = authState.user?.profile;
+
+
+  // ------------------------------------------------------------
+  // 9️⃣ DERIVED IDENTITY FLAGS (additive)
+  // ------------------------------------------------------------
+  const isEntityUser = !!authState.user?.isEntity;
+
+  // ------------------------------------------------------------
+  // 🔟 FINAL RETURN (no removals)
+  // ------------------------------------------------------------
+  return {
+    user: authState.user,
+    isLoading: authState.isLoading || isLoadingUser,
+    isAuthenticated: authState.isAuthenticated,
+
+    // identity / setup
+    isEntityUser,
+
+    // entity data (unchanged)
+    entityRoles,
+    ownedEntity,
+
+    // auth actions (unchanged)
+    login: loginMutation.mutate,
+    loginAsync: loginMutation.mutateAsync,
+    loginLoading: loginMutation.isPending,
+    loginError: loginMutation.error ? handleApiError(loginMutation.error) : null,
+
+    register: registerMutation.mutate,
+    registerAsync: registerMutation.mutateAsync,
+    registerLoading: registerMutation.isPending,
+    registerError: registerMutation.error ? handleApiError(registerMutation.error) : null,
+
+    logout,
+    refetchUser,
+  };
+}

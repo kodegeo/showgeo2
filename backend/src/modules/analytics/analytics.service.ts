@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/commo
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
 import { EntityMetricsDto, EventPerformanceDto, UserEngagementDto, PlatformOverviewDto, RecommendationsResponseDto, RecommendationDto } from "./dto";
-import { AnalyticsSummaryType } from "@prisma/client";
+import { AnalyticsSummaryType, Prisma } from "@prisma/client";
 
 @Injectable()
 export class AnalyticsService {
@@ -17,7 +17,7 @@ export class AnalyticsService {
 
   async aggregateMetrics(entityId: string): Promise<EntityMetricsDto> {
     // Validate entity exists
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: entityId },
     });
 
@@ -37,19 +37,19 @@ export class AnalyticsService {
       ticketRevenue,
     ] = await Promise.all([
       // Events count
-      this.prisma.event.count({
+      (this.prisma as any).events.count({
         where: { entityId },
       }),
 
       // Active followers
-      this.prisma.follow.count({
+      (this.prisma as any).follows.count({
         where: { entityId },
       }),
 
       // Store sales (products sold - we'll need to add Order model later, for now count products)
-      this.prisma.product.count({
+      (this.prisma as any).products.count({
         where: {
-          store: {
+          stores: {
             entityId,
             status: "ACTIVE",
           },
@@ -58,9 +58,9 @@ export class AnalyticsService {
       }),
 
       // Store revenue (sum of product prices - placeholder, needs Order model)
-      this.prisma.product.aggregate({
+      (this.prisma as any).products.aggregate({
         where: {
-          store: {
+          stores: {
             entityId,
             status: "ACTIVE",
           },
@@ -72,7 +72,7 @@ export class AnalyticsService {
       }).then((result) => Number(result._sum.price || 0)),
 
       // Average viewers from streaming sessions
-      this.prisma.streamingSession.aggregate({
+      (this.prisma as any).streaming_sessions.aggregate({
         where: {
           entityId,
           active: false, // Completed sessions
@@ -83,14 +83,14 @@ export class AnalyticsService {
       }).then((result) => Math.round(result._avg.viewers || 0)),
 
       // Notifications sent
-      this.prisma.notification.count({
+      (this.prisma as any).notifications.count({
         where: { entityId },
       }),
 
       // Tickets sold
-      this.prisma.ticket.count({
+      (this.prisma as any).tickets.count({
         where: {
-          event: {
+          events: {
             entityId,
           },
         },
@@ -142,10 +142,10 @@ export class AnalyticsService {
 
   async getEventPerformance(eventId: string): Promise<EventPerformanceDto> {
     // Validate event exists
-    const event = await this.prisma.event.findUnique({
+    const event = await (this.prisma as any).events.findUnique({
       where: { id: eventId },
       include: {
-        streamingSessions: true,
+        streaming_sessions: true,
         tickets: true,
       },
     });
@@ -155,7 +155,7 @@ export class AnalyticsService {
     }
 
     // Get streaming metrics
-    const sessions = event.streamingSessions || [];
+    const sessions = event.streaming_sessions || [];
     const activeSession = sessions.find((s) => s.active);
 
     const totalViewers = sessions.reduce((sum, s) => sum + s.viewers, 0);
@@ -206,7 +206,7 @@ export class AnalyticsService {
 
   async getUserEngagement(userId: string): Promise<UserEngagementDto> {
     // Validate user exists
-    const user = await this.prisma.user.findUnique({
+    const user = await (this.prisma as any).app_users.findUnique({
       where: { id: userId },
     });
 
@@ -223,14 +223,14 @@ export class AnalyticsService {
       totalSpent,
     ] = await Promise.all([
       // Events attended (has ticket)
-      this.prisma.ticket.count({
+      (this.prisma as any).tickets.count({
         where: { userId },
       }),
 
       // Streams watched (participated in streaming session)
-      this.prisma.streamingSession.count({
+      (this.prisma as any).streaming_sessions.count({
         where: {
-          event: {
+          events: {
             tickets: {
               some: {
                 userId,
@@ -244,7 +244,7 @@ export class AnalyticsService {
       0, // TODO: Count from orders
 
       // Entities followed
-      this.prisma.follow.count({
+      (this.prisma as any).follows.count({
         where: { userId },
       }),
 
@@ -253,10 +253,10 @@ export class AnalyticsService {
     ]);
 
     // Get favorite categories (from followed entities)
-    const followedEntities = await this.prisma.follow.findMany({
+    const followedEntities = await (this.prisma as any).follows.findMany({
       where: { userId },
       include: {
-        entity: {
+        entities: {
           select: {
             type: true,
           },
@@ -266,7 +266,7 @@ export class AnalyticsService {
 
     const categoryCounts: Record<string, number> = {};
     followedEntities.forEach((follow) => {
-      const category = follow.entity.type || "UNKNOWN";
+      const category = follow.entities.type || "UNKNOWN";
       categoryCounts[category] = (categoryCounts[category] || 0) + 1;
     });
 
@@ -276,7 +276,7 @@ export class AnalyticsService {
       .map(([category]) => category);
 
     // Get most engaged entities (by notifications received)
-    const entityNotifications = await this.prisma.notification.groupBy({
+      const entityNotifications = await (this.prisma as any).notifications.groupBy({
       by: ["entityId"],
       where: {
         userId,
@@ -289,15 +289,15 @@ export class AnalyticsService {
         _count: {
           id: "desc",
         },
-        take: 5,
       },
+      take: 5,
     });
 
     const mostEngagedEntities = await Promise.all(
       entityNotifications.map(async (notif) => {
         if (!notif.entityId) return null;
 
-        const entity = await this.prisma.entity.findUnique({
+        const entity = await (this.prisma as any).entities.findUnique({
           where: { id: notif.entityId },
           select: {
             id: true,
@@ -350,10 +350,10 @@ export class AnalyticsService {
       topEntities,
       recentActivity,
     ] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.entity.count(),
-      this.prisma.event.count(),
-      this.prisma.streamingSession.count({
+      (this.prisma as any).app_users.count(),
+      (this.prisma as any).entities.count(),
+      (this.prisma as any).events.count(),
+      (this.prisma as any).streaming_sessions.count({
         where: { active: true },
       }),
       this.getTopPerformingEntities(10),
@@ -379,7 +379,7 @@ export class AnalyticsService {
     const userVector = await this.getUserInteractionVector(userId);
 
     // Get all entities with their interaction vectors
-    const entities = await this.prisma.entity.findMany({
+    const entities = await (this.prisma as any).entities.findMany({
       where: {
         isPublic: true,
       },
@@ -443,17 +443,18 @@ export class AnalyticsService {
       topEntities.map((e) => e.entityId),
     );
 
-    const events = await this.prisma.event.findMany({
+    const events = await (this.prisma as any).events.findMany({
       where: {
         entityId: { in: Array.from(recommendedEventIds) },
         status: { in: ["SCHEDULED", "LIVE"] },
       },
       include: {
-        entity: {
+        entities_events_entityIdToentities: {
           select: {
             name: true,
             slug: true,
             thumbnail: true,
+            type: true,
           },
         },
       },
@@ -463,12 +464,12 @@ export class AnalyticsService {
 
     const recommendedEvents = events.map((event) => ({
       entityId: event.entityId,
-      entityName: event.entity.name,
-      entitySlug: event.entity.slug,
-      entityType: event.entity.type || "ENTITY",
+      entityName: event.entities_events_entityIdToentities?.name || "Unknown",
+      entitySlug: event.entities_events_entityIdToentities?.slug || "",
+      entityType: event.entities_events_entityIdToentities?.type || "ENTITY",
       score: 0.8, // Base score for upcoming events
-      reasons: [`Upcoming event: ${event.name}`, `From ${event.entity.name}`],
-      thumbnail: event.thumbnail || event.entity.thumbnail || undefined,
+      reasons: [`Upcoming event: ${event.name}`, `From ${event.entities_events_entityIdToentities?.name || "Unknown"}`],
+      thumbnail: event.thumbnail || event.entities_events_entityIdToentities?.thumbnail || undefined,
     }));
 
     return {
@@ -482,7 +483,7 @@ export class AnalyticsService {
     console.log("Updating analytics summaries...");
 
     // Update entity analytics
-    const entities = await this.prisma.entity.findMany({
+    const entities = await (this.prisma as any).entities.findMany({
       select: { id: true },
     });
 
@@ -491,7 +492,7 @@ export class AnalyticsService {
     }
 
     // Update event analytics
-    const events = await this.prisma.event.findMany({
+    const events = await (this.prisma as any).events.findMany({
       select: { id: true },
     });
 
@@ -500,7 +501,7 @@ export class AnalyticsService {
     }
 
     // Update user analytics
-    const users = await this.prisma.user.findMany({
+    const users = await (this.prisma as any).app_users.findMany({
       select: { id: true },
     });
 
@@ -526,15 +527,15 @@ export class AnalyticsService {
     if (data.eventId) where.eventId = data.eventId;
     if (data.userId) where.userId = data.userId;
 
-    await this.prisma.analyticsSummary.upsert({
+    await (this.prisma as any).analytics_summaries.upsert({
       where: where as any,
       update: {
-        metrics: data.metrics,
+        metrics: data.metrics as Prisma.InputJsonValue,
         engagementScore: data.engagementScore,
       },
       create: {
         ...data,
-        metrics: data.metrics,
+        metrics: data.metrics as Prisma.InputJsonValue,
       },
     });
   }
@@ -619,7 +620,7 @@ export class AnalyticsService {
     }>
   > {
     // Get streaming sessions for this event in the last N days
-    const sessions = await this.prisma.streamingSession.findMany({
+    const sessions = await (this.prisma as any).streaming_sessions.findMany({
       where: {
         eventId,
         createdAt: {
@@ -667,12 +668,12 @@ export class AnalyticsService {
       revenue: number;
     }>
   > {
-    const summaries = await this.prisma.analyticsSummary.findMany({
+    const summaries = await (this.prisma as any).analytics_summaries.findMany({
       where: {
         type: AnalyticsSummaryType.ENTITY,
       },
       include: {
-        entity: {
+        entities: {
           select: {
             name: true,
           },
@@ -685,12 +686,12 @@ export class AnalyticsService {
     });
 
     return summaries
-      .filter((s) => s.entity)
+      .filter((s) => s.entities)
       .map((summary) => {
         const metrics = (summary.metrics as any) || {};
         return {
           entityId: summary.entityId!,
-          entityName: summary.entity!.name,
+          entityName: summary.entities?.name || "Unknown",
           engagementScore: summary.engagementScore || 0,
           followers: metrics.activeFollowers || 0,
           events: metrics.eventsCount || 0,
@@ -708,22 +709,22 @@ export class AnalyticsService {
     const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const [newUsers, newEvents, newProducts, sessions] = await Promise.all([
-      this.prisma.user.count({
+      (this.prisma as any).app_users.count({
         where: {
           createdAt: { gte: last24Hours },
         },
       }),
-      this.prisma.event.count({
+      (this.prisma as any).events.count({
         where: {
           createdAt: { gte: last24Hours },
         },
       }),
-      this.prisma.product.count({
+      (this.prisma as any).products.count({
         where: {
           createdAt: { gte: last24Hours },
         },
       }),
-      this.prisma.streamingSession.findMany({
+      (this.prisma as any).streaming_sessions.findMany({
         where: {
           createdAt: { gte: last24Hours },
           active: false,
@@ -750,11 +751,11 @@ export class AnalyticsService {
   private async getUserInteractionVector(userId: string): Promise<number[]> {
     // Build interaction vector: [follows_count, events_attended, streams_watched, products_purchased, notifications_received]
     const [follows, events, streams, purchases, notifications] = await Promise.all([
-      this.prisma.follow.count({ where: { userId } }),
-      this.prisma.ticket.count({ where: { userId } }),
-      this.prisma.streamingSession.count({
+      (this.prisma as any).follows.count({ where: { userId } }),
+      (this.prisma as any).tickets.count({ where: { userId } }),
+      (this.prisma as any).streaming_sessions.count({
         where: {
-          event: {
+          events: {
             tickets: {
               some: { userId },
             },
@@ -762,7 +763,7 @@ export class AnalyticsService {
         },
       }),
       0, // TODO: Count from orders
-      this.prisma.notification.count({ where: { userId } }),
+      (this.prisma as any).notifications.count({ where: { userId } }),
     ]);
 
     // Normalize values (simple min-max normalization)
@@ -779,18 +780,18 @@ export class AnalyticsService {
   private async getEntityInteractionVector(entityId: string): Promise<number[]> {
     // Build entity interaction vector: [followers, events, products, avg_viewers, notifications_sent]
     const [followers, events, products, avgViewers, notifications] = await Promise.all([
-      this.prisma.follow.count({ where: { entityId } }),
-      this.prisma.event.count({ where: { entityId } }),
-      this.prisma.product.count({
+      (this.prisma as any).follows.count({ where: { entityId } }),
+      (this.prisma as any).events.count({ where: { entityId } }),
+      (this.prisma as any).products.count({
         where: {
-          store: { entityId },
+          stores: { entityId },
         },
       }),
-      this.prisma.streamingSession.aggregate({
+      (this.prisma as any).streaming_sessions.aggregate({
         where: { entityId },
         _avg: { viewers: true },
       }).then((r) => Math.round(r._avg.viewers || 0)),
-      this.prisma.notification.count({ where: { entityId } }),
+      (this.prisma as any).notifications.count({ where: { entityId } }),
     ]);
 
     // Normalize values
@@ -843,7 +844,7 @@ export class AnalyticsService {
 
   async validateEntityAccess(entityId: string, userId: string): Promise<void> {
     // Check if user owns the entity
-    const entity = await this.prisma.entity.findUnique({
+    const entity = await (this.prisma as any).entities.findUnique({
       where: { id: entityId },
       include: {
         roles: {

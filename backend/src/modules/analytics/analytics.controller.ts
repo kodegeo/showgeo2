@@ -1,9 +1,27 @@
-import { Controller, Get, Param, UseGuards, Query, Post, ForbiddenException } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
+import {
+  Controller,
+  Get,
+  Param,
+  UseGuards,
+  Query,
+  Post,
+  ForbiddenException,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+} from "@nestjs/swagger";
 import { AnalyticsService } from "./analytics.service";
-import { JwtAuthGuard, RolesGuard } from "../../common/guards";
+import { RolesGuard } from "../../common/guards";
+import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser } from "../../common/decorators";
-import { User, UserRole } from "@prisma/client";
+import { UserRole} from "@prisma/client";
+
+type User = any;
 
 @ApiTags("analytics")
 @Controller("analytics")
@@ -11,7 +29,7 @@ export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   @Get("entity/:entityId")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ENTITY", "ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get analytics for entity (Owner/Admin)" })
@@ -20,7 +38,10 @@ export class AnalyticsController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Owner or Admin only" })
   @ApiResponse({ status: 404, description: "Entity not found" })
-  async getEntityAnalytics(@Param("entityId") entityId: string, @CurrentUser() user: User) {
+  async getEntityAnalytics(
+    @Param("entityId") entityId: string,
+    @CurrentUser() user: User
+  ) {
     // Validate user is owner or manager of entity (unless admin)
     if (user.role !== UserRole.ADMIN) {
       await this.analyticsService.validateEntityAccess(entityId, user.id);
@@ -29,7 +50,7 @@ export class AnalyticsController {
   }
 
   @Get("event/:eventId")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get analytics for event" })
   @ApiParam({ name: "eventId", type: String })
@@ -41,7 +62,7 @@ export class AnalyticsController {
   }
 
   @Get("user/:userId")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get analytics for user (self/Admin)" })
   @ApiParam({ name: "userId", type: String })
@@ -49,7 +70,10 @@ export class AnalyticsController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Only self or Admin" })
   @ApiResponse({ status: 404, description: "User not found" })
-  getUserAnalytics(@Param("userId") userId: string, @CurrentUser() user: User) {
+  getUserAnalytics(
+    @Param("userId") userId: string,
+    @CurrentUser() user: User
+  ) {
     // Only allow if user is requesting own analytics or is admin
     if (userId !== user.id && user.role !== UserRole.ADMIN) {
       throw new ForbiddenException("You can only view your own analytics");
@@ -59,7 +83,7 @@ export class AnalyticsController {
   }
 
   @Get("overview")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Platform overview (Admin only)" })
@@ -71,7 +95,7 @@ export class AnalyticsController {
   }
 
   @Get("recommendations/:userId")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get recommendations (authenticated user)" })
   @ApiParam({ name: "userId", type: String })
@@ -79,7 +103,10 @@ export class AnalyticsController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Only self" })
   @ApiResponse({ status: 404, description: "User not found" })
-  getRecommendations(@Param("userId") userId: string, @CurrentUser() user: User) {
+  getRecommendations(
+    @Param("userId") userId: string,
+    @CurrentUser() user: User
+  ) {
     // Only allow if user is requesting own recommendations
     if (userId !== user.id) {
       throw new ForbiddenException("You can only view your own recommendations");
@@ -89,7 +116,7 @@ export class AnalyticsController {
   }
 
   @Post("update")
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles("ADMIN")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Manually trigger analytics update (Admin only)" })
@@ -101,4 +128,3 @@ export class AnalyticsController {
     return { message: "Analytics update completed" };
   }
 }
-

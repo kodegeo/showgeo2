@@ -43,7 +43,7 @@ A Store is a digital storefront used to sell merchandise, digital goods, or serv
 	- One Event (event_id)
 	- One Tour (tour_id)
 - This enables stores tied to:
-	- A single concert (Event)
+	- A single LIVE (Event)
 	- A tour-wide store (Tour)
 	- A general brand storefront (Entity)
 

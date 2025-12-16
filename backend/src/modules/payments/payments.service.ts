@@ -1,26 +1,48 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
-import { CreateCheckoutDto, CreateRefundDto, PaymentQueryDto } from "./dto";
-import { Order, OrderStatus, OrderType, PaymentMethod, UserRole } from "@prisma/client";
+import {
+  CreateCheckoutDto,
+  CreateRefundDto,
+  PaymentQueryDto,
+} from "./dto";
+import {
+  OrderStatus,
+  OrderType,
+  PaymentMethod,
+  UserRole,
+  TicketType,
+  Prisma,
+} from "@prisma/client";
 import Stripe from "stripe";
 
 @Injectable()
 export class PaymentsService {
-  private stripe: Stripe;
+  private readonly stripe: Stripe | null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
   ) {
     const stripeSecretKey = this.configService.get<string>("STRIPE_SECRET_KEY");
+
     if (stripeSecretKey) {
       this.stripe = new Stripe(stripeSecretKey, {
-        apiVersion: "2024-10-28.acacia",
+        apiVersion: "2023-10-16" as any,
       });
+    } else {
+      this.stripe = null;
     }
   }
 
+  /**
+   * Create Stripe Checkout Session and a pending Order
+   */
   async createCheckoutSession(
     createCheckoutDto: CreateCheckoutDto,
     userId: string,
@@ -29,7 +51,14 @@ export class PaymentsService {
       throw new BadRequestException("Stripe is not configured");
     }
 
-    const { type, eventId, storeId, items, successUrl, cancelUrl } = createCheckoutDto;
+    const {
+      type,
+      eventId,
+      storeId,
+      items,
+      successUrl,
+      cancelUrl,
+    } = createCheckoutDto;
 
     // Validate items
     if (!items || items.length === 0) {
@@ -37,36 +66,44 @@ export class PaymentsService {
     }
 
     // Calculate total amount
-    const totalAmount = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const totalAmount = items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
 
     if (totalAmount <= 0) {
       throw new BadRequestException("Total amount must be greater than 0");
     }
 
-    // Validate event or store exists
+    // Validate event or store and get entityId
     let entityId: string | undefined;
+
     if (type === OrderType.TICKET && eventId) {
-      const event = await this.prisma.event.findUnique({
+      const event = await (this.prisma as any).events.findUnique({
         where: { id: eventId },
         select: { entityId: true },
       });
+
       if (!event) {
         throw new NotFoundException("Event not found");
       }
+
       entityId = event.entityId;
     } else if (type === OrderType.PRODUCT && storeId) {
-      const store = await this.prisma.store.findUnique({
+      const store = await (this.prisma as any).stores.findUnique({
         where: { id: storeId },
         select: { entityId: true },
       });
+
       if (!store) {
         throw new NotFoundException("Store not found");
       }
+
       entityId = store.entityId;
     }
 
-    // Create order in database
-    const order = await this.prisma.order.create({
+    // Create order in database as PENDING
+    const order = await (this.prisma as any).orders.create({
       data: {
         userId,
         entityId,
@@ -74,7 +111,7 @@ export class PaymentsService {
         storeId,
         type,
         status: OrderStatus.PENDING,
-        totalAmount: totalAmount,
+        totalAmount,
         currency: "USD",
         items: {
           create: items.map((item) => ({
@@ -90,6 +127,10 @@ export class PaymentsService {
       },
     });
 
+    const frontendUrl =
+      this.configService.get<string>("FRONTEND_URL") ||
+      "http://localhost:5173";
+
     // Create Stripe checkout session
     const session = await this.stripe.checkout.sessions.create({
       payment_method_types: ["card"],
@@ -100,13 +141,15 @@ export class PaymentsService {
             name: item.name,
             description: item.description || undefined,
           },
-          unit_amount: Math.round(item.unitPrice * 100), // Convert to cents
+          unit_amount: Math.round(item.unitPrice * 100), // to cents
         },
         quantity: item.quantity,
       })),
       mode: "payment",
-      success_url: successUrl || `${this.configService.get<string>("FRONTEND_URL") || "http://localhost:5173"}/payments/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl || `${this.configService.get<string>("FRONTEND_URL") || "http://localhost:5173"}/payments/cancel`,
+      success_url:
+        successUrl ||
+        `${frontendUrl}/payments/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: cancelUrl || `${frontendUrl}/payments/cancel`,
       client_reference_id: order.id,
       metadata: {
         orderId: order.id,
@@ -118,7 +161,7 @@ export class PaymentsService {
     });
 
     // Update order with Stripe session ID
-    await this.prisma.order.update({
+    await (this.prisma as any).orders.update({
       where: { id: order.id },
       data: { stripeSessionId: session.id },
     });
@@ -129,36 +172,54 @@ export class PaymentsService {
     };
   }
 
+  /**
+   * Handle Stripe webhook events
+   */
   async handleWebhook(payload: Buffer, signature: string): Promise<void> {
     if (!this.stripe) {
       throw new BadRequestException("Stripe is not configured");
     }
 
-    const webhookSecret = this.configService.get<string>("STRIPE_WEBHOOK_SECRET");
+    const webhookSecret =
+      this.configService.get<string>("STRIPE_WEBHOOK_SECRET");
+
     if (!webhookSecret) {
-      throw new BadRequestException("Stripe webhook secret not configured");
+      throw new BadRequestException(
+        "Stripe webhook secret not configured",
+      );
     }
 
     let event: Stripe.Event;
 
     try {
-      event = this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);
-    } catch (err) {
-      throw new BadRequestException(`Webhook signature verification failed: ${err.message}`);
+      event = this.stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        webhookSecret,
+      );
+    } catch (err: any) {
+      throw new BadRequestException(
+        `Webhook signature verification failed: ${err?.message || "Unknown error"}`,
+      );
     }
 
-    // Handle the event
     switch (event.type) {
       case "checkout.session.completed":
-        await this.handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+        await this.handleCheckoutCompleted(
+          event.data.object as Stripe.Checkout.Session,
+        );
         break;
 
       case "payment_intent.succeeded":
-        await this.handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent);
+        await this.handlePaymentSucceeded(
+          event.data.object as Stripe.PaymentIntent,
+        );
         break;
 
       case "payment_intent.payment_failed":
-        await this.handlePaymentFailed(event.data.object as Stripe.PaymentIntent);
+        await this.handlePaymentFailed(
+          event.data.object as Stripe.PaymentIntent,
+        );
         break;
 
       case "charge.refunded":
@@ -166,18 +227,27 @@ export class PaymentsService {
         break;
 
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        // Optional: log unhandled events
+        // console.log(`Unhandled event type: ${event.type}`);
+        break;
     }
   }
 
-  private async handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
-    const orderId = session.client_reference_id || session.metadata?.orderId;
+  /**
+   * Handle checkout.session.completed
+   */
+  private async handleCheckoutCompleted(
+    session: Stripe.Checkout.Session,
+  ): Promise<void> {
+    const orderId =
+      session.client_reference_id || session.metadata?.orderId;
+
     if (!orderId) {
-      console.error("No order ID found in session");
+      console.error("No order ID found in checkout session");
       return;
     }
 
-    const order = await this.prisma.order.findUnique({
+    const order = await (this.prisma as any).orders.findUnique({
       where: { id: orderId },
       include: { items: true },
     });
@@ -187,8 +257,8 @@ export class PaymentsService {
       return;
     }
 
-    // Update order status
-    await this.prisma.order.update({
+    // Update order status and attach payment intent
+    await (this.prisma as any).orders.update({
       where: { id: orderId },
       data: {
         status: OrderStatus.COMPLETED,
@@ -198,7 +268,7 @@ export class PaymentsService {
 
     // Create payment record
     if (session.payment_intent) {
-      await this.prisma.payment.create({
+      await (this.prisma as any).payments.create({
         data: {
           orderId,
           amount: order.totalAmount,
@@ -209,28 +279,31 @@ export class PaymentsService {
           metadata: {
             sessionId: session.id,
             customerEmail: session.customer_email,
-          },
+          } as Prisma.InputJsonValue,
         },
       });
     }
 
-    // Create tickets if order type is TICKET
+    // If order is for tickets, create or link tickets
     if (order.type === OrderType.TICKET && order.eventId) {
       for (const item of order.items) {
         if (item.ticketId) {
-          // Ticket already exists, link to order
-          await this.prisma.ticket.update({
+          // Ticket already exists; link to order
+          await (this.prisma as any).tickets.update({
             where: { id: item.ticketId },
             data: { orderId },
           });
         } else {
-          // Create new ticket
+          // Create new tickets (one per quantity)
           for (let i = 0; i < item.quantity; i++) {
-            await this.prisma.ticket.create({
+            await (this.prisma as any).tickets.create({
               data: {
                 userId: order.userId,
-                eventId: order.eventId!,
+                eventId: order.eventId,
                 orderId,
+                type: TicketType.PAID,
+                price: item.unitPrice ? Number(item.unitPrice) : null,
+                currency: order.currency || "USD",
               },
             });
           }
@@ -239,13 +312,18 @@ export class PaymentsService {
     }
   }
 
-  private async handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  /**
+   * Handle payment_intent.succeeded
+   */
+  private async handlePaymentSucceeded(
+    paymentIntent: Stripe.PaymentIntent,
+  ): Promise<void> {
     const orderId = paymentIntent.metadata?.orderId;
     if (!orderId) {
       return;
     }
 
-    await this.prisma.order.update({
+    await (this.prisma as any).orders.update({
       where: { id: orderId },
       data: {
         status: OrderStatus.COMPLETED,
@@ -253,60 +331,70 @@ export class PaymentsService {
       },
     });
 
-    // Update or create payment record
-    const order = await this.prisma.order.findUnique({
+    const order = await (this.prisma as any).orders.findUnique({
       where: { id: orderId },
     });
 
-    if (order) {
-      await this.prisma.payment.upsert({
-        where: { stripePaymentId: paymentIntent.id },
-        update: {
-          status: "succeeded",
-          stripeChargeId: paymentIntent.latest_charge as string,
-        },
-        create: {
-          orderId,
-          amount: order.totalAmount,
-          currency: order.currency,
-          status: "succeeded",
-          paymentMethod: PaymentMethod.STRIPE,
-          stripePaymentId: paymentIntent.id,
-          stripeChargeId: paymentIntent.latest_charge as string,
-        },
-      });
+    if (!order) {
+      return;
     }
+
+    // Upsert payment record
+    await (this.prisma as any).payments.upsert({
+      where: { stripePaymentId: paymentIntent.id },
+      update: {
+        status: "succeeded",
+        stripeChargeId: paymentIntent.latest_charge as string,
+      },
+      create: {
+        orderId,
+        amount: order.totalAmount,
+        currency: order.currency,
+        status: "succeeded",
+        paymentMethod: PaymentMethod.STRIPE,
+        stripePaymentId: paymentIntent.id,
+        stripeChargeId: paymentIntent.latest_charge as string,
+      },
+    });
   }
 
-  private async handlePaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  /**
+   * Handle payment_intent.payment_failed
+   */
+  private async handlePaymentFailed(
+    paymentIntent: Stripe.PaymentIntent,
+  ): Promise<void> {
     const orderId = paymentIntent.metadata?.orderId;
     if (!orderId) {
       return;
     }
 
-    await this.prisma.order.update({
+    await (this.prisma as any).orders.update({
       where: { id: orderId },
       data: {
         status: OrderStatus.FAILED,
       },
     });
 
-    await this.prisma.payment.create({
+    await (this.prisma as any).payments.create({
       data: {
         orderId,
-        amount: paymentIntent.amount / 100, // Convert from cents
+        amount: paymentIntent.amount / 100, // from cents
         currency: paymentIntent.currency,
         status: "failed",
         paymentMethod: PaymentMethod.STRIPE,
         stripePaymentId: paymentIntent.id,
-        failureReason: paymentIntent.last_payment_error?.message || "Payment failed",
+        failureReason:
+          paymentIntent.last_payment_error?.message || "Payment failed",
       },
     });
   }
 
+  /**
+   * Handle charge.refunded webhook
+   */
   private async handleRefund(charge: Stripe.Charge): Promise<void> {
-    // Find payment by charge ID
-    const payment = await this.prisma.payment.findUnique({
+    const payment = await (this.prisma as any).payments.findUnique({
       where: { stripeChargeId: charge.id },
       include: { order: true },
     });
@@ -316,7 +404,7 @@ export class PaymentsService {
     }
 
     // Update payment status
-    await this.prisma.payment.update({
+    await (this.prisma as any).payments.update({
       where: { id: payment.id },
       data: {
         status: "refunded",
@@ -324,9 +412,9 @@ export class PaymentsService {
       },
     });
 
-    // Update order status if fully refunded
+    // If fully refunded, update order status
     if (charge.amount_refunded === charge.amount) {
-      await this.prisma.order.update({
+      await (this.prisma as any).orders.update({
         where: { id: payment.orderId },
         data: {
           status: OrderStatus.REFUNDED,
@@ -335,15 +423,21 @@ export class PaymentsService {
     }
   }
 
-  async createRefund(createRefundDto: CreateRefundDto, userId: string, userRole: UserRole): Promise<{ refundId: string; amount: number }> {
+  /**
+   * Create a refund (full or partial) for an order
+   */
+  async createRefund(
+    createRefundDto: CreateRefundDto,
+    userId: string,
+    userRole: UserRole,
+  ): Promise<{ refundId: string; amount: number }> {
     if (!this.stripe) {
       throw new BadRequestException("Stripe is not configured");
     }
 
     const { orderId, amountPercent } = createRefundDto;
 
-    // Find order
-    const order = await this.prisma.order.findUnique({
+    const order = await (this.prisma as any).orders.findUnique({
       where: { id: orderId },
       include: { payments: true },
     });
@@ -352,7 +446,7 @@ export class PaymentsService {
       throw new NotFoundException("Order not found");
     }
 
-    // Check permissions (owner or admin)
+    // Only admin or owner can refund
     if (userRole !== UserRole.ADMIN && order.userId !== userId) {
       throw new ForbiddenException("You can only refund your own orders");
     }
@@ -361,26 +455,26 @@ export class PaymentsService {
       throw new BadRequestException("Order is already refunded");
     }
 
-    // Find payment
-    const payment = order.payments.find((p) => p.status === "succeeded" && p.stripeChargeId);
+    const payment = order.payments.find(
+      (p) => p.status === "succeeded" && p.stripeChargeId,
+    );
+
     if (!payment || !payment.stripeChargeId) {
       throw new BadRequestException("No valid payment found for refund");
     }
 
-    // Calculate refund amount
+    const totalAmount = Number(order.totalAmount);
     const refundAmount = amountPercent
-      ? (Number(order.totalAmount) * amountPercent) / 100
-      : Number(order.totalAmount);
+      ? (totalAmount * amountPercent) / 100
+      : totalAmount;
 
-    // Create refund in Stripe
     const refund = await this.stripe.refunds.create({
       charge: payment.stripeChargeId,
-      amount: Math.round(refundAmount * 100), // Convert to cents
+      amount: Math.round(refundAmount * 100), // to cents
       reason: "requested_by_customer",
     });
 
-    // Update payment
-    await this.prisma.payment.update({
+    await (this.prisma as any).payments.update({
       where: { id: payment.id },
       data: {
         status: "refunded",
@@ -388,19 +482,18 @@ export class PaymentsService {
       },
     });
 
-    // Update order status if fully refunded
-    if (refundAmount >= Number(order.totalAmount)) {
-      await this.prisma.order.update({
+    if (refundAmount >= totalAmount) {
+      await (this.prisma as any).orders.update({
         where: { id: orderId },
         data: {
           status: OrderStatus.REFUNDED,
         },
       });
     } else {
-      await this.prisma.order.update({
+      await (this.prisma as any).orders.update({
         where: { id: orderId },
         data: {
-          status: OrderStatus.PROCESSING, // Partial refund
+          status: OrderStatus.PROCESSING,
         },
       });
     }
@@ -411,8 +504,23 @@ export class PaymentsService {
     };
   }
 
-  async getOrders(query: PaymentQueryDto, userId: string, userRole: UserRole) {
-    const { userId: queryUserId, entityId, eventId, status, type, page = 1, limit = 20 } = query;
+  /**
+   * Get paginated orders with filters & permissions
+   */
+  async getOrders(
+    query: PaymentQueryDto,
+    userId: string,
+    userRole: UserRole,
+  ) {
+    const {
+      userId: queryUserId,
+      entityId,
+      eventId,
+      status,
+      type,
+      page = 1,
+      limit = 20,
+    } = query;
 
     const where: {
       userId?: string;
@@ -422,7 +530,7 @@ export class PaymentsService {
       type?: OrderType;
     } = {};
 
-    // Permission check: users can only see their own orders unless admin
+    // Non-admins can only see their own orders
     if (userRole !== UserRole.ADMIN) {
       where.userId = userId;
     } else if (queryUserId) {
@@ -437,7 +545,7 @@ export class PaymentsService {
     const skip = (page - 1) * limit;
 
     const [orders, total] = await Promise.all([
-      this.prisma.order.findMany({
+      (this.prisma as any).orders.findMany({
         where,
         include: {
           items: {
@@ -480,7 +588,7 @@ export class PaymentsService {
         skip,
         take: limit,
       }),
-      this.prisma.order.count({ where }),
+      (this.prisma as any).orders.count({ where }),
     ]);
 
     return {
@@ -494,8 +602,15 @@ export class PaymentsService {
     };
   }
 
-  async getOrder(orderId: string, userId: string, userRole: UserRole) {
-    const order = await this.prisma.order.findUnique({
+  /**
+   * Get single order with full detail (if allowed)
+   */
+  async getOrder(
+    orderId: string,
+    userId: string,
+    userRole: UserRole,
+  ) {
+    const order = await (this.prisma as any).orders.findUnique({
       where: { id: orderId },
       include: {
         items: {
@@ -570,7 +685,6 @@ export class PaymentsService {
       throw new NotFoundException("Order not found");
     }
 
-    // Check permissions
     if (userRole !== UserRole.ADMIN && order.userId !== userId) {
       throw new ForbiddenException("You can only view your own orders");
     }
@@ -578,4 +692,3 @@ export class PaymentsService {
     return order;
   }
 }
-
