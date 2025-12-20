@@ -1,6 +1,6 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, IsArray, IsUUID, MaxLength } from "class-validator";
+import { IsString, IsOptional, IsIn, IsBoolean, IsArray, IsUUID, MaxLength } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { StoreStatus, StoreVisibility } from "@prisma/client";
+import { RuntimeEnums, StoreStatus, StoreVisibility } from "../../../common/runtime-enums";
 
 export class CreateStoreDto {
   @ApiProperty()
@@ -33,14 +33,14 @@ export class CreateStoreDto {
   @IsString()
   currency?: string;
 
-  @ApiPropertyOptional({ enum: StoreStatus, default: StoreStatus.ACTIVE })
+  @ApiPropertyOptional({ enum: RuntimeEnums.StoreStatus, default: "ACTIVE" })
   @IsOptional()
-  @IsEnum(StoreStatus)
+  @IsIn(RuntimeEnums.StoreStatus)
   status?: StoreStatus;
 
-  @ApiPropertyOptional({ enum: StoreVisibility, default: StoreVisibility.PUBLIC })
+  @ApiPropertyOptional({ enum: RuntimeEnums.StoreVisibility, default: "PUBLIC" })
   @IsOptional()
-  @IsEnum(StoreVisibility)
+  @IsIn(RuntimeEnums.StoreVisibility)
   visibility?: StoreVisibility;
 
   @ApiPropertyOptional({ type: [String] })

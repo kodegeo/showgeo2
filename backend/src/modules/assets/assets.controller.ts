@@ -15,21 +15,61 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { FileInterceptor, FileFieldsInterceptor } from "@nestjs/platform-express";
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiConsumes, ApiBody } from "@nestjs/swagger";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiConsumes,
+} from "@nestjs/swagger";
+
 import { AssetsService } from "./assets.service";
-import { UploadAssetDto, AssetQueryDto, UploadCreatorMediaDto, BulkUploadDto } from "./dto";
+import {
+  UploadAssetDto,
+  AssetQueryDto,
+  UploadCreatorMediaDto,
+  BulkUploadDto,
+} from "./dto";
+
 import { RolesGuard } from "../../common/guards";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
-import type { app_users as User } from "@prisma/client";
+
+import { app_users as PrismaUser, UserRole as PrismaUserRole } from "@prisma/client";
+
 import type { Express } from "express-serve-static-core";
 import { AssetUploadDebug } from "../../debug/asset-upload-debug";
+
+type CurrentUserShape = Pick<PrismaUser, "id" | "role"> & {
+  // In case your CurrentUser decorator returns a lighter object:
+  id: string;
+  role: PrismaUserRole;
+};
 
 const multerOptions = {
   limits: {
     fileSize: 500 * 1024 * 1024,
   },
 };
+
+/**
+ * Convert Prisma enum UserRole -> App enum UserRole.
+ * This preserves strict typing without changing runtime behavior.
+ */
+
+export function toUserRole(
+  role: PrismaUserRole | string | undefined | null,
+): PrismaUserRole {
+  if (!role) return PrismaUserRole.USER;
+
+  // If it's already a valid Prisma enum value, return it
+  if (Object.values(PrismaUserRole).includes(role as PrismaUserRole)) {
+    return role as PrismaUserRole;
+  }
+
+  // Safe fallback
+  return PrismaUserRole.USER;
+}
 
 @ApiTags("assets")
 @Controller("assets")
@@ -39,59 +79,58 @@ export class AssetsController {
   // --------------------------------------------------------------------------
   // UPLOAD (USER AVATAR, BANNER, ETC.)
   // --------------------------------------------------------------------------
-// --------------------------------------------------------------------------
-// UPLOAD (USER AVATAR, BANNER, ETC.)
-// --------------------------------------------------------------------------
-@Post("upload")
-@UseGuards(SupabaseAuthGuard)
-@UseInterceptors(FileInterceptor("file", multerOptions))
-@ApiBearerAuth()
-@ApiConsumes("multipart/form-data")
-@ApiOperation({ summary: "Upload an asset file" })
-@ApiResponse({ status: 201, description: "Asset uploaded successfully" })
-@ApiResponse({ status: 400, description: "Bad request - invalid file or parameters" })
-@ApiResponse({ status: 401, description: "Unauthorized" })
-@ApiResponse({ status: 403, description: "Forbidden - insufficient permissions" })
-async upload(
-  @UploadedFile() file: Express.Multer.File,
-  @Body() uploadDto: UploadAssetDto,
-  @CurrentUser() user: User,
-) {
-  // ---------------------------------------------------------------------
-  // 🔥 FULL DEBUG INJECTION FOR UPLOAD ISSUES
-  // ---------------------------------------------------------------------
-  try {
-    AssetUploadDebug.requestReceived({
-      route: "POST /assets/upload",
-      userId: user?.id,
-      role: user?.role,
-    });
+  @Post("upload")
+  @UseGuards(SupabaseAuthGuard)
+  @UseInterceptors(FileInterceptor("file", multerOptions))
+  @ApiBearerAuth()
+  @ApiConsumes("multipart/form-data")
+  @ApiOperation({ summary: "Upload an asset file" })
+  @ApiResponse({ status: 201, description: "Asset uploaded successfully" })
+  @ApiResponse({ status: 400, description: "Bad request - invalid file or parameters" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - insufficient permissions" })
+  async upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() uploadDto: UploadAssetDto,
+    @CurrentUser() user: CurrentUserShape,
+  ) {
+    // ---------------------------------------------------------------------
+    // 🔥 FULL DEBUG INJECTION FOR UPLOAD ISSUES
+    // ---------------------------------------------------------------------
+    try {
+      AssetUploadDebug.requestReceived({
+        route: "POST /assets/upload",
+        userId: user?.id,
+        role: user?.role,
+      });
 
-    AssetUploadDebug.multerResult(file, uploadDto);
+      AssetUploadDebug.multerResult(file, uploadDto);
 
-    AssetUploadDebug.supabaseConfig({
-      SUPABASE_URL: process.env.SUPABASE_URL,
-      SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET,
-      SUPABASE_SERVICE_ROLE_KEY:
-        process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 6) + "...(redacted)",
-    });
-  } catch (err) {
-    console.error("🔥 DEBUG LOGGING FAILED:", err);
+      AssetUploadDebug.supabaseConfig({
+        SUPABASE_URL: process.env.SUPABASE_URL,
+        SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET,
+        SUPABASE_SERVICE_ROLE_KEY:
+          process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 6) + "...(redacted)",
+      });
+    } catch (err) {
+      console.error("🔥 DEBUG LOGGING FAILED:", err);
+    }
+    // ---------------------------------------------------------------------
+
+    if (!file) throw new BadRequestException("File is required");
+
+    // Convert Prisma role -> App role to match AssetsService signature
+    const appRole = toUserRole(user?.role);
+
+    return this.assetsService.uploadAsset(file, uploadDto, user.id, appRole);
   }
-  // ---------------------------------------------------------------------
 
-  if (!file) {
-    throw new BadRequestException("File is required");
-  }
-
-  return this.assetsService.uploadAsset(file, uploadDto, user.id, user.role);
-}
   // --------------------------------------------------------------------------
   // LIST
   // --------------------------------------------------------------------------
   @Get()
   @Public()
-  async list(@Query() query: AssetQueryDto, @CurrentUser() user?: User) {
+  async list(@Query() query: AssetQueryDto, @CurrentUser() user?: CurrentUserShape) {
     return this.assetsService.listAssets(query, user?.id);
   }
 
@@ -100,7 +139,7 @@ async upload(
   // --------------------------------------------------------------------------
   @Get(":id")
   @Public()
-  async getById(@Param("id") id: string, @CurrentUser() user?: User) {
+  async getById(@Param("id") id: string, @CurrentUser() user?: CurrentUserShape) {
     return this.assetsService.getAssetById(id, user?.id);
   }
 
@@ -109,7 +148,7 @@ async upload(
   // --------------------------------------------------------------------------
   @Get(":id/url")
   @Public()
-  async getUrl(@Param("id") id: string, @CurrentUser() user?: User) {
+  async getUrl(@Param("id") id: string, @CurrentUser() user?: CurrentUserShape) {
     const url = await this.assetsService.getAssetUrl(id, user?.id);
     return { url };
   }
@@ -121,8 +160,9 @@ async upload(
   @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@Param("id") id: string, @CurrentUser() user: User) {
-    return this.assetsService.deleteAsset(id, user.id, user.role);
+  async delete(@Param("id") id: string, @CurrentUser() user: CurrentUserShape) {
+    const appRole = toUserRole(user?.role);
+    return this.assetsService.deleteAsset(id, user.id, appRole);
   }
 
   // --------------------------------------------------------------------------
@@ -138,10 +178,12 @@ async upload(
   async uploadCreatorMedia(
     @UploadedFile() file: Express.Multer.File,
     @Body() uploadDto: UploadCreatorMediaDto,
-    @CurrentUser() user: User,
+    @CurrentUser() user: CurrentUserShape,
   ) {
     if (!file) throw new BadRequestException("File is required");
-    return this.assetsService.uploadCreatorMedia(file, uploadDto, user.id, user.role);
+
+    const appRole = toUserRole(user?.role);
+    return this.assetsService.uploadCreatorMedia(file, uploadDto, user.id, appRole);
   }
 
   // --------------------------------------------------------------------------
@@ -158,11 +200,10 @@ async upload(
     @Body("entityId") entityId: string,
     @Body("items") itemsString: string,
     @Body("isPublic") isPublic?: boolean,
-    @CurrentUser() user?: User,
+    @CurrentUser() user?: CurrentUserShape,
   ) {
-    if (!files?.files?.length) {
-      throw new BadRequestException("Files are required");
-    }
+    if (!files?.files?.length) throw new BadRequestException("Files are required");
+    if (!user?.id) throw new BadRequestException("User context is required");
 
     let items: BulkUploadDto["items"];
     try {
@@ -172,7 +213,9 @@ async upload(
     }
 
     const bulkDto: BulkUploadDto = { entityId, items, isPublic };
-    return this.assetsService.bulkUploadCreatorMedia(files.files, bulkDto, user!.id, user!.role);
+
+    const appRole = toUserRole(user?.role);
+    return this.assetsService.bulkUploadCreatorMedia(files.files, bulkDto, user.id, appRole);
   }
 
   // --------------------------------------------------------------------------
@@ -183,7 +226,7 @@ async upload(
   async getCreatorGallery(
     @Param("entityId") entityId: string,
     @Query() query: AssetQueryDto,
-    @CurrentUser() user?: User,
+    @CurrentUser() user?: CurrentUserShape,
   ) {
     return this.assetsService.getCreatorGallery(entityId, query, user?.id);
   }

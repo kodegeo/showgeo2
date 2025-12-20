@@ -1,6 +1,12 @@
 import { IsString, IsOptional, IsObject, IsEnum, MaxLength } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
+export enum ProfileVisibility {
+  PUBLIC = "PUBLIC",
+  PRIVATE = "PRIVATE",
+  UNLISTED = "UNLISTED",
+}
+
 export class CreateUserProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -62,9 +68,12 @@ export class CreateUserProfileDto {
   @IsObject()
   preferences?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ enum: ["public", "private"], default: "public" })
+  @ApiPropertyOptional({
+    enum: ProfileVisibility,
+    default: ProfileVisibility.PUBLIC,
+  })
   @IsOptional()
-  @IsEnum(["public", "private"])
-  visibility?: string;
+  @IsEnum(ProfileVisibility)
+  visibility?: ProfileVisibility;
 }
 

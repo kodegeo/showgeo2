@@ -1,18 +1,11 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, IsDateString, IsArray, IsObject, IsUUID, Min, ValidateNested } from "class-validator";
+import { IsString, IsOptional, IsIn, IsBoolean, IsDateString, IsArray, IsObject, IsUUID, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { EventType, EventPhase, EventStatus, GeofencingAccessLevel, TicketType } from "@prisma/client";
-
-// Re-export Prisma enums for convenience
-export { EventType, EventPhase, EventStatus, GeofencingAccessLevel, TicketType };
-
-// Alias for backward compatibility
-export const StreamingAccessLevel = GeofencingAccessLevel;
-export const TicketTypeEnum = TicketType;
+import { RuntimeEnums, EventType, EventPhase, EventStatus, GeofencingAccessLevel, TicketType } from "../../../common/runtime-enums";
 
 export class TicketTypeDto {
-  @ApiProperty({ enum: TicketType })
-  @IsEnum(TicketType)
+  @ApiProperty({ enum: RuntimeEnums.TicketType })
+  @IsIn(RuntimeEnums.TicketType)
   type: TicketType;
 
   @ApiPropertyOptional()
@@ -45,12 +38,12 @@ export class CreateEventDto {
   @IsString()
   thumbnail?: string;
 
-  @ApiProperty({ enum: EventType, default: EventType.LIVE })
-  @IsEnum(EventType)
+  @ApiProperty({ enum: RuntimeEnums.EventType, default: "LIVE" })
+  @IsIn(RuntimeEnums.EventType)
   eventType: EventType;
 
-  @ApiProperty({ enum: EventPhase, default: "PRE_LIVE" })
-  @IsEnum(EventPhase)
+  @ApiProperty({ enum: RuntimeEnums.EventPhase, default: "PRE_LIVE" })
+  @IsIn(RuntimeEnums.EventPhase)
   phase: EventPhase;
 
   @ApiProperty()
@@ -67,8 +60,8 @@ export class CreateEventDto {
   @IsString()
   location?: string;
 
-  @ApiProperty({ enum: EventStatus, default: EventStatus.DRAFT })
-  @IsEnum(EventStatus)
+  @ApiProperty({ enum: RuntimeEnums.EventStatus, default: "DRAFT" })
+  @IsIn(RuntimeEnums.EventStatus)
   status: EventStatus;
 
   @ApiProperty()
@@ -105,9 +98,9 @@ export class CreateEventDto {
   @IsString()
   videoUrl?: string;
 
-  @ApiPropertyOptional({ enum: GeofencingAccessLevel })
+  @ApiPropertyOptional({ enum: RuntimeEnums.GeofencingAccessLevel })
   @IsOptional()
-  @IsEnum(GeofencingAccessLevel)
+  @IsIn(RuntimeEnums.GeofencingAccessLevel)
   streamingAccessLevel?: GeofencingAccessLevel;
 
   @ApiPropertyOptional({ type: [String] })

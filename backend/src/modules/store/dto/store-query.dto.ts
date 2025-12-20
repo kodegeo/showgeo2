@@ -1,7 +1,7 @@
-import { IsOptional, IsEnum, IsString, IsBoolean, IsUUID } from "class-validator";
+import { IsOptional, IsIn, IsString, IsBoolean, IsUUID } from "class-validator";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { StoreStatus, StoreVisibility } from "@prisma/client";
+import { RuntimeEnums, StoreStatus, StoreVisibility } from "../../../common/runtime-enums";
 
 export class StoreQueryDto {
   @ApiPropertyOptional()
@@ -24,14 +24,14 @@ export class StoreQueryDto {
   @IsUUID()
   tourId?: string;
 
-  @ApiPropertyOptional({ enum: StoreStatus })
+  @ApiPropertyOptional({ enum: RuntimeEnums.StoreStatus })
   @IsOptional()
-  @IsEnum(StoreStatus)
+  @IsIn(RuntimeEnums.StoreStatus)
   status?: StoreStatus;
 
-  @ApiPropertyOptional({ enum: StoreVisibility })
+  @ApiPropertyOptional({ enum: RuntimeEnums.StoreVisibility })
   @IsOptional()
-  @IsEnum(StoreVisibility)
+  @IsIn(RuntimeEnums.StoreVisibility)
   visibility?: StoreVisibility;
 
   @ApiPropertyOptional()

@@ -1,10 +1,10 @@
-import { IsEnum, IsOptional, IsDateString } from "class-validator";
+import { IsIn, IsOptional, IsDateString } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { EventPhase } from "@prisma/client";
+import { RuntimeEnums, EventPhase } from "../../../common/runtime-enums";
 
 export class PhaseTransitionDto {
-  @ApiProperty({ enum: EventPhase })
-  @IsEnum(EventPhase)
+  @ApiProperty({ enum: RuntimeEnums.EventPhase })
+  @IsIn(RuntimeEnums.EventPhase)
   phase: EventPhase;
 
   @ApiPropertyOptional()

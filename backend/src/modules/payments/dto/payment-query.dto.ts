@@ -1,7 +1,8 @@
-import { IsOptional, IsEnum, IsUUID, IsNumber } from "class-validator";
+import { IsOptional, IsIn, IsUUID, IsNumber } from "class-validator";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { OrderStatus, OrderType } from "@prisma/client";
+import { RuntimeEnums, OrderStatus, OrderType } from "../../../common/runtime-enums";
+
 
 export class PaymentQueryDto {
   @ApiPropertyOptional()
@@ -19,14 +20,14 @@ export class PaymentQueryDto {
   @IsUUID()
   eventId?: string;
 
-  @ApiPropertyOptional({ enum: OrderStatus })
+  @ApiPropertyOptional({ enum: RuntimeEnums.OrderStatus })
   @IsOptional()
-  @IsEnum(OrderStatus)
+  @IsIn(RuntimeEnums.OrderStatus)
   status?: OrderStatus;
 
-  @ApiPropertyOptional({ enum: OrderType })
+  @ApiPropertyOptional({ enum: RuntimeEnums.OrderType })
   @IsOptional()
-  @IsEnum(OrderType)
+  @IsIn(RuntimeEnums.OrderType)
   type?: OrderType;
 
   @ApiPropertyOptional()

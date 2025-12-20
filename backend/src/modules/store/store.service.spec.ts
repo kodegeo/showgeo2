@@ -3,7 +3,8 @@ import { NotFoundException, ForbiddenException, ConflictException } from "@nestj
 import { StoreService } from "./store.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateStoreDto, UpdateStoreDto, CreateProductDto } from "./dto";
-import { StoreStatus, StoreVisibility, UserRole, EntityRoleType } from "@prisma/client";
+import { StoreStatus, StoreVisibility, EntityRoleType } from "@prisma/client";
+import { UserRole } from "@prisma/client";
 import { TestUtils } from "../../../test/test-utils";
 
 describe("StoreService", () => {

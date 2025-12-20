@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsBoolean, IsOptional, IsString } from "class-validator";
-import { AssetType, AssetOwnerType } from "@prisma/client";
+import { IsIn, IsBoolean, IsOptional, IsString } from "class-validator";
 import { Type } from "class-transformer";
+import { RuntimeEnums, AssetType, AssetOwnerType } from "../../../common/runtime-enums";
 
 export class AssetQueryDto {
   @ApiPropertyOptional({ description: "Page number", default: 1 })
@@ -14,13 +14,13 @@ export class AssetQueryDto {
   @IsOptional()
   limit?: number;
 
-  @ApiPropertyOptional({ description: "Filter by asset type", enum: AssetType })
-  @IsEnum(AssetType)
+  @ApiPropertyOptional({ description: "Filter by asset type", enum: RuntimeEnums.AssetType })
+  @IsIn(RuntimeEnums.AssetType)
   @IsOptional()
   type?: AssetType;
 
-  @ApiPropertyOptional({ description: "Filter by owner type", enum: AssetOwnerType })
-  @IsEnum(AssetOwnerType)
+  @ApiPropertyOptional({ description: "Filter by owner type", enum: RuntimeEnums.AssetOwnerType })
+  @IsIn(RuntimeEnums.AssetOwnerType)
   @IsOptional()
   ownerType?: AssetOwnerType;
 

@@ -6,12 +6,13 @@
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
+    "skipLibCheck": true,  
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "emitDeclarationOnly": false,
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
 

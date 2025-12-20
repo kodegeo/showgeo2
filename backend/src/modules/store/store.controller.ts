@@ -20,6 +20,8 @@ import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
 import { UserRole } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { StoreVisibility } from "@prisma/client";
+import { RuntimeEnums } from "../../common/runtime-enums";
 
 type User = any;
 
@@ -69,8 +71,8 @@ export class StoreController {
   @ApiQuery({ name: "entityId", required: false, type: String })
   @ApiQuery({ name: "eventId", required: false, type: String })
   @ApiQuery({ name: "tourId", required: false, type: String })
-  @ApiQuery({ name: "status", required: false, enum: ["ACTIVE", "INACTIVE", "ARCHIVED"] })
-  @ApiQuery({ name: "visibility", required: false, enum: ["PUBLIC", "UNLISTED", "PRIVATE"] })
+  @ApiQuery({ name: "status", required: false, enum: RuntimeEnums.StoreStatus })
+  @ApiQuery({ name: "visibility", required: false, enum: RuntimeEnums.StoreVisibility })
   @ApiQuery({ name: "isActive", required: false, type: Boolean })
   @ApiQuery({ name: "tag", required: false, type: String })
   @ApiQuery({ name: "page", required: false, type: Number })

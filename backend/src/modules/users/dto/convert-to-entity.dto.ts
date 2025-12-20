@@ -1,6 +1,6 @@
-import { IsString, IsNotEmpty, IsEnum, IsOptional, IsArray, MinLength, MaxLength, Matches } from "class-validator";
+import { IsString, IsNotEmpty, IsIn, IsOptional, IsArray, MinLength, MaxLength, Matches } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { EntityType } from "@prisma/client";
+import { RuntimeEnums, EntityType } from "../../../common/runtime-enums";
 
 export class ConvertToEntityDto {
   @ApiProperty({ description: "Entity name", example: "My Music Band" })
@@ -20,8 +20,8 @@ export class ConvertToEntityDto {
   })
   slug: string;
 
-  @ApiProperty({ description: "Entity type", enum: EntityType, example: EntityType.INDIVIDUAL })
-  @IsEnum(EntityType)
+  @ApiProperty({ description: "Entity type", enum: RuntimeEnums.EntityType, example: "INDIVIDUAL" })
+  @IsIn(RuntimeEnums.EntityType)
   type: EntityType;
 
   @ApiPropertyOptional({ description: "Entity bio", example: "A talented music band" })

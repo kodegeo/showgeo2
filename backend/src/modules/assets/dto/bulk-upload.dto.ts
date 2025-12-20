@@ -1,19 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsArray, IsEnum, IsOptional, IsBoolean, IsString, IsObject, ValidateNested } from "class-validator";
+import { IsArray, IsIn, IsEnum, IsOptional, IsBoolean, IsString, IsObject, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
-import { AssetType } from "@prisma/client";
 import { MediaPurpose } from "./upload-creator-media.dto";
+import { RuntimeEnums, AssetType } from "../../../common/runtime-enums";
+
+// Runtime-safe enum values for decorators (prevents tree-shaking)
+const MediaPurposeValues = Object.values(MediaPurpose);
 
 export class BulkUploadItemDto {
   @ApiProperty({ description: "File index in the files array (0-based)" })
   fileIndex: number;
 
-  @ApiProperty({ description: "Asset type", enum: AssetType })
-  @IsEnum(AssetType)
+  @ApiProperty({ description: "Asset type", enum: RuntimeEnums.AssetType })
+  @IsIn(RuntimeEnums.AssetType)
   type: AssetType;
 
-  @ApiPropertyOptional({ description: "Media purpose", enum: MediaPurpose, default: MediaPurpose.GALLERY })
-  @IsEnum(MediaPurpose)
+  @ApiPropertyOptional({ description: "Media purpose", enum: MediaPurposeValues, default: MediaPurpose.GALLERY })
+  @IsEnum(MediaPurposeValues)
   @IsOptional()
   purpose?: MediaPurpose;
 

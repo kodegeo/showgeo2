@@ -1,14 +1,14 @@
-import { IsEnum, IsUUID } from "class-validator";
+import { IsIn, IsUUID } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
-import { EntityRoleType } from "@prisma/client";
+import { RuntimeEnums, EntityRoleType } from "../../../common/runtime-enums";
 
 export class AddCollaboratorDto {
   @ApiProperty()
   @IsUUID()
   userId: string;
 
-  @ApiProperty({ enum: EntityRoleType })
-  @IsEnum(EntityRoleType)
+  @ApiProperty({ enum: RuntimeEnums.EntityRoleType })
+  @IsIn(RuntimeEnums.EntityRoleType)
   role: EntityRoleType;
 }
 

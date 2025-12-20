@@ -15,18 +15,32 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { AssetsModule } from "./modules/assets/assets.module";
 import { UploadModule } from "./modules/upload/upload.module";
-import { SupabaseAuthGuard } from "./common/guards/supabase-auth.guard";
 import { SupabaseModule } from "./modules/supabase/supabase.module";
-import { PrismaService } from "./prisma/prisma.service";
-// TODO: Add feature modules as they are implemented
-// import { ToursModule } from "./modules/tours/tours.module";
-// import { AiModule } from "./modules/ai/ai.module";
+import { HealthModule } from "./health/health.module";
+import { PrismaModule } from "./prisma/prisma.module";
+import { ThrottlerModule } from '@nestjs/throttler';
+import { LoggerModule } from "nestjs-pino";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ".env",
+      // In production, also read from process.env (Fly.io secrets, etc.)
+      ignoreEnvFile: false,
+      // Expand variables from process.env if .env file doesn't exist
+      expandVariables: true,
+    }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60,
+        limit: 100,
+      },
+    ]),
+        LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV === "production" ? "info" : "debug",
+      },
     }),
     AuthModule,
     EventsModule,
@@ -41,15 +55,12 @@ import { PrismaService } from "./prisma/prisma.service";
     AssetsModule,
     UploadModule,
     SupabaseModule,
-    // TODO: Add feature modules as they are implemented
-    // ToursModule,
-    // AiModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    PrismaService, // ✅ ADD THIS LINE
-    // Optional: Make JWT guard global (uncomment if you want all routes protected by default)
+    // If you want to enforce global auth guard:
     // {
     //   provide: APP_GUARD,
     //   useClass: SupabaseAuthGuard,
@@ -57,4 +68,3 @@ import { PrismaService } from "./prisma/prisma.service";
   ],
 })
 export class AppModule {}
-

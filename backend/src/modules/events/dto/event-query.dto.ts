@@ -1,7 +1,7 @@
-import { IsOptional, IsEnum, IsString, IsDateString, IsUUID, IsBoolean } from "class-validator";
+import { IsOptional, IsIn, IsString, IsDateString, IsUUID, IsBoolean } from "class-validator";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { EventType, EventPhase, EventStatus, GeofencingAccessLevel } from "@prisma/client";
+import { RuntimeEnums, EventType, EventPhase, EventStatus, GeofencingAccessLevel } from "../../../common/runtime-enums";
 
 export class EventQueryDto {
   @ApiPropertyOptional()
@@ -9,19 +9,19 @@ export class EventQueryDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ enum: EventType })
+  @ApiPropertyOptional({ enum: RuntimeEnums.EventType })
   @IsOptional()
-  @IsEnum(EventType)
+  @IsIn(RuntimeEnums.EventType)
   eventType?: EventType;
 
-  @ApiPropertyOptional({ enum: EventPhase })
+  @ApiPropertyOptional({ enum: RuntimeEnums.EventPhase })
   @IsOptional()
-  @IsEnum(EventPhase)
+  @IsIn(RuntimeEnums.EventPhase)
   phase?: EventPhase;
 
-  @ApiPropertyOptional({ enum: EventStatus })
+  @ApiPropertyOptional({ enum: RuntimeEnums.EventStatus })
   @IsOptional()
-  @IsEnum(EventStatus)
+  @IsIn(RuntimeEnums.EventStatus)
   status?: EventStatus;
 
   @ApiPropertyOptional()
@@ -50,9 +50,9 @@ export class EventQueryDto {
   @IsDateString()
   endDate?: string;
 
-  @ApiPropertyOptional({ enum: GeofencingAccessLevel })
+  @ApiPropertyOptional({ enum: RuntimeEnums.GeofencingAccessLevel })
   @IsOptional()
-  @IsEnum(GeofencingAccessLevel)
+  @IsIn(RuntimeEnums.GeofencingAccessLevel)
   streamingAccessLevel?: GeofencingAccessLevel;
 
   @ApiPropertyOptional()

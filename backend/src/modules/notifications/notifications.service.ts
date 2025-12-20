@@ -12,7 +12,8 @@ import {
   BroadcastNotificationDto,
   NotificationQueryDto,
 } from "./dto";
-import { NotificationType, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { NotificationType } from "@prisma/client";
 import { NotificationGateway } from "./notifications.gateway";
 
 @Injectable()

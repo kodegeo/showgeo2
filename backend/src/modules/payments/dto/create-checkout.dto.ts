@@ -1,7 +1,7 @@
-import { IsEnum, IsArray, IsUUID, IsOptional, ValidateNested, IsString, IsNumber, Min } from "class-validator";
+import { IsIn, IsArray, IsUUID, IsOptional, ValidateNested, IsString, IsNumber, Min } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { OrderType } from "@prisma/client";
+import { RuntimeEnums, OrderType } from "../../../common/runtime-enums";
 
 export class CheckoutItemDto {
   @ApiProperty()
@@ -33,8 +33,8 @@ export class CheckoutItemDto {
 }
 
 export class CreateCheckoutDto {
-  @ApiProperty({ enum: OrderType })
-  @IsEnum(OrderType)
+  @ApiProperty({ enum: RuntimeEnums.OrderType })
+  @IsIn(RuntimeEnums.OrderType)
   type: OrderType;
 
   @ApiPropertyOptional()

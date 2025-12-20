@@ -1,14 +1,14 @@
-import { IsString, IsOptional, IsEnum, IsObject, IsUUID } from "class-validator";
+import { IsString, IsOptional, IsIn, IsObject, IsUUID } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { NotificationType } from "@prisma/client";
+import { RuntimeEnums, NotificationType } from "../../../common/runtime-enums";
 
 export class BroadcastNotificationDto {
   @ApiProperty()
   @IsUUID()
   entityId: string;
 
-  @ApiProperty({ enum: NotificationType })
-  @IsEnum(NotificationType)
+  @ApiProperty({ enum: RuntimeEnums.NotificationType })
+  @IsIn(RuntimeEnums.NotificationType)
   type: NotificationType;
 
   @ApiProperty()

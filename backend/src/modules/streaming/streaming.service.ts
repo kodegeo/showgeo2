@@ -10,7 +10,6 @@ import {
   CreateSessionDto,
   UpdateMetricsDto,
   ValidateGeofenceDto,
-  AccessLevel,
 } from "./dto";
 import {
   EntityRoleType,
@@ -21,10 +20,10 @@ import {
 } from "@prisma/client";
 import { RoomServiceClient, AccessToken } from "livekit-server-sdk";
 import { GeofenceValidationResult } from "./interfaces/streaming.interface";
-import { User } from "@shared/types";
+import { User } from "../../shared/types/user.types";
 import { randomUUID } from "crypto";
 import { GenerateTokenDto, StreamRole } from "./dto/generate-token.dto";
-
+import { AccessLevel } from "./dto/create-session.dto";
 
 type UserAuth = {
   id: string;

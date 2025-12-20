@@ -1,7 +1,7 @@
-import { IsOptional, IsEnum, IsString, IsBoolean } from "class-validator";
+import { IsOptional, IsIn, IsString, IsBoolean } from "class-validator";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { EntityType } from "./create-entity.dto";
+import { RuntimeEnums, EntityType } from "../../../common/runtime-enums";
 
 export class EntityQueryDto {
   @ApiPropertyOptional()
@@ -9,9 +9,9 @@ export class EntityQueryDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ enum: EntityType })
+  @ApiPropertyOptional({ enum: RuntimeEnums.EntityType })
   @IsOptional()
-  @IsEnum(EntityType)
+  @IsIn(RuntimeEnums.EntityType)
   type?: EntityType;
 
   @ApiPropertyOptional()

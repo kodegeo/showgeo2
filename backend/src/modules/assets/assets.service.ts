@@ -9,16 +9,18 @@ import {
   Inject,
   Optional,
 } from "@nestjs/common";
+
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   AssetType,
   AssetOwnerType,
-  StorageProvider,
   UserRole,
   EntityRoleType,
+  StorageProvider,
   Prisma,
 } from "@prisma/client";
+
 // Use Prisma's generated type for assets model
 type Asset = Prisma.assetsGetPayload<{}>;
 import {
@@ -254,7 +256,7 @@ export class AssetsService {
         ...(uploadDto.metadata || {}),
       },
     };
-
+    
     const asset = await this.uploadAsset(file, uploadAssetDto, userId, userRole);
 
     if (uploadDto.purpose === MediaPurpose.THUMBNAIL || uploadDto.purpose === MediaPurpose.BANNER) {
@@ -358,7 +360,7 @@ export class AssetsService {
           data: updateData,
         });
       }
-          } catch (error) {
+    } catch (error) {
       this.logger.error(
         `Failed to update entity profile image: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,
@@ -556,7 +558,7 @@ export class AssetsService {
       const allowed = allowedMimeTypes[type];
       if (type === AssetType.IMAGE && file.mimetype.startsWith("video/")) {
         throw new BadRequestException("Video file cannot be uploaded as an image.");
-      }      
+      }
     }
 
     const maxSize = maxSizes[type];

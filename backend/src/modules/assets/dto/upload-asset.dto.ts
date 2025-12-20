@@ -1,15 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsBoolean, IsOptional, IsString, IsObject } from "class-validator";
+import { IsIn, IsBoolean, IsOptional, IsString, IsObject } from "class-validator";
 import { Transform } from "class-transformer";
-import { AssetType, AssetOwnerType } from "@prisma/client";
+import { RuntimeEnums, AssetType, AssetOwnerType } from "../../../common/runtime-enums";
 
 export class UploadAssetDto {
-  @ApiProperty({ description: "Asset type", enum: AssetType, example: AssetType.IMAGE })
-  @IsEnum(AssetType)
+  @ApiProperty({ description: "Asset type", enum: RuntimeEnums.AssetType, example: "IMAGE" })
+  @IsIn(RuntimeEnums.AssetType)
   type: AssetType;
 
-  @ApiProperty({ description: "Owner type", enum: AssetOwnerType, example: AssetOwnerType.USER })
-  @IsEnum(AssetOwnerType)
+  @ApiProperty({ description: "Owner type", enum: RuntimeEnums.AssetOwnerType, example: "USER" })
+  @IsIn(RuntimeEnums.AssetOwnerType)
   ownerType: AssetOwnerType;
 
   @ApiProperty({ description: "Owner ID (user or entity ID)" })

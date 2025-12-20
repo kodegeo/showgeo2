@@ -1,14 +1,10 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, IsArray, IsObject, MaxLength } from "class-validator";
+import { IsString, IsOptional, IsIn, IsBoolean, IsArray, IsObject, MaxLength } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-
-export enum EntityType {
-  INDIVIDUAL = "INDIVIDUAL",
-  ORGANIZATION = "ORGANIZATION",
-}
+import { RuntimeEnums, EntityType } from "../../../common/runtime-enums";
 
 export class CreateEntityDto {
-  @ApiProperty({ enum: EntityType, default: EntityType.INDIVIDUAL })
-  @IsEnum(EntityType)
+  @ApiProperty({ enum: RuntimeEnums.EntityType, default: "INDIVIDUAL" })
+  @IsIn(RuntimeEnums.EntityType)
   type: EntityType;
 
   @ApiProperty()

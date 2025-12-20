@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsBoolean, IsOptional, IsString, IsObject } from "class-validator";
-import { AssetType, AssetOwnerType } from "@prisma/client";
+import { IsIn, IsEnum, IsBoolean, IsOptional, IsString, IsObject } from "class-validator";
+import { RuntimeEnums, AssetType } from "../../../common/runtime-enums";
 
 export enum MediaPurpose {
   THUMBNAIL = "THUMBNAIL",
@@ -12,9 +12,12 @@ export enum MediaPurpose {
   OTHER = "OTHER",
 }
 
+// Runtime-safe enum values for decorators (prevents tree-shaking)
+const MediaPurposeValues = Object.values(MediaPurpose);
+
 export class UploadCreatorMediaDto {
-  @ApiProperty({ description: "Asset type", enum: AssetType, example: AssetType.IMAGE })
-  @IsEnum(AssetType)
+  @ApiProperty({ description: "Asset type", enum: RuntimeEnums.AssetType, example: "IMAGE" })
+  @IsIn(RuntimeEnums.AssetType)
   type: AssetType;
 
   @ApiProperty({ description: "Entity ID (creator/organization)" })
@@ -23,11 +26,11 @@ export class UploadCreatorMediaDto {
 
   @ApiPropertyOptional({
     description: "Media purpose",
-    enum: MediaPurpose,
+    enum: MediaPurposeValues,
     example: MediaPurpose.GALLERY,
     default: MediaPurpose.GALLERY,
   })
-  @IsEnum(MediaPurpose)
+  @IsEnum(MediaPurposeValues)
   @IsOptional()
   purpose?: MediaPurpose;
 
