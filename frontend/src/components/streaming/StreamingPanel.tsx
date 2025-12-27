@@ -22,13 +22,37 @@ type StreamingPanelProps = {
   };
 
 export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: StreamingPanelProps) {
+  // ✅ CRITICAL FIX: All hooks must be called before any early returns
+  // This ensures consistent hook order on every render (React production requirement)
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const onCancel = () => navigate(-1);
-  const isEntity = isEntityProp || user?.isEntity || user?.role === "ADMIN" || user?.role === "COORDINATOR";
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [localTracks, setLocalTracks] = useState<any[]>([]);
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const { session, loading, error, createSession, endSession, refetch, getActiveSession } = useStreaming(eventId);
+  const { room, setRoom, connected } = useLiveKitRoom();
+  const hasRequestedTokenRef = useRef(false);
+  const autoJoinAttemptedRef = useRef(false);
+  const resetJoinState = useCallback(() => {
+    console.log("[StreamingPanel] Resetting join state");
+    setJoining(false);
+    setJoinError(null);
+    hasRequestedTokenRef.current = false;
+  }, []);
+  const canManageStream = useMemo(() => {
+    return (
+      !!isEntityProp ||
+      !!user?.isEntity ||
+      user?.role === "ADMIN" ||
+      user?.role === "COORDINATOR"
+    );
+  }, [isEntityProp, user?.isEntity, user?.role]);
 
-  // ✅ Validate eventId prop
+  // ✅ Now safe to do early return after all hooks
   if (!eventId || typeof eventId !== "string") {
     console.error("[StreamingPanel] Invalid eventId prop:", { eventId, type: typeof eventId });
     return (
@@ -38,45 +62,15 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
     );
   }
 
+  // Helper values (not hooks, safe to compute after validation)
+  const onCancel = () => navigate(-1);
+  const isEntity = isEntityProp || user?.isEntity || user?.role === "ADMIN" || user?.role === "COORDINATOR";
+
   console.log(
     "[ENV CHECK] VITE_LIVEKIT_URL =",
     import.meta.env.VITE_LIVEKIT_URL
   );
   console.log("[StreamingPanel] Initialized with eventId:", eventId, "type:", typeof eventId);
-  
-  const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [streamError, setStreamError] = useState<string | null>(null); // ✅ Fix 2: Visible error state
-
-  const [publishing, setPublishing] = useState(false);
-  const [localTracks, setLocalTracks] = useState<any[]>([]);
-  const [isBroadcasting, setIsBroadcasting] = useState(false); // ✅ Fix 3: Host broadcasting state
-
-  const { session, loading, error, createSession, endSession, refetch, getActiveSession } = useStreaming(eventId);
-  const { room, setRoom, connected } = useLiveKitRoom();
-  
-  // Token generation guard: blocks concurrent token requests (not "one per session")
-  const hasRequestedTokenRef = useRef(false);
-  
-  // Auto-join guard: ensures auto-join only happens once
-  const autoJoinAttemptedRef = useRef(false);
-  
-  // ✅ Reset join state helper: clears joining state, errors, and token guard
-  const resetJoinState = useCallback(() => {
-    console.log("[StreamingPanel] Resetting join state");
-    setJoining(false);
-    setJoinError(null);
-    hasRequestedTokenRef.current = false;
-  }, []);
-  
-  const canManageStream = useMemo(() => {
-    return (
-      !!isEntityProp ||
-      !!user?.isEntity ||
-      user?.role === "ADMIN" ||
-      user?.role === "COORDINATOR"
-    );
-  }, [isEntityProp, user?.isEntity, user?.role]);
 
   const scheduledStart =
     event?.startTime && new Date(event.startTime) > new Date()
