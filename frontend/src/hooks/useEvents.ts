@@ -9,6 +9,7 @@ import type {
 } from "@/services";
 import type { EventPhase, EventStatus, Event } from "../../../packages/shared/types";
 import type { PaginatedResponse } from "@/services/types";
+import { isDevelopment } from "@/utils/env";
 
 export function useEvents(
   params?: QueryParams & {
@@ -104,7 +105,7 @@ export function useEventMetrics(eventId: string) {
     queryKey: ["events", eventId, "metrics"],
     queryFn: () => eventsService.getMetrics(eventId),
     enabled: !!eventId,
-    refetchInterval: 30000, // Refetch every 30 seconds for live metrics
+    refetchInterval: isDevelopment ? 60000 : 30000, // Slower polling in dev (60s) vs prod (30s)
   });
 }
 

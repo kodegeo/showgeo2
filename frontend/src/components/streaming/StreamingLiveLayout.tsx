@@ -50,8 +50,7 @@ export function StreamingLiveLayout({
 
     try {
       // Mute camera and mic
-      await room.localParticipant.setCameraEnabled(false);
-      await room.localParticipant.setMicrophoneEnabled(false);
+      
       setIsPaused(true);
     } catch (error) {
       console.error("[StreamingLiveLayout] Failed to pause:", error);
@@ -63,8 +62,6 @@ export function StreamingLiveLayout({
 
     try {
       // Re-enable camera and mic
-      await room.localParticipant.setCameraEnabled(true);
-      await room.localParticipant.setMicrophoneEnabled(true);
       setIsPaused(false);
     } catch (error) {
       console.error("[StreamingLiveLayout] Failed to resume:", error);
@@ -72,30 +69,32 @@ export function StreamingLiveLayout({
   };
 
   return (
-    <div className="relative w-full h-full bg-black">
-      {/* Status Overlay - Top Left */}
-      <LiveStatusOverlay
-        isLive={!isPaused}
-        viewerCount={viewerCount}
-      />
+    <div className="relative w-full h-screen bg-[#0B0B0B] flex flex-col overflow-hidden">
+      {/* Status Overlay - Top Left (over video) */}
+      <div className="absolute top-0 left-0 z-20">
+        <LiveStatusOverlay
+          isLive={!isPaused}
+          viewerCount={viewerCount}
+        />
+      </div>
 
-      {/* Main Stage Area */}
-      <div className="flex h-full">
-        {/* Center Stage */}
-        <div className="flex-1 relative">
+      {/* Main Content Area - 3 Zone Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* PRIMARY VIDEO AREA - Center, Large */}
+        <div className="flex-1 relative min-w-0">
           <LiveKitStage room={room} isPaused={isPaused} />
         </div>
 
-        {/* Viewer Sidebar - Right Side */}
+        {/* SIDEBAR - Right Side (Viewers/Reactions) */}
         <ViewerSidebar room={room} />
       </div>
 
-      {/* Reaction Overlay */}
+      {/* Reaction Overlay - Floating emojis */}
       <ReactionOverlay room={room} />
 
-      {/* Broadcaster Controls - Bottom Bar (Creator Only) */}
+      {/* CONTROL BAR - Bottom (Creator Only) */}
       {isBroadcaster && (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/80 backdrop-blur-sm border-t border-gray-800 p-4">
+        <div className="absolute bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-black/95 via-black/90 to-transparent backdrop-blur-sm border-t border-gray-800/50 p-4">
           <BroadcasterControls
             room={room}
             isPaused={isPaused}

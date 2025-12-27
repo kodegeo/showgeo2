@@ -58,14 +58,34 @@ export function EventLivePage() {
       }
 
       const token = tokenResponse.token;
-      const serverUrl = import.meta.env.VITE_LIVEKIT_URL;
+      
+      // Use URL from token response first, fallback to env
+      const serverUrl = (tokenResponse as any).livekitUrl || 
+                       (tokenResponse as any).url || 
+                       (tokenResponse as any).wsUrl || 
+                       import.meta.env.VITE_LIVEKIT_URL;
 
       if (!serverUrl) {
-        throw new Error("LiveKit server URL not configured");
+        throw new Error("LiveKit server URL missing from token response and env");
       }
+
+      // Log before joining
+      console.log("[EventLivePage] Joining LiveKit", { 
+        serverUrl, 
+        hasToken: !!token, 
+        streamRole 
+      });
 
       // Join room
       const lkRoom = await joinStream({ token, serverUrl });
+      
+      // Log room state after connect
+      console.log("[EventLivePage] Room connected", { 
+        roomState: lkRoom.state,
+        roomName: lkRoom.name,
+        localParticipant: lkRoom.localParticipant?.identity
+      });
+      
       setRoom(lkRoom);
 
       // Publish local tracks if broadcaster

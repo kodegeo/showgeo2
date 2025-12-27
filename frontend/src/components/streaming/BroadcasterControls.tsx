@@ -1,6 +1,7 @@
 // frontend/src/components/streaming/BroadcasterControls.tsx
-import { useMemo, useState } from "react";
-import type { Room } from "livekit-client";
+import { useState, useEffect } from "react";
+import { Room, ConnectionState } from "livekit-client";
+import { isDevelopment } from "@/utils/env";
 
 type BroadcasterControlsProps = {
   room: Room;
@@ -20,19 +21,51 @@ export function BroadcasterControls({
   onEndStream,
 }: BroadcasterControlsProps) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [camEnabled, setCamEnabled] = useState(false);
+  const [screenEnabled, setScreenEnabled] = useState(false);
 
-  const micEnabled = useMemo(
-    () => !!room.localParticipant?.isMicrophoneEnabled,
-    [room.localParticipant?.isMicrophoneEnabled]
-  );
-  const camEnabled = useMemo(
-    () => !!room.localParticipant?.isCameraEnabled,
-    [room.localParticipant?.isCameraEnabled]
-  );
-  const screenEnabled = useMemo(
-    () => !!room.localParticipant?.isScreenShareEnabled,
-    [room.localParticipant?.isScreenShareEnabled]
-  );
+  // Reactively update state from room.localParticipant
+  useEffect(() => {
+    if (!room?.localParticipant) return;
+
+    const updateState = () => {
+      const mic = !!room.localParticipant?.isMicrophoneEnabled;
+      const cam = !!room.localParticipant?.isCameraEnabled;
+      const screen = !!room.localParticipant?.isScreenShareEnabled;
+      
+      setMicEnabled(mic);
+      setCamEnabled(cam);
+      setScreenEnabled(screen);
+
+      if (isDevelopment) {
+        const videoTrackCount = room.localParticipant.videoTrackPublications.size;
+        const audioTrackCount = room.localParticipant.audioTrackPublications.size;
+        console.log("[BroadcasterControls] State updated:", {
+          mic,
+          cam,
+          screen,
+          videoTrackCount,
+          audioTrackCount,
+        });
+      }
+    };
+
+    updateState();
+
+    // Listen for track changes
+    room.localParticipant.on("trackPublished", updateState);
+    room.localParticipant.on("trackUnpublished", updateState);
+    room.localParticipant.on("trackMuted", updateState);
+    room.localParticipant.on("trackUnmuted", updateState);
+
+    return () => {
+      room.localParticipant?.off("trackPublished", updateState);
+      room.localParticipant?.off("trackUnpublished", updateState);
+      room.localParticipant?.off("trackMuted", updateState);
+      room.localParticipant?.off("trackUnmuted", updateState);
+    };
+  }, [room]);
 
   const safe = async (label: string, fn: () => Promise<void>) => {
     if (disabled) return;
@@ -46,17 +79,89 @@ export function BroadcasterControls({
 
   const toggleMic = () =>
     safe("mic", async () => {
-      await room.localParticipant.setMicrophoneEnabled(!micEnabled);
+      // Ensure room is connected before publishing
+      if (room.state !== ConnectionState.Connected) {
+        throw new Error(`Room not connected: state is ${room.state}`);
+      }
+
+      // Read current state directly from LiveKit, not React state
+      const currentState = !!room.localParticipant.isMicrophoneEnabled;
+      const newState = !currentState;
+      
+      if (isDevelopment) {
+        const beforeCount = room.localParticipant.audioTrackPublications.size;
+        console.log(`[BroadcasterControls] ${newState ? "Enabling" : "Disabling"} microphone... (tracks before: ${beforeCount}, current LiveKit state: ${currentState})`);
+      }
+      
+      try {
+        await room.localParticipant.setMicrophoneEnabled(newState);
+        
+        if (isDevelopment) {
+          const afterCount = room.localParticipant.audioTrackPublications.size;
+          console.log(`[BroadcasterControls] Microphone ${newState ? "enabled" : "disabled"}, audio tracks: ${afterCount}`);
+        }
+      } catch (error) {
+        console.error("[BroadcasterControls] Failed to toggle microphone:", error);
+        throw error;
+      }
     });
 
   const toggleCam = () =>
     safe("cam", async () => {
-      await room.localParticipant.setCameraEnabled(!camEnabled);
+      // Ensure room is connected before publishing
+      if (room.state !== ConnectionState.Connected) {
+        throw new Error(`Room not connected: state is ${room.state}`);
+      }
+
+      // Read current state directly from LiveKit, not React state
+      const currentState = !!room.localParticipant.isCameraEnabled;
+      const newState = !currentState;
+      
+      if (isDevelopment) {
+        const beforeCount = room.localParticipant.videoTrackPublications.size;
+        console.log(`[BroadcasterControls] ${newState ? "Enabling" : "Disabling"} camera... (tracks before: ${beforeCount}, current LiveKit state: ${currentState})`);
+      }
+      
+      try {
+        await room.localParticipant.setCameraEnabled(newState);
+        
+        if (isDevelopment) {
+          const afterCount = room.localParticipant.videoTrackPublications.size;
+          console.log(`[BroadcasterControls] Camera ${newState ? "enabled" : "disabled"}, video tracks: ${afterCount}`);
+        }
+      } catch (error) {
+        console.error("[BroadcasterControls] Failed to toggle camera:", error);
+        throw error;
+      }
     });
 
   const toggleScreen = () =>
     safe("screen", async () => {
-      await room.localParticipant.setScreenShareEnabled(!screenEnabled);
+      // Ensure room is connected before publishing
+      if (room.state !== ConnectionState.Connected) {
+        throw new Error(`Room not connected: state is ${room.state}`);
+      }
+
+      // Read current state directly from LiveKit, not React state
+      const currentState = !!room.localParticipant.isScreenShareEnabled;
+      const newState = !currentState;
+      
+      if (isDevelopment) {
+        const beforeCount = room.localParticipant.videoTrackPublications.size;
+        console.log(`[BroadcasterControls] ${newState ? "Starting" : "Stopping"} screen share... (tracks before: ${beforeCount}, current LiveKit state: ${currentState})`);
+      }
+      
+      try {
+        await room.localParticipant.setScreenShareEnabled(newState);
+        
+        if (isDevelopment) {
+          const afterCount = room.localParticipant.videoTrackPublications.size;
+          console.log(`[BroadcasterControls] Screen share ${newState ? "started" : "stopped"}, video tracks: ${afterCount}`);
+        }
+      } catch (error) {
+        console.error("[BroadcasterControls] Failed to toggle screen share:", error);
+        throw error;
+      }
     });
 
   const handlePause = () => {

@@ -1,6 +1,7 @@
 // frontend/src/components/streaming/useStreaming.ts
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { isDevelopment } from "@/utils/env";
 
 export interface StreamingSession {
   id: string;
@@ -77,8 +78,17 @@ export function useStreaming(eventId: string) {
       
       setStreamSession(sessionForEvent);
     } catch (e) {
-      console.error("[useStreaming] Failed to load streaming session:", e);
-      setError("Failed to load streaming session");
+      // Only log errors in development to reduce console spam
+      if (isDevelopment) {
+        console.error("[useStreaming] Failed to load streaming session:", e);
+      }
+      // Don't set error state for network errors (backend down) - just silently fail
+      // This prevents error messages from showing when backend is simply not running
+      if (e instanceof Error && (e.message.includes('fetch') || e.message.includes('Network'))) {
+        setError(null); // Clear error for network issues
+      } else {
+        setError("Failed to load streaming session");
+      }
       setStreamSession(null);
     } finally {
       // Ensure loading always becomes false on any response path
@@ -217,7 +227,8 @@ export function useStreaming(eventId: string) {
     fetchSession();
   }, [fetchSession]);
 
-  // Polling: refetch every 4 seconds while session is inactive
+  // Polling: refetch while session is inactive
+  // Use longer interval in development to reduce load when backend is unavailable
   useEffect(() => {
     // Only poll if session is not active (or null)
     if (streamSession?.active === true) {
@@ -225,9 +236,11 @@ export function useStreaming(eventId: string) {
     }
 
     const pollInterval = setInterval(() => {
-      console.log("[useStreaming] Polling for active session (current session inactive or null)");
+      if (isDevelopment) {
+        console.log("[useStreaming] Polling for active session (current session inactive or null)");
+      }
       fetchSession();
-    }, 4000); // 4 second interval
+    }, isDevelopment ? 8000 : 4000); // Slower polling in dev (8s) vs prod (4s)
 
     return () => clearInterval(pollInterval);
   }, [streamSession?.active, fetchSession]);

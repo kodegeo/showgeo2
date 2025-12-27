@@ -31,6 +31,10 @@ export function useAuth() {
   // 1️⃣ PRISMA "me" QUERY (core user, includes isEntity)
   // Only call /auth/me when we have a valid session with access_token
   // ------------------------------------------------------------
+  // Track consecutive failures to prevent infinite retries
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+  const MAX_FAILURES = 3;
+
   const {
     data: prismaUser,
     isLoading: isLoadingUser,
@@ -38,8 +42,21 @@ export function useAuth() {
   } = useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => authService.getCurrentUser(),
-    enabled: !!sessionToken, // Only enable when we have a valid access_token
-    retry: false, // Prevent retries on 401 to avoid loops
+    enabled: !!sessionToken && consecutiveFailures < MAX_FAILURES, // Disable after too many failures
+    retry: false, // Prevent retries on any error (401, 500, etc.)
+    retryOnMount: false, // Don't retry when component remounts
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    onError: (error: any) => {
+      // Track failures - if we get too many, disable the query
+      if (error?.response?.status === 500 || error?.response?.status === 401) {
+        setConsecutiveFailures((prev) => prev + 1);
+      }
+    },
+    onSuccess: () => {
+      // Reset failure count on success
+      setConsecutiveFailures(0);
+    },
   });
 
   // ------------------------------------------------------------
@@ -84,6 +101,7 @@ export function useAuth() {
         queryClient.setQueryData(["auth", "me"], null);
         setEntityRoles(null);
         setOwnedEntity(null);
+        setConsecutiveFailures(0); // Reset failure count when session is cleared
       }
     });
 
@@ -165,6 +183,7 @@ export function useAuth() {
       console.error("[useAuth.login] ❌", error);
       // Clear session token on error to prevent retries
       setSessionToken(null);
+      setConsecutiveFailures(0); // Reset failure count on login error
     },
   });
 

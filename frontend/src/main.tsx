@@ -15,7 +15,16 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 1,
+      retry: (failureCount, error: any) => {
+        // Don't retry on 4xx or 5xx errors (client/server errors)
+        if (error?.response?.status >= 400) {
+          return false;
+        }
+        // Only retry network errors, max 1 time
+        return failureCount < 1;
+      },
+      retryOnMount: false, // Don't retry when component remounts
+      refetchOnReconnect: false, // Don't refetch on reconnect
     },
   },
 });
