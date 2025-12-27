@@ -21,6 +21,7 @@ export function useAuth() {
   });
 
   const [hasSession, setHasSession] = useState<boolean | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [entityRoles, setEntityRoles] = useState<any[] | null>(null);
   const [ownedEntity, setOwnedEntity] = useState<any | null>(null);
 
@@ -28,6 +29,7 @@ export function useAuth() {
 
   // ------------------------------------------------------------
   // 1️⃣ PRISMA "me" QUERY (core user, includes isEntity)
+  // Only call /auth/me when we have a valid session with access_token
   // ------------------------------------------------------------
   const {
     data: prismaUser,
@@ -36,8 +38,8 @@ export function useAuth() {
   } = useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => authService.getCurrentUser(),
-    enabled: hasSession === true,
-    retry: 1,
+    enabled: !!sessionToken, // Only enable when we have a valid access_token
+    retry: false, // Prevent retries on 401 to avoid loops
   });
 
   // ------------------------------------------------------------
@@ -48,17 +50,19 @@ export function useAuth() {
 
   // ------------------------------------------------------------
   // 3️⃣ LISTEN FOR SESSION CHANGES & SYNC USER STATE
+  // Only set sessionToken when we have a valid access_token
   // ------------------------------------------------------------
   useEffect(() => {
     const loadSession = async () => {
       const { data } = await supabase.auth.getSession();
-      const loggedIn = !!data.session;
+      const hasValidSession = !!data.session?.access_token;
 
-      setHasSession(loggedIn);
+      setHasSession(!!data.session);
+      setSessionToken(data.session?.access_token || null);
       setAuthState((prev) => ({
         ...prev,
         isLoading: false,
-        isAuthenticated: loggedIn,
+        isAuthenticated: hasValidSession,
       }));
     };
 
@@ -67,10 +71,11 @@ export function useAuth() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const loggedIn = !!session;
-      setHasSession(loggedIn);
+      const hasValidSession = !!session?.access_token;
+      setHasSession(!!session);
+      setSessionToken(session?.access_token || null);
 
-      if (!loggedIn) {
+      if (!hasValidSession) {
         setAuthState({
           user: null,
           isLoading: false,
@@ -120,8 +125,13 @@ export function useAuth() {
     },
     onSuccess: async () => {
       const { data } = await supabase.auth.getSession();
+      const hasValidSession = !!data.session?.access_token;
       setHasSession(!!data.session);
-      if (data.session) await refetchUser();
+      setSessionToken(data.session?.access_token || null);
+      // Only refetch if we have a valid access_token
+      if (hasValidSession) {
+        await refetchUser();
+      }
     },
   });
 
@@ -143,11 +153,18 @@ export function useAuth() {
     },
     onSuccess: async () => {
       const { data } = await supabase.auth.getSession();
+      const hasValidSession = !!data.session?.access_token;
       setHasSession(!!data.session);
-      if (data.session) await refetchUser();
+      setSessionToken(data.session?.access_token || null);
+      // Only refetch if we have a valid access_token
+      if (hasValidSession) {
+        await refetchUser();
+      }
     },
     onError: (error) => {
       console.error("[useAuth.login] ❌", error);
+      // Clear session token on error to prevent retries
+      setSessionToken(null);
     },
   });
 
@@ -156,6 +173,8 @@ export function useAuth() {
   // ------------------------------------------------------------
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
+    setSessionToken(null); // Clear session token to disable /auth/me query
+    setHasSession(false);
     setAuthState({
       user: null,
       isLoading: false,

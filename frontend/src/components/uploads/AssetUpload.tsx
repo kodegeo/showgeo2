@@ -14,6 +14,8 @@ interface AssetUploadProps {
   className?: string;
   accept?: string;
   maxSize?: number; // in bytes
+  purpose?: "avatar" | "banner" | "cover" | "other";
+
 }
 
 export function AssetUpload({
@@ -26,6 +28,7 @@ export function AssetUpload({
   className = "",
   accept,
   maxSize,
+  purpose = "other",
 }: AssetUploadProps) {
   const { user } = useAuth();
   const { currentEntity } = useEntityContext();
@@ -128,6 +131,9 @@ export function AssetUpload({
         ownerType,
         ownerId,
         isPublic,
+        metadata: {
+          purpose,
+        },
       });
 
       setFile(null);

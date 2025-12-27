@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useUpdateUserProfile } from "@/hooks/useUsers";
 import { useUploadAsset } from "@/hooks/useAssets";
@@ -25,17 +25,37 @@ function waitForImage(url: string, retries = 10, delay = 300): Promise<void> {
 export function ProfileBanner() {
   const { user, refetchUser } = useAuth();
   const updateUser = useUpdateUserProfile();
-  const uploadAsset = useUploadAsset();
+  const uploadAsset = useUploadAsset();  
 
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
-  if (!user) return null;
-
-  // Default banner
+  // Default banner (only used as fallback)
   const defaultBanner = "/assets/defaults/profile-banner.png";
-  const bannerUrl =
-    (user.profile as any)?.bannerUrl || defaultBanner;
 
+  // Initialize with user's bannerUrl if available, otherwise null (not defaultBanner)
+  const [bannerUrl, setBannerUrl] = useState<string | null>(
+    (user?.profile as any)?.bannerUrl || null
+  );
+  
+  // ✅ SYNC WITH AUTH STATE - Update ONLY when user.profile.bannerUrl changes
+  // This prevents resetting when other profile fields (like avatarUrl) change
+  useEffect(() => {
+    if (user?.profile) {
+      const profileBannerUrl = (user.profile as any)?.bannerUrl;
+      // Only update if bannerUrl actually changed (not when avatarUrl or other fields change)
+      if (profileBannerUrl !== bannerUrl) {
+        setBannerUrl(profileBannerUrl || null);
+      }
+    } else if (user && !user.profile) {
+      // User exists but no profile yet - clear banner
+      setBannerUrl(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.profile?.bannerUrl]); // Only depend on bannerUrl, not entire profile object
+
+  // Early return AFTER all hooks are called
+  if (!user) return null;
+    
   const handleBannerChange = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -65,19 +85,20 @@ export function ProfileBanner() {
 
       const newBannerUrl = asset.url;
 
-      // 👇 NEW: Wait for CDN propagation before updating UI
-      await waitForImage(newBannerUrl);
+      // ✅ Immediately update UI (optimistic update)
+      setBannerUrl(newBannerUrl);
       
-      // Update user's profile in DB
+      // Update user profile with new banner URL
+      // useUpdateUserProfile already updates the ["auth", "me"] cache,
+      // which will trigger the useEffect to sync bannerUrl
       await updateUser.mutateAsync({
         id: user.id,
-        data: {
-          bannerUrl: newBannerUrl,
-        },
+        data: { bannerUrl: newBannerUrl },
       });
 
-      // Refresh local user
-      await refetchUser();
+      // Note: No need to call refetchUser() here because useUpdateUserProfile
+      // already updates the ["auth", "me"] cache, which useAuth reads from.
+      // The useEffect will automatically sync bannerUrl when user.profile.bannerUrl changes.
     } catch (err) {
       console.error("Banner upload failed:", err);
       alert("Banner upload failed. Try again.");
@@ -91,58 +112,59 @@ export function ProfileBanner() {
 
   return (
     <div
-      className="relative w-full bg-[#0B0B0B] border-b border-gray-800 md:w-screen md:ml-[calc(-50vw+50%)] lg:w-full lg:ml-0"
+      className="relative w-full h-48 md:h-64 lg:h-72 overflow-hidden cursor-pointer group bg-black"
+      onClick={(e) => {
+        e.stopPropagation();
+        bannerInputRef.current?.click();
+      }}
     >
-      <div
-        className="relative w-full h-48 md:h-64 lg:h-72 bg-gradient-to-r from-[#CD000E] to-[#860005] overflow-hidden cursor-pointer group"
-        onClick={() => bannerInputRef.current?.click()}
-        style={{
-          backgroundImage: bannerUrl ? `url(${bannerUrl})` : undefined,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      >
-        {/* Invisible click area */}
-        <div
-          className="absolute inset-0 z-20 cursor-pointer"
-          onClick={() => bannerInputRef.current?.click()}
-        />
-
-        {/* Overlay gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/65 to-black/90" />
-
-        {/* Fallback gradient */}
-        <div
-          className="absolute inset-0 bg-gradient-to-br from-[#CD000E]/90 via-[#860005]/90 to-[#0B0B0B]/90 pointer-events-none"
-          style={{
-            display: bannerUrl === defaultBanner ? "block" : "none",
+      {/* Show uploaded banner if available, otherwise show default banner */}
+      {bannerUrl ? (
+        <img
+          src={bannerUrl}
+          alt="Profile banner"
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={(e) => {
+            // Fallback to default banner if uploaded image fails to load
+            console.warn("Banner image failed to load, falling back to default");
+            (e.target as HTMLImageElement).src = defaultBanner;
           }}
         />
-
-        {/* Hover upload overlay */}
-        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-          {uploadAsset.isPending ? (
-            <Loader2 className="w-8 h-8 text-white animate-spin" />
-          ) : (
-            <div className="flex flex-col items-center gap-2">
-              <Camera className="w-8 h-8 text-white" />
-              <span className="text-white font-heading font-semibold text-sm uppercase tracking-wider">
-                Click to Upload Banner
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Hidden input */}
-        <input
-          ref={bannerInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleBannerChange}
-          className="hidden"
-          disabled={uploadAsset.isPending}
+      ) : (
+        <img
+          src={defaultBanner}
+          alt="Default profile banner"
+          className="absolute inset-0 w-full h-full object-cover"
+          onError={(e) => {
+            // If default also fails, show placeholder
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
         />
+      )}
+
+      {/* Hover overlay with Camera icon */}
+      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex items-center justify-center">
+        {uploadAsset.isPending ? (
+          <Loader2 className="w-8 h-8 text-white animate-spin" />
+        ) : (
+          <div className="flex flex-col items-center gap-2">
+            <Camera className="w-8 h-8 text-white" />
+            <span className="text-white font-semibold text-sm uppercase tracking-wider">
+              Change Banner
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* Hidden input */}
+      <input
+        ref={bannerInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleBannerChange}
+        disabled={uploadAsset.isPending}
+      />
     </div>
   );
 }

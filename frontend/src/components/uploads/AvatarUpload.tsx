@@ -62,6 +62,16 @@ export function AvatarUpload({
 
       const publicUrl = asset.url;
 
+      // Update user profile with new avatar URL
+      // This ensures the profile is saved to the backend
+      await updateUser.mutateAsync({
+        id: userId,
+        data: { avatarUrl: publicUrl },
+      });
+
+      // Update preview to use the actual URL (not local preview)
+      setPreviewUrl(publicUrl);
+
       // Notify parent
       onUploadComplete(publicUrl);
     } catch (err: any) {

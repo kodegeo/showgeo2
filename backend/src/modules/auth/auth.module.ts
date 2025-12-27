@@ -9,6 +9,7 @@ import { DevOnlyGuard } from "../../common/guards/dev-only.guard";
 
 @Module({
   imports: [ConfigModule],
+  // Register real controller first to ensure /api/auth/* routes are matched before alias routes
   controllers: [AuthController, AuthAliasController],
   providers: [AuthService, PrismaService, SupabaseAuthGuard, DevOnlyGuard],
   exports: [AuthService],

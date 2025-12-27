@@ -41,9 +41,14 @@ apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError<ApiError>) => {
     // Handle 401 errors - sign out from Supabase
+    // Only redirect if we're not already on the login page to prevent loops
     if (error.response?.status === 401) {
-      await supabase.auth.signOut();
-      window.location.href = "/login";
+      const currentPath = window.location.pathname;
+      // Don't redirect if already on login/register pages to prevent loops
+      if (!currentPath.includes("/login") && !currentPath.includes("/register")) {
+        await supabase.auth.signOut();
+        window.location.href = "/login";
+      }
       return Promise.reject(error);
     }
 

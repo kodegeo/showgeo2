@@ -5,6 +5,7 @@ import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
 
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -30,10 +31,10 @@ async function bootstrap() {
     }),
   );
 
-  // Set global prefix, but exclude legacy routes for compatibility
-  app.setGlobalPrefix("api", {
-    exclude: ["/auth/me", "/events"],
-  });
+  // Set global prefix for all routes
+  // Alias controllers (AuthAliasController, EventsAliasController, FollowAliasController)
+  // are registered with @Controller() (no prefix) to handle legacy routes without /api
+  app.setGlobalPrefix("api");
 
   const config = new DocumentBuilder()
     .setTitle("Showgeo API")

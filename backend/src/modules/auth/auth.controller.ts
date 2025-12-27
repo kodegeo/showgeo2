@@ -56,6 +56,7 @@ export class AuthController {
 
   /**
    * Get the current authenticated user (from Supabase JWT).
+   * Route: GET /api/auth/me (with global prefix)
    */
   @Get("me")
   @UseGuards(SupabaseAuthGuard)
