@@ -39,6 +39,7 @@ export class AuthService {
    * Verify a Supabase access token and ensure there is a corresponding app user.
    * - If the token is valid and a user exists → returns full user (with profile & entity roles)
    * - If the token is valid but no app user exists → creates one, then returns it
+   * - If the token is valid but Prisma operations fail → returns minimal user object
    * - If the token is invalid → returns null
    */
   async verifySupabaseToken(token: string): Promise<User | null> {
@@ -50,42 +51,96 @@ export class AuthService {
 
     const authUser = data.user;
 
-    // Try to find existing app user tied to this Supabase auth user
-    let dbUser = await (this.prisma as any).app_users.findUnique({
-      where: { authUserId: authUser.id },
-      include: {
-        user_profiles: true,
-        entity_roles: {
-          include: {
-            entities: true,
-          },
-        },
-      },
-    });
-
-    // If none exists, create one on the fly (auto-provisioning)
-    if (!dbUser) {
-      dbUser = await (this.prisma as any).app_users.create({
-        data: {
-          id: authUser.id, // Use authUserId as primary key
-          authUserId: authUser.id,
-          email: authUser.email ?? "",
-          role: UserRole.USER,
-          password: null, // No password stored for Supabase-auth users
-          isEntity: false,
-        },
+    try {
+      // Try to find existing app user tied to this Supabase auth user
+      let dbUser = await (this.prisma as any).app_users.findUnique({
+        where: { authUserId: authUser.id },
         include: {
           user_profiles: true,
           entity_roles: {
             include: {
-              entities: true,
+              entities: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  type: true,
+                  thumbnail: true,
+                  isVerified: true,
+                  createdAt: true,
+                },
+              },
             },
           },
         },
       });
-    }
 
-    return dbUser;
+      // If none exists, create one on the fly (auto-provisioning)
+      if (!dbUser) {
+        try {
+          dbUser = await (this.prisma as any).app_users.create({
+            data: {
+              id: authUser.id, // Use authUserId as primary key
+              authUserId: authUser.id,
+              email: authUser.email ?? "",
+              role: UserRole.USER,
+              password: null, // No password stored for Supabase-auth users
+              isEntity: false,
+            },
+            include: {
+              user_profiles: true,
+              entity_roles: {
+                include: {
+                  entities: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      type: true,
+                      thumbnail: true,
+                      isVerified: true,
+                      createdAt: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+        } catch (createError) {
+          // If creation fails, return minimal user object based on Supabase auth data
+          console.warn(
+            `[AuthService] Failed to create app user for authUserId ${authUser.id}:`,
+            createError,
+          );
+          return {
+            id: authUser.id,
+            authUserId: authUser.id,
+            email: authUser.email ?? "",
+            role: UserRole.USER,
+            isEntity: false,
+            user_profiles: null,
+            entity_roles: [],
+          };
+        }
+      }
+
+      return dbUser;
+    } catch (prismaError) {
+      // If Prisma query fails, return minimal user object based on Supabase auth data
+      console.warn(
+        `[AuthService] Prisma error while fetching user for authUserId ${authUser.id}:`,
+        prismaError,
+      );
+      return {
+        id: authUser.id,
+        authUserId: authUser.id,
+        email: authUser.email ?? "",
+        role: UserRole.USER,
+        isEntity: false,
+        user_profiles: null,
+        entity_roles: [],
+      };
+    }
   }
 
   /**

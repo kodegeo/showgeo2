@@ -140,32 +140,39 @@ export class EntitiesService {
       updateData.socialLinks = socialLinks as Prisma.InputJsonValue;
     }
 
-    const updated = await (this.prisma as any).entities.update({
-      where: { id },
-      data: updateData,
-      include: {
-        app_users: {
-          select: {
-            id: true,
-            email: true,
-            user_profiles: true,
+    try {
+      const updated = await (this.prisma as any).entities.update({
+        where: { id },
+        data: updateData,
+        include: {
+          app_users: {
+            select: {
+              id: true,
+              email: true,
+              user_profiles: true,
+            },
           },
-        },
-        entity_roles: {
-          include: {
-            app_users: {
-              select: {
-                id: true,
-                email: true,
-                user_profiles: true,
+          entity_roles: {
+            include: {
+              app_users: {
+                select: {
+                  id: true,
+                  email: true,
+                  user_profiles: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    return updated;
+      return updated;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException("Entity not found");
+      }
+      throw error;
+    }
   }
 
   async findAll(query: EntityQueryDto) {
@@ -393,80 +400,24 @@ export class EntitiesService {
       .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
   }
 
-  async findOne(id: string): Promise<Entity> {
-    const entity = await (this.prisma as any).entities.findUnique({
-      where: { id },
-      include: {
-        app_users: {
-          select: {
-            id: true,
-            email: true,
-            user_profiles: true,
-          },
-        },
-        entity_roles: {
-          include: {
-            app_users: {
-              select: {
-                id: true,
-                email: true,
-                user_profiles: true,
-              },
-            },
-          },
-        },
-        events_events_entityIdToentities: {
-          select: {
-            id: true,
-            name: true,
-            thumbnail: true,
-            status: true,
-            startTime: true,
-            phase: true,
-            createdAt: true,
-          },
-          orderBy: { startTime: "desc" },
-          take: 10,
-        },
-        tours_tours_primaryEntityIdToentities: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            status: true,
-            startDate: true,
-            createdAt: true,
-          },
-          orderBy: { startDate: "desc" },
-          take: 10,
-        },
-        stores_stores_entityIdToentities: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            logoUrl: true,
-            status: true,
-            createdAt: true,
-          },
-        },
-        _count: {
-          select: {
-            events_events_entityIdToentities: true,
-            tours_tours_primaryEntityIdToentities: true,
-            stores_stores_entityIdToentities: true,
-            follows: true,
-          },
-        },
-      },
-    });
-
-    if (!entity) {
+  async findOne(id: string) {
+    try {
+      const entity = await (this.prisma as any).entities.findUnique({
+        where: { id },
+      });
+    
+      if (!entity) {
+        throw new NotFoundException("Entity not found");
+      }
+    
+      return entity;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      console.error("[EntitiesService.findOne] Error:", error);
       throw new NotFoundException("Entity not found");
     }
-
-    return entity;
   }
 
   async findBySlug(slug: string): Promise<Entity> {
@@ -640,14 +591,21 @@ export class EntitiesService {
     }
 
     // Remove collaborator
-    await (this.prisma as any).entity_roles.delete({
-      where: {
-        userId_entityId: {
-          userId: collaboratorUserId,
-          entityId,
+    try {
+      await (this.prisma as any).entity_roles.delete({
+        where: {
+          userId_entityId: {
+            userId: collaboratorUserId,
+            entityId,
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException("Collaborator not found");
+      }
+      throw error;
+    }
 
     return { message: "Collaborator removed successfully" };
   }
@@ -685,9 +643,16 @@ export class EntitiesService {
 
     // Soft delete - set isPublic to false and optionally mark for deletion
     // For now, we'll do a hard delete (can be changed to soft delete)
-    await (this.prisma as any).entities.delete({
-      where: { id },
-    });
+    try {
+      await (this.prisma as any).entities.delete({
+        where: { id },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException("Entity not found");
+      }
+      throw error;
+    }
 
     return { message: "Entity deleted successfully" };
   }

@@ -36,7 +36,13 @@ export function EventWatchPage() {
         .generateToken(eventId!, tokenRequestBody)
         .then((response) => {
           setToken(response.token);
-          setServerUrl(response.url || import.meta.env.VITE_LIVEKIT_URL);
+          // ✅ Single-token authorization model: LiveKit URL comes ONLY from environment config
+          // Backend returns only the token string - room name and URL are not included
+          const serverUrl = import.meta.env.VITE_LIVEKIT_URL;
+          if (!serverUrl) {
+            throw new Error("LiveKit server URL not configured. Please set VITE_LIVEKIT_URL environment variable.");
+          }
+          setServerUrl(serverUrl);
           setConnecting(false);
         })
         .catch((err) => {

@@ -49,7 +49,7 @@ export default function EntityProfilePage() {
         </Link>
 
         <Link
-          to="/events/create"
+          to="/creator/events/new"
           className="px-5 py-2 rounded-lg bg-blue-600 text-white"
         >
           Create Event

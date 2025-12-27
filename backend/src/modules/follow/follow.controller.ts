@@ -8,11 +8,11 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  ForbiddenException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { FollowService } from "./follow.service";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
+import { assertFullUser } from "../../common/guards/assert-full-user";
 import { CurrentUser, Public } from "../../common/decorators";
 
 type User = any;
@@ -33,6 +33,7 @@ export class FollowController {
   @ApiResponse({ status: 404, description: "Entity not found" })
   @ApiResponse({ status: 409, description: "Already following this entity" })
   followEntity(@Param("entityId") entityId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.followService.followEntity(user.id, entityId);
   }
 
@@ -46,6 +47,7 @@ export class FollowController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 404, description: "Follow relationship not found" })
   unfollowEntity(@Param("entityId") entityId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.followService.unfollowEntity(user.id, entityId);
   }
 
@@ -93,6 +95,7 @@ export class FollowController {
   @ApiResponse({ status: 200, description: "Follow status" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   async isFollowing(@Param("entityId") entityId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
     const isFollowing = await this.followService.isFollowing(user.id, entityId);
     return {
       isFollowing,

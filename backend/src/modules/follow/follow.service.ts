@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { follows as Follow } from "@prisma/client";
+import { follows as Follow, Prisma } from "@prisma/client";
 
 @Injectable()
 export class FollowService {
@@ -103,63 +103,80 @@ export class FollowService {
   }
 
   async getFollowers(entityId: string, page = 1, limit = 20) {
-    // Validate entity exists
-    const entity = await (this.prisma as any).entities.findUnique({
-      where: { id: entityId },
-    });
+    try {
+      // Validate entity exists
+      const entity = await (this.prisma as any).entities.findUnique({
+        where: { id: entityId },
+      });
 
-    if (!entity) {
-      throw new NotFoundException("Entity not found");
-    }
+      if (!entity) {
+        throw new NotFoundException("Entity not found");
+      }
 
-    const skip = (page - 1) * limit;
+      const skip = (page - 1) * limit;
 
-    const [follows, total] = await Promise.all([
-      (this.prisma as any).follows.findMany({
-        where: { entityId },
-        include: {
-          app_users: {
-            select: {
-              id: true,
-              email: true,
-              user_profiles: {
-                select: {
-                  id: true,
-                  username: true,
-                  firstName: true,
-                  lastName: true,
-                  avatarUrl: true,
-                  bio: true,
-                  location: true,
+      const [follows, total] = await Promise.all([
+        (this.prisma as any).follows.findMany({
+          where: { entityId },
+          include: {
+            app_users: {
+              select: {
+                id: true,
+                email: true,
+                user_profiles: {
+                  select: {
+                    id: true,
+                    username: true,
+                    firstName: true,
+                    lastName: true,
+                    avatarUrl: true,
+                    bio: true,
+                    location: true,
+                  },
                 },
               },
             },
           },
-        },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      (this.prisma as any).follows.count({
-        where: { entityId },
-      }),
-    ]);
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: limit,
+        }),
+        (this.prisma as any).follows.count({
+          where: { entityId },
+        }),
+      ]);
 
-    return {
-      data: follows.map((follow) => ({
-        id: follow.id,
-        userId: follow.userId,
-        entityId: follow.entityId,
-        createdAt: follow.createdAt,
-        app_users: follow.app_users,
-      })),
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+      return {
+        data: follows.map((follow) => ({
+          id: follow.id,
+          userId: follow.userId,
+          entityId: follow.entityId,
+          createdAt: follow.createdAt,
+          app_users: follow.app_users,
+        })),
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      console.error("[FollowService.getFollowers] Error:", error);
+      // Return empty result instead of throwing to prevent blocking pages
+      return {
+        data: [],
+        meta: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+      };
+    }
   }
 
   async getFollowing(userId: string, page = 1, limit = 20) {

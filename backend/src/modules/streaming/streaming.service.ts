@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -73,13 +74,22 @@ export class StreamingService {
     });
 
     if (!event) {
+      console.error("[createSession] BLOCKED", {
+        reason: "Event not found",
+        eventId,
+        userId,
+        role: userRole,
+        dto: createSessionDto,
+        eventStatus: undefined,
+        eventOwnerId: undefined,
+        existingSessionId: undefined,
+        existingSessionActive: undefined,
+      });
       throw new NotFoundException("Event not found");
     }
 
     // 2) Permissions: entity owner, coordinator, or admin
-    await this.checkEventPermissions(event, userId, userRole);
-
-    // 3) Ensure no other active session for this event
+    // Check for existing session before permissions check to get existingSession data for logging
     const existingSession = await (this.prisma as any).streaming_sessions.findFirst(
       {
         where: {
@@ -89,14 +99,64 @@ export class StreamingService {
       },
     );
 
-    if (existingSession) {
-      throw new BadRequestException(
-        "Event already has an active streaming session",
-      );
+    // Look up entity to get ownerId for logging (safe lookup - may fail if entity doesn't exist)
+    let entityOwnerId: string | undefined;
+    try {
+      const entity = await (this.prisma as any).entities.findUnique({
+        where: { id: event.entityId },
+        select: { ownerId: true },
+      });
+      entityOwnerId = entity?.ownerId;
+    } catch (error) {
+      // Entity lookup failed - will be handled by checkEventPermissions
+      entityOwnerId = undefined;
     }
 
+    try {
+      await this.checkEventPermissions(event, userId, userRole);
+    } catch (error) {
+      console.error("[createSession] BLOCKED", {
+        reason: error instanceof ForbiddenException 
+          ? "Permission denied - user lacks required permissions"
+          : error instanceof NotFoundException
+          ? "Entity not found during permission check"
+          : "Permission check failed",
+        eventId,
+        userId,
+        role: userRole,
+        dto: createSessionDto,
+        eventStatus: event?.status,
+        eventOwnerId: entityOwnerId,
+        existingSessionId: existingSession?.id,
+        existingSessionActive: existingSession?.active,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+
+    // 3) Ensure no other active session for this event
+    if (existingSession) {
+      console.error("[createSession] BLOCKED", {
+        reason: "Event already has an active streaming session",
+        eventId,
+        userId,
+        role: userRole,
+        dto: createSessionDto,
+        eventStatus: event?.status,
+        eventOwnerId: entityOwnerId,
+        existingSessionId: existingSession?.id,
+        existingSessionActive: existingSession?.active,
+      });
+      throw new BadRequestException({
+        code: "ACTIVE_SESSION_EXISTS",
+        message: "Event already has an active streaming session",
+      });
+          }
+
     // 4) Create LiveKit room (optional if LiveKit not configured)
-    const roomId = `event-${eventId}-${Date.now()}`;
+    // Room name is deterministic: event-${eventId} (lowercase, no variation)
+    // One event = one LiveKit room
+    const roomId = `event-${eventId.toLowerCase()}`;
     const sessionKey = this.generateSessionKey();
 
     let livekitRoom: any;
@@ -216,9 +276,10 @@ export class StreamingService {
       }
     }
   
-    // 5) Use session.roomId as single source of truth (no hardcoded room names)
-    // Both BROADCASTER and VIEWER join the same room, permissions differ by role
-    const roomName = session.roomId;
+    // 5) Compute room name deterministically: event-${eventId} (lowercase)
+    // Room name is ONLY computed in backend, never in frontend
+    // One event = one LiveKit room
+    const roomName = `event-${eventId.toLowerCase()}`;
   
     // 6) Token grants
     const participantIdentity = identity || user.id;
@@ -232,16 +293,32 @@ export class StreamingService {
       roomJoin: true,
       canPublish: streamRole === StreamRole.BROADCASTER,
       canSubscribe: true,
-      canPublishData: true,
+      canPublishData: streamRole === StreamRole.BROADCASTER,
     });
   
+    // ✅ Generate JWT token and validate before returning
+    const jwtToken = await at.toJwt() as unknown as string;
+    
+    // Validate token is a non-empty string
+    if (typeof jwtToken !== "string" || !jwtToken.length) {
+      console.error("[generateToken] LiveKit token generation failed:", {
+        tokenType: typeof jwtToken,
+        tokenValue: jwtToken,
+        hasApiKey: !!this.livekitApiKey,
+        hasApiSecret: !!this.livekitApiSecret,
+        apiKeyLength: this.livekitApiKey?.length || 0,
+        apiSecretLength: this.livekitApiSecret?.length || 0,
+        eventId,
+        participantIdentity,
+        roomName,
+      });
+      throw new InternalServerErrorException("LiveKit token generation failed");
+    }
+  
+    // ✅ Single-token authorization model: return ONLY the JWT token string
+    // The token embeds room name and permissions - frontend never receives roomName or livekitUrl
     return {
-      token: at.toJwt(),
-      roomName,
-      wsUrl: this.livekitUrl,
-      streamRole,
-      participantIdentity,
-      sessionId: session.id,
+      token: jwtToken,
     };
   }
   // -------------------------------------------------------------------

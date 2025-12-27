@@ -17,6 +17,7 @@ import { EventsService } from "./events.service";
 import { CreateEventDto, UpdateEventDto, EventQueryDto, PhaseTransitionDto } from "./dto";
 import { RolesGuard } from "../../common/guards";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
+import { assertFullUser } from "../../common/guards/assert-full-user";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
 
 type User = any;
@@ -40,6 +41,7 @@ export class EventsController {
     @Body() createEventDto: CreateEventDto,
     @CurrentUser() user: User
   ) {
+    assertFullUser(user);
     return this.eventsService.create(createEventDto, user.id);
   }    
   
@@ -52,6 +54,7 @@ export class EventsController {
   @ApiResponse({ status: 400, description: "Bad request" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   createEvent(@Req() req: Request & { user: User }, @Body() body: CreateEventDto) {
+    assertFullUser(req.user);
     return this.eventsService.create(body, req.user.id);
   }
 
@@ -90,7 +93,8 @@ export class EventsController {
   @ApiResponse({ status: 200, description: "Event metrics" })
   @ApiResponse({ status: 404, description: "Event not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  getMetrics(@Param("id") id: string) {
+  getMetrics(@Param("id") id: string, @Req() req: Request & { user: User }) {
+    assertFullUser(req.user);
     return this.eventsService.getEventMetrics(id);
   }
 
@@ -104,6 +108,7 @@ export class EventsController {
   @ApiResponse({ status: 404, description: "Event not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   update(@Param("id") id: string, @Body() updateEventDto: UpdateEventDto, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.eventsService.update(id, updateEventDto, user.id);
   }
 
@@ -117,7 +122,8 @@ export class EventsController {
   @ApiResponse({ status: 204, description: "Event deleted successfully" })
   @ApiResponse({ status: 404, description: "Event not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  remove(@Param("id") id: string) {
+  remove(@Param("id") id: string, @Req() req: Request & { user: User }) {
+    assertFullUser(req.user);
     return this.eventsService.remove(id);
   }
 
@@ -136,6 +142,7 @@ export class EventsController {
     @Body() phaseTransitionDto: PhaseTransitionDto,
     @CurrentUser() user: User,
   ) {
+    assertFullUser(user);
     return this.eventsService.transitionPhase(id, phaseTransitionDto, user.id);
   }
 
@@ -151,6 +158,7 @@ export class EventsController {
   @ApiResponse({ status: 404, description: "Event not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   extendPhase(@Param("id") id: string, @Query("minutes") minutes: string, @CurrentUser() user: User) {
+    assertFullUser(user);
     const additionalMinutes = parseInt(minutes, 10);
     if (isNaN(additionalMinutes) || additionalMinutes <= 0) {
       throw new Error("Invalid minutes value");
@@ -168,6 +176,7 @@ export class EventsController {
   @ApiResponse({ status: 404, description: "Event not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   updateLiveMetrics(@Param("id") id: string, @Body() metrics: Record<string, unknown>, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.eventsService.updateLiveMetrics(id, metrics, user.id);
   }
 
@@ -181,6 +190,7 @@ export class EventsController {
   @ApiResponse({ status: 404, description: "Event not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   addTestResult(@Param("id") id: string, @Body() testResult: Record<string, unknown>, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.eventsService.addTestResult(id, testResult, user.id);
   }
 }

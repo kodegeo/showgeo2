@@ -366,9 +366,11 @@ export interface GenerateTokenRequest {
   participantName?: string;
 }
 
+// ✅ Single-token authorization model: backend returns ONLY the JWT token string
+// Room name and permissions are embedded in the token
+// LiveKit URL comes from environment config, not backend
 export interface LivekitTokenResponse {
   token: string;
-  url: string;
 }
 
 export interface StreamingSession {

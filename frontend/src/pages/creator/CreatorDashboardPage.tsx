@@ -243,7 +243,7 @@ export function CreatorDashboardPage() {
                 Create your first event to start engaging with your audience
               </p>
               <Link
-                to="/creator/events?action=create"
+                to="/creator/events/new"
                 className="inline-block px-8 py-3 bg-[#CD000E] hover:bg-[#860005] text-white font-heading font-semibold rounded-lg uppercase tracking-wider transition-all duration-300 text-sm shadow-lg hover:shadow-[#CD000E]/50 transform hover:scale-105"
               >
                 Create Your First Event

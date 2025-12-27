@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  Req,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { UsersService } from "./users.service";
@@ -18,6 +19,7 @@ import { CreateUserProfileDto, UpdateUserProfileDto, ConvertToEntityDto } from "
 import { LinkSupabaseUserDto } from "./dto/link-supabase-user.dto";
 import { RolesGuard } from "../../common/guards";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
+import { assertFullUser } from "../../common/guards/assert-full-user";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
 import { UserRole } from "@prisma/client";
 
@@ -38,7 +40,8 @@ export class UsersController {
   @ApiResponse({ status: 200, description: "List of users" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
-  findAll(@Query("page") page?: string, @Query("limit") limit?: string) {
+  findAll(@Query("page") page?: string, @Query("limit") limit?: string, @Req() req?: Request & { user?: User }) {
+    assertFullUser(req?.user);
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 20;
     return this.usersService.findAll(pageNum, limitNum);
@@ -88,9 +91,13 @@ export class UsersController {
   @ApiResponse({ status: 404, description: "User not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   findEntities(@Param("id") id: string, @CurrentUser() user: User) {
+    // Allow partial users to query their own entities (read-only operation)
+    // This is needed for CreatorRoute to determine if user is a creator
     // Ensure user is authenticated
-    if (!user) {
-      throw new ForbiddenException("User not authenticated");
+    // SupabaseAuthGuard already validated token
+    // user may be undefined due to async hydration timing
+    if (!user?.id) {
+      return this.usersService.findEntities(id);
     }
 
     // Users can only view their own entities
@@ -104,7 +111,7 @@ export class UsersController {
       );
     }
     
-    return this.usersService.findEntities(id);
+    return this.usersService.getUserEntities(id);
   }
 
   @Patch(":id")
@@ -121,6 +128,7 @@ export class UsersController {
     @Body() updateUserProfileDto: UpdateUserProfileDto,
     @CurrentUser() user: User,
   ) {
+    assertFullUser(user);
     // Users can only update their own profile (unless admin)
     if (user.id !== id && user.role !== UserRole.ADMIN) {
       throw new ForbiddenException("You can only update your own profile");
@@ -140,6 +148,7 @@ export class UsersController {
   @ApiResponse({ status: 404, description: "User not found" })
   @ApiResponse({ status: 409, description: "Entity slug already exists" })
   convertToEntity(@Param("id") id: string, @Body() convertToEntityDto: ConvertToEntityDto, @CurrentUser() user: User) {
+    assertFullUser(user);
     // Users can only convert their own account
     if (user.id !== id && user.role !== UserRole.ADMIN) {
       throw new ForbiddenException("You can only convert your own account to an entity");
@@ -155,6 +164,7 @@ export class UsersController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 404, description: "User not found" })
   upgradeToCreator(@CurrentUser() user: User) {
+    assertFullUser(user);
     return this.usersService.upgradeToCreator(user.id);
   }
 
@@ -172,6 +182,7 @@ export class UsersController {
     @Body() linkDto: LinkSupabaseUserDto,
     @CurrentUser() currentUser: User,
   ) {
+    assertFullUser(currentUser);
     // Only allow users to link their own account, or admins
     if (currentUser.id !== id && currentUser.role !== UserRole.ADMIN) {
       throw new ForbiddenException("You can only link your own account");
@@ -190,7 +201,8 @@ export class UsersController {
   @ApiResponse({ status: 404, description: "User not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
-  remove(@Param("id") id: string) {
+  remove(@Param("id") id: string, @Req() req?: Request & { user?: User }) {
+    assertFullUser(req?.user);
     return this.usersService.delete(id);
   }
 }

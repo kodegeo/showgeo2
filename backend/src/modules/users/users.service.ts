@@ -85,6 +85,62 @@ export class UsersService {
     return profile;
   }
 
+  async getUserEntities(userId: string) {
+    try {
+      // Owned entities (safe, direct)
+      const owned = await (this.prisma as any).entities.findMany({
+        where: { ownerId: userId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+    
+      // Roles (safe, direct)
+      const roles = await (this.prisma as any).entity_roles.findMany({
+        where: {
+          userId,
+          role: {
+            in: [EntityRoleType.ADMIN, EntityRoleType.MANAGER],
+          },
+        },
+        select: { entityId: true, role: true },
+      });
+    
+      const roleEntityIds = Array.from(new Set(roles.map((r: any) => r.entityId)));
+    
+      // Managed entities (exclude owned duplicates)
+      const ownedIds = new Set(owned.map((e: any) => e.id));
+      const managedIds = roleEntityIds.filter((id: string) => !ownedIds.has(id));
+    
+      const managed =
+        managedIds.length === 0
+          ? []
+          : await (this.prisma as any).entities.findMany({
+              where: { id: { in: managedIds } },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+              orderBy: { createdAt: "desc" },
+            });
+    
+      return { owned, managed };
+    } catch (error) {
+      console.error("[UsersService.getUserEntities] Error:", error);
+      // Return empty arrays instead of throwing to prevent blocking creator routes
+      return { owned: [], managed: [] };
+    }
+  }
+  
+
   // ------------------------------------------------------
   // PROFILE UPDATE (IDEMPOTENT: Creates if missing)
   // ------------------------------------------------------
@@ -232,53 +288,28 @@ export class UsersService {
   // LOOKUP BY authUserId (Supabase → app_users bridge)
   // ------------------------------------------------------
   async findByAuthUserId(authUserId: string) {
-    // Use explicit where clause to avoid TypeScript cache issues
-    const user = await (this.prisma as any).app_users.findFirst({
-      where: { 
-        authUserId: {
-          equals: authUserId
-        }
-      } as any, // Temporary workaround for TypeScript cache issue
+    const user = await (this.prisma as any).app_users.findUnique({
+      where: { authUserId },
       include: {
         user_profiles: true,
-        entities: {
+        // keep this shallow to avoid relation-name runtime explosions
+        entity_roles: {
           select: {
             id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            type: true,
-            isVerified: true,
-            createdAt: true,
-          },
-        },
-        entity_roles: {
-          include: {
-            entities: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                thumbnail: true,
-                type: true,
-                isVerified: true,
-                createdAt: true,
-              },
-            },
+            entityId: true,
+            role: true,
           },
         },
       },
     });
-
+  
     if (!user) {
-      // This is the expected error if Supabase user exists but no app_users row was created yet
-      throw new NotFoundException("App user not found for this auth user");
+      throw new NotFoundException("User not found");
     }
-
-    const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+  
+    return user;
   }
-
+  
   // ------------------------------------------------------
   // GET SINGLE USER (BY app_users.id)
   // ------------------------------------------------------
@@ -378,49 +409,47 @@ export class UsersService {
   // FIND ENTITIES FOR A USER
   // ------------------------------------------------------
   async findEntities(userId: string) {
-    const user = await (this.prisma as any).app_users.findUnique({
-      where: { id: userId },
-      include: {
+    const owned = await this.prisma.entities.findMany({
+      where: { ownerId: userId },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        type: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  
+    const roles = await this.prisma.entity_roles.findMany({
+      where: {
+        userId,
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: {
         entities: {
-          include: {
-            _count: true,
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            type: true,
           },
         },
-        entity_roles: {
-          include: {
-            entities: {
-              include: {
-                _count: true,
-              },
-            },
-          },
-        },
-        follows: {
-          include: {
-            entities: {
-              include: {
-                _count: true,
-              },
-            },
-          },
-        },
+        role: true,
       },
     });
-
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
-
+  
+    const managed = roles.map(r => ({
+      ...r.entities,
+      role: r.role,
+    }));
+  
     return {
-      owned: user.entities,
-      managed: user.entity_roles.map((role) => ({
-        ...role.entities,
-        role: role.role,
-      })),
-      followed: user.follows.map((follow) => follow.entities),
+      owned,
+      managed,
     };
   }
-
+  
   // ------------------------------------------------------
   // FIND BY USERNAME (PROFILE)
   // ------------------------------------------------------

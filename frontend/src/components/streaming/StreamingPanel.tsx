@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useStreaming } from "@/hooks/useStreaming";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -52,14 +52,22 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
   const [localTracks, setLocalTracks] = useState<any[]>([]);
   const [isBroadcasting, setIsBroadcasting] = useState(false); // ✅ Fix 3: Host broadcasting state
 
-  const { session, loading, error, createSession, endSession, refetch } = useStreaming(eventId);
+  const { session, loading, error, createSession, endSession, refetch, getActiveSession } = useStreaming(eventId);
   const { room, setRoom, connected } = useLiveKitRoom();
   
-  // ✅ Auto-join guard: ensures auto-join only happens once
+  // Token generation guard: blocks concurrent token requests (not "one per session")
+  const hasRequestedTokenRef = useRef(false);
+  
+  // Auto-join guard: ensures auto-join only happens once
   const autoJoinAttemptedRef = useRef(false);
   
-  // ✅ Get host param from URL
-  const hostParam = searchParams.get("host");
+  // ✅ Reset join state helper: clears joining state, errors, and token guard
+  const resetJoinState = useCallback(() => {
+    console.log("[StreamingPanel] Resetting join state");
+    setJoining(false);
+    setJoinError(null);
+    hasRequestedTokenRef.current = false;
+  }, []);
   
   const canManageStream = useMemo(() => {
     return (
@@ -69,19 +77,6 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
       user?.role === "COORDINATOR"
     );
   }, [isEntityProp, user?.isEntity, user?.role]);
-
-  // NOTE: your events table likely uses SCHEDULED/APPROVED etc — adjust to your real values.
-  const eventStatus = String(event?.status);
-  const eventPhase = String(event?.phase);
-  
-  const isApproved =
-    eventStatus === "APPROVED" || eventStatus === "SCHEDULED";
-  
-  const isPreLive =
-    eventPhase === "PRE_LIVE";
-  
-  const canGoLive = canManageStream && isApproved && isPreLive;
-  
 
   const scheduledStart =
     event?.startTime && new Date(event.startTime) > new Date()
@@ -108,12 +103,27 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
         const shouldPublish = opts?.publish === true;
         console.log("[onJoin] Called with publish:", shouldPublish, "eventId:", eventId);
       
+        // ✅ Block concurrent token requests (not "one per session")
+        if (hasRequestedTokenRef.current) {
+          const errorMsg = "Token request already in progress. Please wait for the current request to complete.";
+          console.warn("[onJoin] Concurrent token request blocked:", {
+            hasRequestedToken: hasRequestedTokenRef.current,
+            sessionId: activeSession.id,
+            shouldPublish
+          });
+          setStreamError(errorMsg);
+          throw new Error(errorMsg);
+        }
+      
         try {
           setJoining(true);
           setJoinError(null);
-          setStreamError(null); // ✅ Fix 2: Clear previous errors
-          setIsBroadcasting(false); // ✅ Fix 3: Reset broadcasting state
-      
+          setStreamError(null);
+          setIsBroadcasting(false);
+          
+          // ✅ Set guard BEFORE token generation to prevent concurrent requests
+          hasRequestedTokenRef.current = true;
+          
           const streamRole: "BROADCASTER" | "VIEWER" = shouldPublish ? "BROADCASTER" : "VIEWER";
           
           // ✅ Temporary logging: request details before API call
@@ -153,65 +163,132 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
             throw new Error(errorMsg);
           }
           
-          console.log("[onJoin] Token response:", { hasToken: !!tokenResponse.token, hasUrl: !!tokenResponse.url, roomName: tokenResponse.roomName });
-      
-          // Log LiveKit token payload
-          console.log("[LiveKit] Token payload:", {
-            roomName: tokenResponse.roomName,
-            identity: user?.id || "unknown",
-            role: streamRole,
+          console.log("[onJoin] Token response (raw):", tokenResponse);
+          console.log("[onJoin] Token response (parsed):", { 
+            hasToken: !!tokenResponse?.token, 
+            tokenType: typeof tokenResponse?.token,
+            tokenValue: typeof tokenResponse?.token === 'string' ? tokenResponse.token.substring(0, 50) + '...' : tokenResponse?.token,
+            fullResponse: tokenResponse,
+            responseKeys: tokenResponse ? Object.keys(tokenResponse) : []
           });
       
-          // ✅ Compare room names to detect mismatches
-          const tokenRoomName = tokenResponse.roomName;
-          const sessionRoomId = activeSession.roomId;
-          const roomNamePassedToConnect = activeSession.roomId; // Currently using session.roomId
+          // Extract and validate token - handle potential nested structures
+          let tokenString: string;
           
-          console.log("[Room Name Comparison]", {
-            "tokenResponse.roomName": tokenRoomName,
-            "streaming_sessions.roomId": sessionRoomId,
-            "roomName passed to joinStream()": roomNamePassedToConnect,
-            "tokenRoomName === sessionRoomId": tokenRoomName === sessionRoomId,
-            "tokenRoomName === roomNamePassedToConnect": tokenRoomName === roomNamePassedToConnect,
-          });
-          
-          if (tokenRoomName !== sessionRoomId) {
-            console.warn("[Room Name Mismatch] tokenResponse.roomName differs from streaming_sessions.roomId:", {
-              tokenRoomName,
-              sessionRoomId,
-              difference: "Token room name does not match session room ID",
+          // Handle tokenResponse - it should be { token: string } but handle edge cases
+          if (tokenResponse && typeof tokenResponse === 'object' && 'token' in tokenResponse) {
+            // Normal case: tokenResponse.token should be a string
+            if (typeof tokenResponse.token === 'string' && tokenResponse.token.length > 0) {
+              tokenString = tokenResponse.token;
+            } else if (tokenResponse.token && typeof tokenResponse.token === 'object') {
+              // If token is an object, try to extract the actual token string
+              // Check common nested structures
+              const tokenObj = tokenResponse.token as any;
+              if (tokenObj.token && typeof tokenObj.token === 'string' && tokenObj.token.length > 0) {
+                tokenString = tokenObj.token;
+              } else if (tokenObj.accessToken && typeof tokenObj.accessToken === 'string' && tokenObj.accessToken.length > 0) {
+                tokenString = tokenObj.accessToken;
+              } else {
+                const errorMsg = `Invalid token format: token is an object but no valid token field found. Structure: ${JSON.stringify(tokenObj)}`;
+                console.error("[onJoin] Token validation failed:", {
+                  token: tokenResponse.token,
+                  tokenType: typeof tokenResponse.token,
+                  fullResponse: tokenResponse
+                });
+                setStreamError(errorMsg);
+                hasRequestedTokenRef.current = false;
+                throw new Error(errorMsg);
+              }
+            } else if (typeof tokenResponse.token === 'string' && tokenResponse.token.length === 0) {
+              const errorMsg = `Invalid token: token field is an empty string. Backend may have failed to generate token.`;
+              console.error("[onJoin] Token validation failed:", {
+                token: tokenResponse.token,
+                tokenType: typeof tokenResponse.token,
+                fullResponse: tokenResponse
+              });
+              setStreamError(errorMsg);
+              hasRequestedTokenRef.current = false;
+              throw new Error(errorMsg);
+            } else {
+              const errorMsg = `Invalid token format: token field is not a string. Got: ${typeof tokenResponse.token}`;
+              console.error("[onJoin] Token validation failed:", {
+                token: tokenResponse.token,
+                tokenType: typeof tokenResponse.token,
+                fullResponse: tokenResponse
+              });
+              setStreamError(errorMsg);
+              hasRequestedTokenRef.current = false;
+              throw new Error(errorMsg);
+            }
+          } else {
+            const errorMsg = `Invalid token response: missing or empty token field. Response structure: ${JSON.stringify(tokenResponse)}`;
+            console.error("[onJoin] Token validation failed:", {
+              tokenResponse,
+              responseKeys: tokenResponse ? Object.keys(tokenResponse) : [],
+              fullResponse: tokenResponse
             });
-          }
-          
-          if (tokenRoomName !== roomNamePassedToConnect) {
-            console.warn("[Room Name Mismatch] tokenResponse.roomName differs from roomName passed to joinStream():", {
-              tokenRoomName,
-              roomNamePassedToConnect,
-              difference: "Token room name does not match room name passed to LiveKit connect",
-            });
+            setStreamError(errorMsg);
+            hasRequestedTokenRef.current = false;
+            throw new Error(errorMsg);
           }
       
-          // Use URL from token response if available, otherwise fall back to env var
-          const serverUrl = tokenResponse.url || import.meta.env.VITE_LIVEKIT_URL;
-          console.log("[onJoin] Joining LiveKit room:", activeSession.roomId, "at", serverUrl);
+          // ✅ Final validation: ensure tokenString is a non-empty string before use
+          // After this point, only use the validated tokenString (aliased as 'token')
+          if (typeof tokenString !== "string" || !tokenString.length) {
+            const errorMsg = "Invalid LiveKit token: token must be a non-empty string";
+            console.error("[onJoin] Invalid token:", { 
+              tokenString, 
+              tokenType: typeof tokenString,
+              tokenLength: tokenString?.length,
+              fullResponse: tokenResponse 
+            });
+            setStreamError(errorMsg);
+            hasRequestedTokenRef.current = false;
+            throw new Error(errorMsg);
+          }
           
-          // ✅ Fix 2: Surface LiveKit connection errors
+          // ✅ Use validated tokenString - do NOT use tokenResponse.token after this point
+          const token = tokenString;
+      
+          // ✅ Single-token authorization model:
+          // - Room name is embedded in token (computed by backend as event-${eventId})
+          // - LiveKit URL comes ONLY from environment config, never from backend
+          // - Frontend never receives or computes roomName
+          const serverUrl = import.meta.env.VITE_LIVEKIT_URL;
+          if (!serverUrl) {
+            const errorMsg = "LiveKit server URL not configured. Please set VITE_LIVEKIT_URL environment variable.";
+            console.error("[onJoin] Missing LiveKit URL:", { env: import.meta.env });
+            setStreamError(errorMsg);
+            hasRequestedTokenRef.current = false; // Reset guard on config failure
+            throw new Error(errorMsg);
+          }
+          console.log("[onJoin] Joining LiveKit room (room name embedded in token) at", serverUrl);
+          console.log("[onJoin] Using token (first 50 chars):", token.substring(0, 50) + '...');
+          
+          // ✅ Connect to LiveKit room
           let lkRoom;
           try {
             lkRoom = await joinStream({
-              token: tokenResponse.token,
-              roomName: activeSession.roomId,
+              token,
               serverUrl,
             });
+            
+            // ✅ Reset guard immediately after successful connection
+            console.log("[onJoin] LiveKit room connected, state:", lkRoom.state);
+            hasRequestedTokenRef.current = false;
+            setRoom(lkRoom);
           } catch (connectError: any) {
             console.error("[onJoin] LiveKit connection failed:", {
               error: connectError,
               message: connectError?.message,
               roomName: activeSession.roomId,
               serverUrl,
-              hasToken: !!tokenResponse.token,
-              tokenLength: tokenResponse.token?.length,
+              hasToken: !!token,
+              tokenLength: token?.length,
             });
+            
+            // ✅ Reset guard immediately after failed connection
+            hasRequestedTokenRef.current = false;
             
             // Extract actual error message if available
             let errorMsg = "Unable to connect to streaming server. Please check your connection and try again.";
@@ -222,9 +299,6 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
             setStreamError(errorMsg);
             throw new Error(errorMsg);
           }
-          
-          console.log("[onJoin] LiveKit room connected, state:", lkRoom.state);
-          setRoom(lkRoom);
       
           if (shouldPublish) {
             console.log("[onJoin] Publishing local tracks...");
@@ -252,8 +326,10 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
           setJoinError(errorMessage);
           // streamError is already set above for specific errors
           if (!streamError) {
-            setStreamError(errorMessage); // ✅ Fix 2: Fallback error display
+            setStreamError(errorMessage);
           }
+          // ✅ Guard is already reset in catch blocks above, but ensure it's reset here too
+          hasRequestedTokenRef.current = false;
           throw e; // Re-throw to allow onGoLive to handle it
         } finally {
           setJoining(false);
@@ -261,43 +337,45 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
         }
       };
   
-  // ✅ Auto-join host when conditions are met
+  // Auto-join creator as BROADCASTER when session is active but not connected
+  // This enforces broadcaster-first workflow: creators start streaming immediately
   useEffect(() => {
-    const shouldAutoJoin = hostParam === "1";
+    // Viewers NEVER auto-generate tokens
+    if (!canManageStream) {
+      return;
+    }
     
-    // Conditions: canManageStream === true AND session.active === true AND host=1 AND not already attempted
+    // Only proceed if all conditions are met (no hasRequestedTokenRef check - allows retries)
     if (
-      shouldAutoJoin &&
-      canManageStream &&
       session?.active &&
       !autoJoinAttemptedRef.current &&
       !loading &&
       !connected &&
       !joining
     ) {
-      console.log("[StreamingPanel] Auto-join conditions met, joining as broadcaster...");
+      console.log("[StreamingPanel] Auto-joining creator as BROADCASTER (broadcaster-first workflow)");
       autoJoinAttemptedRef.current = true;
       
-      // Call onJoin with publish=true
+      // Immediately connect and publish - no waiting for viewers
       onJoin({ publish: true }).catch((e) => {
         console.error("[StreamingPanel] Auto-join failed:", e);
         // Error is already handled by onJoin (sets streamError/joinError)
-        // Reset guard on error so user can retry manually
+        // Reset auto-join guard on error so user can retry manually
         autoJoinAttemptedRef.current = false;
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hostParam, canManageStream, session?.id, session?.active, loading, connected, joining]);
+  }, [canManageStream, session?.id, session?.active, loading, connected, joining]);
             
-  // ✅ Fix 1: Make onGoLive() deterministic - ALWAYS attempts to join as broadcaster
-  // Never relies on React state timing, always calls onJoin({ publish: true })
+  // ✅ Refactored onGoLive: Supports joining existing active sessions
+  // Flow: If session exists → join, Else → create → join
   const onGoLive = async () => {
     console.log("[onGoLive] Starting...");
     try {
       setJoining(true);
       setJoinError(null);
-      setStreamError(null); // ✅ Fix 2: Clear errors
-      setIsBroadcasting(false); // ✅ Fix 3: Reset broadcasting state
+      setStreamError(null);
+      setIsBroadcasting(false);
 
       // Strategy: Always fetch fresh session state, never rely on React state
       // This ensures we don't miss a session that was created between renders
@@ -312,47 +390,66 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
         console.log("[onGoLive] No session in state, attempting to create...");
         try {
           const newSession = await createSession();
-          console.log("[onGoLive] Session created successfully");
-          activeSessionToUse = newSession;
-        } catch (createError: any) {
-          // Step 3: Creation failed - check if it's because session already exists
-          const errorMessage = createError?.message || String(createError);
-          if (errorMessage.includes("active session") || errorMessage.includes("already has")) {
-            console.log("[onGoLive] Session creation failed - active session exists, fetching...");
-            // Fetch fresh session list to get the existing active session
-            const activeSessions = await streamingService.getActiveSessions();
-            const existingSession = activeSessions.find((s) => s.eventId === eventId && s.active);
+          
+          // ✅ createSession() returns null when active session already exists (not an error)
+          // This allows StreamingPanel to pivot to getActiveSession() without throwing
+          if (newSession === null) {
+            console.log("[onGoLive] createSession returned null - active session exists, fetching...");
+            const existingSession = await getActiveSession();
             
-            if (existingSession) {
-              console.log("[onGoLive] Found existing active session");
+            if (existingSession && existingSession.active === true) {
+              console.log("[onGoLive] Found existing active session, proceeding to join:", existingSession.id);
               activeSessionToUse = existingSession;
-              // Update hook state for future renders
               await refetch();
             } else {
               const errorMsg = "Active session exists but could not be retrieved";
-              setStreamError(errorMsg); // ✅ Fix 2: Surface error
+              console.error("[onGoLive] createSession returned null but no active session found");
+              setStreamError(errorMsg);
               throw new Error(errorMsg);
             }
           } else {
-            // Other error (permissions, network, etc.)
+            console.log("[onGoLive] Session created successfully");
+            activeSessionToUse = newSession;
+          }
+        } catch (createError: any) {
+          // Step 3: Creation failed with a real error (permissions, network, etc.)
+          // Only throw if no active session exists to fall back to
+          console.error("[onGoLive] Session creation failed with error:", createError);
+          
+          const existingSession = await getActiveSession();
+          if (existingSession && existingSession.active === true) {
+            console.log("[onGoLive] Found active session despite create error, proceeding to join");
+            activeSessionToUse = existingSession;
+            await refetch();
+          } else {
             const errorMsg = createError?.message || "Failed to create streaming session";
-            setStreamError(errorMsg); // ✅ Fix 2: Surface error
+            setStreamError(errorMsg);
             throw createError;
           }
         }
       }
 
-      // Step 4: CRITICAL - Always call onJoin with publish=true
-      // This is the deterministic part - we ALWAYS attempt to join as broadcaster
+      // Step 4: CRITICAL - Always call onJoin with publish=true if we have a session
       if (!activeSessionToUse) {
         const errorMsg = "No active session available";
-        setStreamError(errorMsg); // ✅ Fix 2: Surface error
+        setStreamError(errorMsg);
         throw new Error(errorMsg);
       }
 
       console.log("[onGoLive] Joining as broadcaster with session:", activeSessionToUse.id);
-      await onJoin({ publish: true, sessionOverride: activeSessionToUse });
-      // ✅ Fix 1: No early returns - onJoin always called if we reach here
+      try {
+        await onJoin({ publish: true, sessionOverride: activeSessionToUse });
+        
+        // ✅ Redirect to live page after successful join
+        console.log("[onGoLive] Join successful, redirecting to live page");
+        navigate(`/events/${eventId}/live`, { replace: true });
+      } catch (joinError) {
+        // ✅ Ensure joining state is cleared if joinStream throws
+        console.error("[onGoLive] Join failed:", joinError);
+        setJoining(false);
+        // Error is already handled by onJoin (sets streamError/joinError)
+        throw joinError;
+      }
       
     } catch (e) {
       console.error("[onGoLive] Error:", e);
@@ -360,7 +457,7 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
       setJoinError(errorMessage);
       // streamError is already set in onJoin or above, but ensure it's set here too
       if (!streamError) {
-        setStreamError(errorMessage); // ✅ Fix 2: Ensure error is visible
+        setStreamError(errorMessage);
       }
     } finally {
       setJoining(false);
@@ -368,14 +465,16 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
   };
 
   const onEnd = async () => {
-    // your hook likely already knows how to end the active one;
-    // if it requires sessionId, change useStreaming endSession signature accordingly.
     if (!session) return;
     await endSession(session.id);
     room?.disconnect();
     setRoom(null);
-    setIsBroadcasting(false); // ✅ Fix 3: Reset broadcasting state when ending
-    setStreamError(null); // ✅ Fix 2: Clear errors
+    setIsBroadcasting(false);
+    setStreamError(null);
+    
+    // ✅ Reset join state when session ends
+    resetJoinState();
+    autoJoinAttemptedRef.current = false;
   };
 
   if (loading) {
@@ -394,27 +493,130 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
     );
   }
 
-  // 🔴 LIVE (session exists and active)
-  if (session?.active) {
+  // State 1: No session → Show Go Live button
+  if (!session?.active) {
     return (
-      <div className="border border-[#CD000E] bg-[#0B0B0B] p-6 rounded-lg space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="border border-gray-800 bg-[#0B0B0B] p-6 rounded-lg space-y-4">
+        <p className="text-[#9A9A9A] font-body">This event is not live yet.</p>
+
+        {scheduledStart && (
+          <p className="text-xs text-gray-400">
+            Scheduled to start at{" "}
+            <span className="text-white">{scheduledStart.toLocaleString()}</span>
+          </p>
+        )}
+
+        {/* Error display */}
+        {streamError && (
+          <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded-lg">
+            <div className="flex items-start gap-2">
+              <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-red-400 font-semibold mb-1">Streaming Error</p>
+                <p className="text-red-300 text-sm">{streamError}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {canManageStream && (
+          <div className="flex gap-3">
+            <button
+              onClick={() => void onGoLive()}
+              disabled={joining}
+              className="px-5 py-2 bg-[#CD000E] hover:bg-[#860005] text-white rounded-lg font-heading uppercase tracking-wide disabled:opacity-50"
+            >
+              {joining ? "Starting…" : "Go Live"}
+            </button>
+
+            <button
+              onClick={onCancel}
+              className="px-5 py-2 bg-transparent border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // State 2: Session active but not connected
+  // For creators: Auto-join is triggered by useEffect above
+  // For viewers: Show join button
+  if (session.active && !connected) {
+    // If creator, show connecting state (auto-join in progress)
+    if (canManageStream) {
+      return (
+        <div className="border border-[#CD000E] bg-[#0B0B0B] p-6 rounded-lg space-y-4">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-[#CD000E] animate-pulse" />
             <span className="text-[#CD000E] font-heading font-semibold uppercase text-sm">
-              Live Now
+              Connecting...
             </span>
-
-            <StreamingLive
-              session={session}
-              canManageStream={canManageStream}
-              onJoin={() => onJoin({ publish: true })}
-              onEnd={() => void onEnd()}
-            />
           </div>
+
+          <p className="text-[#9A9A9A] font-body">
+            {joining ? "Joining stream and starting broadcast..." : "Preparing to go live..."}
+          </p>
+
+          {/* Error display */}
+          {(streamError || joinError) && (
+            <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded-lg">
+              <div className="flex items-start gap-2">
+                <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="flex-1">
+                  <p className="text-red-400 font-semibold mb-1">Streaming Error</p>
+                  <p className="text-red-300 text-sm">{streamError || joinError}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Manual retry button if auto-join failed */}
+          {!joining && (streamError || joinError) && (
+            <div className="flex gap-3">
+              <button
+                className="px-5 py-2 bg-[#CD000E] hover:bg-[#860005] text-white rounded-lg font-heading uppercase tracking-wide"
+                onClick={() => {
+                  resetJoinState(); // ✅ Reset join state before retry
+                  autoJoinAttemptedRef.current = false;
+                  onJoin({ publish: true });
+                }}
+              >
+                Retry Join
+              </button>
+              <button
+                className="px-5 py-2 bg-transparent border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800"
+                onClick={onCancel}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // For viewers: Show join button
+    return (
+      <div className="border border-[#CD000E] bg-[#0B0B0B] p-6 rounded-lg space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-[#CD000E] animate-pulse" />
+          <span className="text-[#CD000E] font-heading font-semibold uppercase text-sm">
+            Stream Ready
+          </span>
         </div>
 
-        {/* ✅ Fix 2: Prominent error display */}
+        <p className="text-[#9A9A9A] font-body">
+          The stream is ready. Click below to join as a viewer.
+        </p>
+
+        {/* Error display */}
         {(streamError || joinError) && (
           <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded-lg">
             <div className="flex items-start gap-2">
@@ -429,119 +631,36 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
           </div>
         )}
 
-        {/* ✅ Fix 3: Host Broadcasting View - Clear indicator when creator is live */}
-        {isBroadcasting && canManageStream && (
-          <div className="border-2 border-[#CD000E] bg-[#CD000E]/10 p-4 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-[#CD000E] animate-pulse" />
-                <span className="text-[#CD000E] font-heading font-bold uppercase text-lg">
-                  🔴 You are live
-                </span>
-              </div>
-              <p className="text-gray-300 text-sm ml-auto">
-                Your stream is active and broadcasting
-              </p>
-            </div>
-          </div>
-        )}
-
-        {!connected ? (
-          <div className="flex gap-3">
-            <button
-              className="px-5 py-2 bg-[#CD000E] hover:bg-[#860005] text-white rounded-lg font-heading uppercase tracking-wide disabled:opacity-50"
-              onClick={() => onJoin()}
-              disabled={joining}
-            >
-              {joining ? "Joining…" : "Join Stream"}
-            </button>
-
-            {hostParam !== "1" && (
-              <button
-                className="px-5 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
-                onClick={() => onJoin({ publish: true })}
-                disabled={joining}
-              >
-                {joining ? "Joining…" : "Join as Host"}
-              </button>
-            )}
-
-            {canManageStream && (
-              <button
-                className="px-5 py-2 bg-transparent border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800"
-                onClick={onCancel}
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <LiveKitViewer room={room!} />
-
-            {canManageStream && (
-              <button
-                onClick={() => void onEnd()}
-                className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700"
-              >
-                End Stream
-              </button>
-            )}
-          </div>
-        )}
+        <button
+          className="px-5 py-2 bg-[#CD000E] hover:bg-[#860005] text-white rounded-lg font-heading uppercase tracking-wide disabled:opacity-50"
+          onClick={() => onJoin()}
+          disabled={joining}
+        >
+          {joining ? "Joining…" : "Join Stream"}
+        </button>
       </div>
     );
   }
 
-  // 🟡 NOT LIVE YET
+  // State 3: Connected → Redirect to live page
+  // After successful join, user should be redirected to /events/:eventId/live
+  // This state should not normally be reached if redirect works correctly
+  if (connected && room) {
+    // If we're here, redirect should have happened but didn't
+    // Redirect now as fallback
+    console.log("[StreamingPanel] Connected but still on panel, redirecting to live page");
+    navigate(`/events/${eventId}/live`);
+    return (
+      <div className="border border-[#CD000E] bg-[#0B0B0B] p-6 rounded-lg">
+        <p className="text-gray-400">Redirecting to live page...</p>
+      </div>
+    );
+  }
+
+  // This should not be reached in normal flow
   return (
-    <div className="border border-gray-800 bg-[#0B0B0B] p-6 rounded-lg space-y-4">
-      <p className="text-[#9A9A9A] font-body">This event is not live yet.</p>
-
-      {scheduledStart && (
-        <p className="text-xs text-gray-400">
-          Scheduled to start at{" "}
-          <span className="text-white">{scheduledStart.toLocaleString()}</span>
-        </p>
-      )}
-
-      {/* ✅ Fix 2: Show errors in "not live" state too */}
-      {streamError && (
-        <div className="border-2 border-red-600 bg-red-900/20 p-4 rounded-lg">
-          <div className="flex items-start gap-2">
-            <svg className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div className="flex-1">
-              <p className="text-red-400 font-semibold mb-1">Streaming Error</p>
-              <p className="text-red-300 text-sm">{streamError}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {canManageStream && (
-        <div className="flex gap-3">
-          <button
-            onClick={() => void onGoLive()}
-            disabled={!canGoLive || joining}
-            className={`px-5 py-2 rounded-lg font-heading uppercase tracking-wide ${
-              canGoLive
-                ? "bg-[#CD000E] hover:bg-[#860005] text-white"
-                : "bg-gray-700 text-gray-400 cursor-not-allowed"
-            }`}
-          >
-            {joining ? "Starting…" : "Go Live"}
-          </button>
-
-          <button
-            onClick={onCancel}
-            className="px-5 py-2 bg-transparent border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
+    <div className="border border-[#CD000E] bg-[#0B0B0B] p-6 rounded-lg">
+      <p className="text-gray-400">Unexpected state</p>
     </div>
   );
 }

@@ -10,13 +10,13 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  ForbiddenException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { EntitiesService } from "./entities.service";
 import { CreateEntityDto, UpdateEntityDto, AddCollaboratorDto, EntityQueryDto, CreatorApplicationDto } from "./dto";
 import { RolesGuard } from "../../common/guards";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
+import { assertFullUser } from "../../common/guards/assert-full-user";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
 
 type User = any;
@@ -39,6 +39,7 @@ export class EntitiesController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 409, description: "Entity with this brand name already exists" })
   async creatorApply(@Body() applicationDto: CreatorApplicationDto, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.entitiesService.createCreatorApplication(applicationDto, user.id);
   }
 
@@ -52,6 +53,7 @@ export class EntitiesController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 409, description: "Entity with this slug/name already exists" })
   create(@Body() createEntityDto: CreateEntityDto, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.entitiesService.createEntity(createEntityDto, user.id);
   }
 
@@ -105,6 +107,7 @@ export class EntitiesController {
     @Body() updateEntityDto: UpdateEntityDto,
     @CurrentUser() user: User,
   ) {
+    assertFullUser(user);
     return this.entitiesService.updateEntity(id, updateEntityDto, user.id, user.role);
   }
 
@@ -119,6 +122,7 @@ export class EntitiesController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Admin or Owner only" })
   remove(@Param("id") id: string, @CurrentUser() user: User) {
+    assertFullUser(user);
     // Owner check is done in service
     return this.entitiesService.delete(id, user.id, user.role);
   }
@@ -138,6 +142,7 @@ export class EntitiesController {
     @Body() addCollaboratorDto: AddCollaboratorDto,
     @CurrentUser() user: User,
   ) {
+    assertFullUser(user);
     return this.entitiesService.addCollaborator(id, addCollaboratorDto, user.id, user.role);
   }
 
@@ -153,6 +158,7 @@ export class EntitiesController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - Owner/Manager only" })
   removeCollaborator(@Param("id") id: string, @Param("userId") userId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
     return this.entitiesService.removeCollaborator(id, userId, user.id, user.role);
   }
 

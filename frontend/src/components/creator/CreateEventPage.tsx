@@ -1,11 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { useCreateEvent } from "@/hooks/useEvents";
-import { useAuth } from "@/hooks/useAuth";
+import { useEntityContext } from "@/hooks/useEntityContext";
 import { useState } from "react";
+import type { CreateEventRequest } from "@/services/events.service";
 
 export function CreateEventPage() {
   const navigate = useNavigate();
-  const { ownedEntity } = useAuth();
+  const { currentEntity } = useEntityContext();
   const createEvent = useCreateEvent();
 
   const [form, setForm] = useState({
@@ -16,23 +17,48 @@ export function CreateEventPage() {
     isVirtual: false,
   });
 
-  if (!ownedEntity) {
+  if (!currentEntity) {
     return <div className="text-white/60">No entity found</div>;
   }
 
   const submit = async () => {
-    await createEvent.mutateAsync({
-      entityId: ownedEntity.id,
-      name: form.name,
-      description: form.description || undefined,
-      startTime: new Date(form.startTime).toISOString(),
-      endTime: new Date(form.startTime).toISOString(),
-      location: form.location || undefined,
-      eventType: "LIVE",
-      isVirtual: form.isVirtual,
-    });
+    // Validate required fields
+    if (!form.name || !form.startTime) {
+      alert("Name and start time are required");
+      return;
+    }
+
+    // Construct payload strictly aligned with CreateEventDto
+    const startTimeDate = new Date(form.startTime);
+    const endTimeDate = new Date(startTimeDate.getTime() + 60 * 60 * 1000); // Default: 1 hour after start
+
+    const payload: CreateEventRequest = {
+      // REQUIRED FIELDS (must match CreateEventDto exactly)
+      entityId: currentEntity.id, // UUID string
+      name: form.name, // string
+      eventType: "LIVE" as const, // EventType enum: "LIVE" | "PRERECORDED"
+      phase: "PRE_LIVE" as const, // EventPhase enum: "PRE_LIVE" | "LIVE" | "POST_LIVE"
+      status: "DRAFT" as const, // EventStatus enum: "DRAFT" | "SCHEDULED" | "LIVE" | "COMPLETED" | "CANCELLED"
+      startTime: startTimeDate.toISOString(), // ISO date string
+      isVirtual: form.isVirtual, // boolean (required)
+      geoRestricted: false, // boolean (required)
+      ticketRequired: true, // boolean (required)
+      entryCodeRequired: false, // boolean (required)
+      entryCodeDelivery: false, // boolean (required)
+      testingEnabled: false, // boolean (required)
+      
+      // OPTIONAL FIELDS (only include if value exists)
+      ...(form.description ? { description: form.description } : {}),
+      ...(form.location ? { location: form.location } : {}),
+      endTime: endTimeDate.toISOString(), // ISO date string (optional)
+    };
+
+    // Log payload immediately before submission
+    console.log("CreateEvent payload", payload);
+
+    await createEvent.mutateAsync(payload);
   
-    navigate("/profile");
+    navigate("/creator/events");
   };
   
   return (

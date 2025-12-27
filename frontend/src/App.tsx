@@ -31,6 +31,7 @@ import { CreatorEventDetailPage } from "@/pages/creator/CreatorEventDetailPage";
 import { CreatorEventEditPage } from "@/pages/creator/CreatorEventEditPage";
 import { CreatorEventTicketsPage } from "@/pages/creator/CreatorEventTicketsPage";
 import { EventWatchPage } from "@/pages/creator/events/EventWatchPage";
+import { EventLivePage } from "@/pages/creator/events/EventLivePage";
 
 function App() {
   useEffect(() => {
@@ -122,6 +123,15 @@ function App() {
 
       {/* Event Watch Route */}
       <Route path="/events/:id/watch" element={<EventWatchPage />} />
+      {/* Event Live Route - Full broadcast experience */}
+      <Route
+        path="/events/:id/live"
+        element={
+          <ProtectedRoute>
+            <EventLivePage />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Creator Routes */}
       <Route path="/creator" element={<CreatorRoute><CreatorLayout /></CreatorRoute>}>

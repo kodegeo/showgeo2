@@ -1,14 +1,16 @@
 import { Room } from "livekit-client";
 
+/**
+ * Join LiveKit room using token and server URL.
+ * Room name is embedded in the token, so no roomName parameter is needed.
+ */
 interface JoinStreamParams {
   token: string;
-  roomName: string;
   serverUrl: string;
 }
 
 export async function joinStream({
   token,
-  roomName,
   serverUrl,
 }: JoinStreamParams) {
   const room = new Room({
@@ -18,7 +20,7 @@ export async function joinStream({
 
   await room.connect(serverUrl, token);
 
-  console.log("✅ Connected to LiveKit room:", roomName);
+  console.log("✅ Connected to LiveKit room (room name from token)");
 
   return room;
 }

@@ -1,10 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usersService } from "@/services";
+import type { UserEntitiesResponse } from "@/services";
+
 import type {
   QueryParams,
   CreateUserProfileRequest,
   UpdateUserProfileRequest,
 } from "@/services";
+
 
 export function useUsers(params?: QueryParams) {
   return useQuery({
@@ -29,11 +32,15 @@ export function useUserByUsername(username: string) {
   });
 }
 
-export function useUserEntities(userId: string) {
-  return useQuery({
-    queryKey: ["users", userId, "entities"],
-    queryFn: () => usersService.getEntities(userId),
-    enabled: !!userId && userId.trim() !== "", // Only enable if userId is a valid non-empty string
+export function useUserEntities(userId: string | null) {
+  return useQuery<UserEntitiesResponse>({
+    queryKey: ["user-entities", userId],
+    enabled: !!userId,
+    queryFn: () => {
+      // At this point, userId is guaranteed to be non-null
+      return usersService.getEntities(userId as string);
+    },
+    staleTime: 60_000,
   });
 }
 

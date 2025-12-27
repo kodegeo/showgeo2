@@ -35,10 +35,11 @@ export interface StreamingSession {
   updatedAt: string;
 }
 
+// ✅ Single-token authorization model: backend returns ONLY the JWT token string
+// Room name and permissions are embedded in the token
+// LiveKit URL comes from environment config, not backend
 export interface LivekitTokenResponse {
   token: string;
-  roomName: string;
-  url: string;
 }
 
 export interface UpdateMetricsRequest {
@@ -91,6 +92,17 @@ export const streamingService = {
       requestUrl,
       requestBody,
     );
+    
+    // Log raw response for debugging
+    console.log("[streamingService.generateToken] Raw response:", {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data,
+      dataType: typeof response.data,
+      hasToken: !!response.data?.token,
+      tokenType: typeof response.data?.token,
+      keys: response.data ? Object.keys(response.data) : []
+    });
     
     return response.data;
   },

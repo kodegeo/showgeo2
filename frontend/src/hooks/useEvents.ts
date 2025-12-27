@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, UseQueryOptions } from "@tanstack/react-query";
 import { eventsService } from "@/services";
 import type {
   QueryParams,
@@ -7,7 +7,8 @@ import type {
   UpdateMetricsRequest,
   TestResultsRequest,
 } from "@/services";
-import type { EventPhase, EventStatus } from "../../../packages/shared/types";
+import type { EventPhase, EventStatus, Event } from "../../../packages/shared/types";
+import type { PaginatedResponse } from "@/services/types";
 
 export function useEvents(
   params?: QueryParams & {
@@ -18,10 +19,12 @@ export function useEvents(
     startDate?: string;
     endDate?: string;
   },
+  options?: Omit<UseQueryOptions<PaginatedResponse<Event>>, "queryKey" | "queryFn">,
 ) {
   return useQuery({
     queryKey: ["events", params],
     queryFn: () => eventsService.getAll(params),
+    ...options,
   });
 }
 

@@ -6,13 +6,29 @@ import { Calendar, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export function CreatorEventsPage() {
-  const { currentEntity } = useEntityContext();
-
-  const { data: eventsData, isLoading } = useEvents({
+  const { currentEntity, isLoading: entityLoading } = useEntityContext();
+  
+  // Only fetch events if we have a current entity
+  const { data: eventsData, isLoading: eventsLoading } = useEvents({
     entityId: currentEntity?.id,
+  }, {
+    enabled: !!currentEntity?.id, // Don't fetch if no entity
   });
 
   const events = eventsData?.data ?? [];
+  const isLoading = eventsLoading || entityLoading;
+
+  // Show loading if entity is still loading
+  if (entityLoading || !currentEntity) {
+    return (
+      <CreatorDashboardLayout>
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#CD000E] mx-auto mb-4" />
+          <p className="text-[#9A9A9A] font-body">Loading workspace...</p>
+        </div>
+      </CreatorDashboardLayout>
+    );
+  }
 
   return (
     <CreatorDashboardLayout>

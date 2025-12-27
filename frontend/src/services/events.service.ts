@@ -7,14 +7,41 @@ import type { EventWithEntity } from "../../../packages/shared/types/event.api";
 
 // events.service.ts
 export interface CreateEventRequest {
-  entityId: string;
+  // Required fields
+  entityId: string; // UUID of entity
   name: string;
-  description?: string;
-  startTime: string;
-  endTime?: string;
-  location?: string;
-  isVirtual?: boolean;
   eventType: "LIVE" | "PRERECORDED";
+  phase: "PRE_LIVE" | "LIVE" | "POST_LIVE";
+  status: "DRAFT" | "SCHEDULED" | "LIVE" | "COMPLETED" | "CANCELLED";
+  startTime: string; // ISO date string
+  isVirtual: boolean;
+  geoRestricted: boolean;
+  ticketRequired: boolean;
+  entryCodeRequired: boolean;
+  entryCodeDelivery: boolean;
+  testingEnabled: boolean;
+  
+  // Optional fields
+  description?: string;
+  thumbnail?: string;
+  endTime?: string; // ISO date string
+  location?: string;
+  eventCoordinatorId?: string; // UUID
+  tourId?: string; // UUID
+  streamUrl?: string;
+  testStreamUrl?: string;
+  videoUrl?: string;
+  streamingAccessLevel?: "LOCAL" | "REGIONAL" | "NATIONAL" | "INTERNATIONAL";
+  geoRegions?: string[];
+  ticketTypes?: Array<{
+    type: "FREE" | "GIFTED" | "PAID";
+    price?: number;
+    currency?: string;
+    availability: number;
+  }>;
+  ticketEmailTemplate?: string;
+  customBranding?: Record<string, unknown>;
+  collaboratorEntityIds?: string[]; // Array of UUIDs
 }
 
 export interface UpdateEventRequest {

@@ -6,6 +6,7 @@ import { UserRole } from "../../../packages/shared/types";
  *
  * A user is considered a creator if:
  * - They have role === ENTITY (system-level creator), OR
+ * - They have isEntity === true (indicates they own/manage entities), OR
  * - They own or manage at least one entity (hasEntities === true)
  *
  * NOTE:
@@ -23,7 +24,12 @@ export function isCreator(
     return true;
   }
 
-  // Owns or manages at least one entity
+  // User has isEntity flag set (indicates they own/manage entities)
+  if (user.isEntity === true) {
+    return true;
+  }
+
+  // Owns or manages at least one entity (from entities query)
   return hasEntities;
 }
 

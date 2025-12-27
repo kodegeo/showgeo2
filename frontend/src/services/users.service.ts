@@ -80,11 +80,13 @@ export const usersService = {
   /**
    * Get user's entities (owned and followed)
    */
-  async getEntities(id: string): Promise<UserEntitiesResponse> {
-    const response = await apiClient.get<UserEntitiesResponse>(`/users/${id}/entities`);
+  async getEntities(userId: string): Promise<UserEntitiesResponse> {
+    const response = await apiClient.get<UserEntitiesResponse>(
+      `/users/${userId}/entities`,
+    );
     return response.data;
   },
-
+    
   /**
    * Create user profile
    */
