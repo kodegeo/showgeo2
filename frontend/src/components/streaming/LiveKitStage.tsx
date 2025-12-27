@@ -256,18 +256,20 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
        primaryRemoteVideoTrack?.source === Track.Source?.ScreenShare);
   
   // Camera off state: only show if we have a local camera track but it's muted
-  const cameraOff = hasLocalVideo && localVideo.source === "camera" && 
-    (() => {
-      if (!room?.localParticipant) return false;
-      const videoPubs = Array.from(room.localParticipant.videoTrackPublications.values());
-      const cameraPub = videoPubs.find(
-        (pub) => pub.track && 
-        pub.kind === Track.Kind.Video &&
-        (pub as any).source !== "screen_share" &&
-        (pub as any).source !== Track.Source?.ScreenShare
-      );
-      return cameraPub?.isMuted ?? false;
-    })();
+  // ✅ Fix: Use useMemo instead of IIFE to avoid side effects during render
+  const cameraOff = useMemo(() => {
+    if (!hasLocalVideo || localVideo.source !== "camera") return false;
+    if (!room?.localParticipant) return false;
+    
+    const videoPubs = Array.from(room.localParticipant.videoTrackPublications.values());
+    const cameraPub = videoPubs.find(
+      (pub) => pub.track && 
+      pub.kind === Track.Kind.Video &&
+      (pub as any).source !== "screen_share" &&
+      (pub as any).source !== Track.Source?.ScreenShare
+    );
+    return cameraPub?.isMuted ?? false;
+  }, [hasLocalVideo, localVideo.source, room, room?.localParticipant]);
 
   // Dev diagnostics
   useEffect(() => {
