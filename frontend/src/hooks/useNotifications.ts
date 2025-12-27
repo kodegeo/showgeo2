@@ -4,7 +4,8 @@ import { io, Socket } from "socket.io-client";
 import { notificationsService } from "@/services";
 import type { QueryParams, Notification } from "@/services";
 
-const WS_URL = import.meta.env.VITE_WS_URL || "http://localhost:3000";
+const WS_URL = "/api"; io(`${WS_URL}/notifications`);
+
 
 export function useNotifications(params?: QueryParams & { unreadOnly?: boolean }) {
   return useQuery({
