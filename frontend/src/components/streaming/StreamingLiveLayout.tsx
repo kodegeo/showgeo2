@@ -81,8 +81,8 @@ export function StreamingLiveLayout({
       {/* Main Content Area - 3 Zone Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* PRIMARY VIDEO AREA - Center, Large */}
-        <div className="flex-1 relative min-w-0">
-          <LiveKitStage room={room} isPaused={isPaused} />
+        <div className="w-full h-full bg-black text-white">
+          LiveKitStage disabled
         </div>
 
         {/* SIDEBAR - Right Side (Viewers/Reactions) */}
