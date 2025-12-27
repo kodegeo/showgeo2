@@ -1,11 +1,21 @@
 import { Room, createLocalTracks, ConnectionState } from "livekit-client";
 
 /**
- * Wait for room to be connected before publishing
+ * Wait for room to be connected and engine ready before publishing
+ * ✅ Fix 3: Enhanced to wait for localParticipant readiness, not just connection state
  */
 async function ensureConnected(room: Room): Promise<void> {
   if (room.state === ConnectionState.Connected) {
-    return;
+    // Additional check: wait for localParticipant to be ready
+    // ConnectionState.Connected doesn't guarantee engine readiness
+    let attempts = 0;
+    while (attempts < 10 && !room.localParticipant) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      attempts++;
+    }
+    if (room.localParticipant) {
+      return;
+    }
   }
 
   // Wait up to 5 seconds for connection
@@ -19,7 +29,21 @@ async function ensureConnected(room: Room): Promise<void> {
       if (state === ConnectionState.Connected) {
         clearTimeout(timeout);
         room.off("connectionStateChanged", handler);
-        resolve();
+        
+        // Wait for localParticipant after connection
+        let attempts = 0;
+        const checkParticipant = async () => {
+          while (attempts < 10 && !room.localParticipant) {
+            await new Promise(r => setTimeout(r, 50));
+            attempts++;
+          }
+          if (room.localParticipant) {
+            resolve();
+          } else {
+            reject(new Error("Room connected but localParticipant not available"));
+          }
+        };
+        checkParticipant();
       } else if (state === ConnectionState.Disconnected) {
         clearTimeout(timeout);
         room.off("connectionStateChanged", handler);
@@ -32,7 +56,7 @@ async function ensureConnected(room: Room): Promise<void> {
 }
 
 export async function publishLocal(room: Room) {
-  // Ensure room is connected before publishing
+  // Ensure room is connected and engine ready before publishing
   await ensureConnected(room);
 
   const tracks = await createLocalTracks({
@@ -40,8 +64,27 @@ export async function publishLocal(room: Room) {
     video: true,
   });
 
+  // ✅ Fix 4: Add retry logic for publishTrack() to handle transient failures
   for (const track of tracks) {
-    await room.localParticipant.publishTrack(track);
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
+      try {
+        await room.localParticipant.publishTrack(track);
+        break; // Success
+      } catch (error) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          console.error(`[publishLocal] Failed to publish track after ${maxAttempts} attempts:`, error);
+          throw error;
+        }
+        // Exponential backoff: 100ms, 200ms
+        const delay = 100 * attempts;
+        console.warn(`[publishLocal] Publish attempt ${attempts} failed, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
 
   return tracks;

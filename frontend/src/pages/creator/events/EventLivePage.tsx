@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
 import { streamingService } from "@/services";
 import { joinStream } from "@/lib/livekit/joinStream";
-import { publishLocal } from "@/lib/livekit/publishLocal";
+// Removed publishLocal import - using setCameraEnabled/setMicrophoneEnabled instead
 import { StreamingLiveLayout } from "@/components/streaming/StreamingLiveLayout";
 
 export function EventLivePage() {
@@ -88,17 +88,19 @@ export function EventLivePage() {
       
       setRoom(lkRoom);
 
-      // Publish local tracks if broadcaster
+      // Enable camera and microphone if broadcaster
       if (isBroadcaster) {
-        console.log("[EventLivePage] Publishing local tracks as broadcaster");
+        console.log("[EventLivePage] Enabling camera and microphone as broadcaster");
         setPublishing(true);
         try {
-          const tracks = await publishLocal(lkRoom);
-          setLocalTracks(tracks);
-          console.log("[EventLivePage] Published", tracks.length, "tracks");
+          // ✅ Use LiveKit's managed track APIs instead of manual publishLocal
+          // This prevents conflicts with BroadcasterControls which also uses setCameraEnabled
+          await lkRoom.localParticipant.setCameraEnabled(true);
+          await lkRoom.localParticipant.setMicrophoneEnabled(true);
+          console.log("[EventLivePage] Camera and microphone enabled");
         } catch (publishError) {
-          console.error("[EventLivePage] Publish failed:", publishError);
-          // Don't throw - allow connection even if publish fails
+          console.error("[EventLivePage] Failed to enable camera/microphone:", publishError);
+          // Don't throw - allow connection even if enable fails
         } finally {
           setPublishing(false);
         }

@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { streamingService } from "@/services";
 import { joinStream } from "@/lib/livekit/joinStream";
-import { publishLocal } from "../../lib/livekit/publishLocal";
+// Removed publishLocal import - using setCameraEnabled/setMicrophoneEnabled instead
 import { useLiveKitRoom } from "../../hooks/useLiveKitRoom";
 import { LiveKitViewer } from "./LiveKitViewer";
 import { StreamingLive } from "../../components/streaming/StreamingLive";
@@ -83,8 +83,8 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
       ? new Date(event.startTime)
       : null;
 
-  // ✅ Define onJoin before useEffect so it can be called in auto-join logic
-  const onJoin = async (opts?: { publish?: boolean; sessionOverride?: typeof session }) => {
+  // ✅ Fix 5: Wrap onJoin in useCallback to fix auto-join effect dependencies
+  const onJoin = useCallback(async (opts?: { publish?: boolean; sessionOverride?: typeof session }) => {
         const activeSession = opts?.sessionOverride || session;
         if (!activeSession) {
           const errorMsg = "No active streaming session";
@@ -277,6 +277,13 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
             console.log("[onJoin] LiveKit room connected, state:", lkRoom.state);
             hasRequestedTokenRef.current = false;
             setRoom(lkRoom);
+            
+            // ✅ Fix 2: Wait for engine to be ready before publishing
+            // ConnectionState.Connected doesn't guarantee engine readiness
+            if (shouldPublish) {
+              console.log("[onJoin] Waiting for engine readiness before publishing...");
+              await new Promise(resolve => setTimeout(resolve, 200));
+            }
           } catch (connectError: any) {
             console.error("[onJoin] LiveKit connection failed:", {
               error: connectError,
@@ -301,21 +308,26 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
           }
       
           if (shouldPublish) {
-            console.log("[onJoin] Publishing local tracks...");
+            console.log("[onJoin] Enabling camera and microphone...");
             setPublishing(true);
             try {
-              const tracks = await publishLocal(lkRoom);
-              setLocalTracks(tracks);
-              console.log("[onJoin] Published", tracks.length, "tracks");
+              // ✅ Use LiveKit's managed track APIs instead of manual publishLocal
+              // This prevents conflicts with BroadcasterControls which also uses setCameraEnabled
+              await lkRoom.localParticipant.setCameraEnabled(true);
+              await lkRoom.localParticipant.setMicrophoneEnabled(true);
               
-              // ✅ Fix 3: Set broadcasting state only after successful publish
+              console.log("[onJoin] Camera and microphone enabled");
+              
+              // ✅ Set broadcasting state only after successful enable
               setIsBroadcasting(true);
             } catch (publishError) {
-              console.error("[onJoin] Publish failed:", publishError);
+              console.error("[onJoin] Failed to enable camera/microphone:", publishError);
               const errorMsg = "Failed to start camera/microphone. Please check permissions and try again.";
-              setStreamError(errorMsg); // ✅ Fix 2: Surface publish errors
+              setStreamError(errorMsg);
               setIsBroadcasting(false);
               throw new Error(errorMsg);
+            } finally {
+              setPublishing(false);
             }
           } else {
             console.log("[onJoin] Skipping publish (VIEWER mode)");
@@ -335,7 +347,7 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
           setJoining(false);
           setPublishing(false);
         }
-      };
+      }, [session, eventId, canManageStream, setRoom]);
   
   // Auto-join creator as BROADCASTER when session is active but not connected
   // This enforces broadcaster-first workflow: creators start streaming immediately
@@ -364,8 +376,7 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
         autoJoinAttemptedRef.current = false;
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canManageStream, session?.id, session?.active, loading, connected, joining]);
+  }, [canManageStream, session?.id, session?.active, loading, connected, joining, onJoin]);
             
   // ✅ Refactored onGoLive: Supports joining existing active sessions
   // Flow: If session exists → join, Else → create → join
@@ -645,11 +656,16 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
   // State 3: Connected → Redirect to live page
   // After successful join, user should be redirected to /events/:eventId/live
   // This state should not normally be reached if redirect works correctly
+  // ✅ Fix 1: Move navigate() to useEffect to avoid React render violation
+  useEffect(() => {
+    if (connected && room && canManageStream) {
+      console.log("[StreamingPanel] Connected, redirecting to live page");
+      navigate(`/events/${eventId}/live`, { replace: true });
+    }
+  }, [connected, room, canManageStream, navigate, eventId]);
+
   if (connected && room) {
-    // If we're here, redirect should have happened but didn't
-    // Redirect now as fallback
-    console.log("[StreamingPanel] Connected but still on panel, redirecting to live page");
-    navigate(`/events/${eventId}/live`);
+    // Show loading state while redirect happens
     return (
       <div className="border border-[#CD000E] bg-[#0B0B0B] p-6 rounded-lg">
         <p className="text-gray-400">Redirecting to live page...</p>

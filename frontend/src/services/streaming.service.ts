@@ -49,9 +49,19 @@ export interface UpdateMetricsRequest {
   [key: string]: unknown;
 }
 
+/**
+ * Streaming service - all endpoints use relative paths /api/streaming/*
+ * These go through apiClient which proxies to Fly.io backend.
+ * 
+ * NOTE: Media flows directly to LiveKit Cloud. Fly handles signaling only.
+ * - Fly.io: Handles auth + token generation via /api/streaming/* endpoints
+ * - LiveKit Cloud: Handles all WebRTC media traffic via wss://*.livekit.cloud
+ * - No Fly routing for WebRTC traffic - connections go directly to LiveKit
+ */
 export const streamingService = {
   /**
    * Create streaming session
+   * Endpoint: POST /api/streaming/session/:eventId
    */
   async createSession(eventId: string, data?: CreateSessionRequest): Promise<StreamingSession> {
     const response = await apiClient.post<StreamingSession>(
@@ -63,6 +73,7 @@ export const streamingService = {
 
   /**
    * Generate LiveKit token
+   * Endpoint: POST /api/streaming/:eventId/token
    * @param eventId - Event ID (goes in URL path, NOT in body)
    * @param data - Request body containing streamRole and optional geo fields
    */
@@ -109,6 +120,7 @@ export const streamingService = {
 
   /**
    * End streaming session
+   * Endpoint: POST /api/streaming/session/:id/end
    */
   async endSession(sessionId: string): Promise<StreamingSession> {
     const response = await apiClient.post<StreamingSession>(
@@ -119,6 +131,7 @@ export const streamingService = {
 
   /**
    * Get active streaming sessions
+   * Endpoint: GET /api/streaming/active
    */
   async getActiveSessions(): Promise<StreamingSession[]> {
     const response = await apiClient.get<StreamingSession[]>("/streaming/active");

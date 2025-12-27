@@ -19,6 +19,24 @@ import { Roles, CurrentUser, Public } from "../../common/decorators";
 
 type User = any;
 
+/**
+ * Streaming Controller
+ * 
+ * All endpoints are under /api/streaming/* (via global prefix in main.ts)
+ * 
+ * NOTE: This controller handles ONLY signaling/auth endpoints.
+ * Media traffic (WebRTC) flows directly to LiveKit Cloud (wss://*.livekit.cloud)
+ * and is NEVER proxied through Fly.io.
+ * 
+ * Endpoints:
+ * - POST /api/streaming/session/:eventId - Create session
+ * - POST /api/streaming/:eventId/token - Generate LiveKit token
+ * - GET  /api/streaming/active - List active sessions
+ * - POST /api/streaming/session/:id/end - End session
+ * - GET  /api/streaming/:id - Get session details
+ * - POST /api/streaming/:id/metrics - Update metrics
+ * - POST /api/streaming/validate-geofence - Validate geofence
+ */
 @ApiTags("streaming")
 @Controller("streaming")
 export class StreamingController {
