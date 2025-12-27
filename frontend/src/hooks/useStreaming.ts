@@ -62,9 +62,19 @@ export function useStreaming(eventId: string) {
 
       const data = await res.json();
 
-      // Support either `{ session: ... }` or a raw session object
-      const s: StreamingSession | null = data?.session ?? data ?? null;
-      const sessionForEvent = s && s.eventId === eventId ? s : null;
+      // Backend returns an array of all active sessions, filter by eventId
+      let sessionForEvent: StreamingSession | null = null;
+      
+      if (Array.isArray(data)) {
+        sessionForEvent = data.find((s: any) => s.eventId === eventId) || null;
+      } else if (data?.session) {
+        // Support `{ session: ... }` format
+        sessionForEvent = data.session.eventId === eventId ? data.session : null;
+      } else if (data?.eventId === eventId) {
+        // Support raw session object
+        sessionForEvent = data;
+      }
+      
       setStreamSession(sessionForEvent);
     } catch (e) {
       console.error("[useStreaming] Failed to load streaming session:", e);
@@ -80,6 +90,8 @@ export function useStreaming(eventId: string) {
     const token = await getAuthToken();
 
     // Request body matching CreateSessionDto (all fields optional, but send defaults for clarity)
+    // NOTE: streamRole is NOT part of CreateSessionDto - it's only used in token generation
+    // CreateSessionDto expects: accessLevel, metadata, geoRegions (all optional)
     const requestBody = {
       accessLevel: "PUBLIC" as const, // Default from backend DTO
       // metadata and geoRegions are optional, omit them

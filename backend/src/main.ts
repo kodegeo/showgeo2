@@ -30,7 +30,10 @@ async function bootstrap() {
     }),
   );
 
-  app.setGlobalPrefix("api");
+  // Set global prefix, but exclude legacy routes for compatibility
+  app.setGlobalPrefix("api", {
+    exclude: ["/auth/me", "/events"],
+  });
 
   const config = new DocumentBuilder()
     .setTitle("Showgeo API")
@@ -48,8 +51,5 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Server running on 0.0.0.0:${port}`);
 }
-
-
-
 
 bootstrap();

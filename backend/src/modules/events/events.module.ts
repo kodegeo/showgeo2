@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuthModule } from "../auth/auth.module";
 import { EventsController } from "./events.controller";
+import { EventsAliasController } from "./events-alias.controller";
 import { EventsService } from "./events.service";
 import { PrismaService } from "../../prisma/prisma.service";
 
@@ -8,7 +9,7 @@ import { PrismaService } from "../../prisma/prisma.service";
   imports: [
     AuthModule,     // ← REQUIRED
   ],
-  controllers: [EventsController],
+  controllers: [EventsController, EventsAliasController],
   providers: [EventsService, PrismaService],
   exports: [EventsService],
 })
