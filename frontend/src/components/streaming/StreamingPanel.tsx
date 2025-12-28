@@ -301,31 +301,11 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
             throw new Error(errorMsg);
           }
       
-          if (shouldPublish) {
-            console.log("[onJoin] Enabling camera and microphone...");
-            setPublishing(true);
-            try {
-              // ✅ Use LiveKit's managed track APIs instead of manual publishLocal
-              // This prevents conflicts with BroadcasterControls which also uses setCameraEnabled
-              await lkRoom.localParticipant.setCameraEnabled(true);
-              await lkRoom.localParticipant.setMicrophoneEnabled(true);
-              
-              console.log("[onJoin] Camera and microphone enabled");
-              
-              // ✅ Set broadcasting state only after successful enable
-              setIsBroadcasting(true);
-            } catch (publishError) {
-              console.error("[onJoin] Failed to enable camera/microphone:", publishError);
-              const errorMsg = "Failed to start camera/microphone. Please check permissions and try again.";
-              setStreamError(errorMsg);
-              setIsBroadcasting(false);
-              throw new Error(errorMsg);
-            } finally {
-              setPublishing(false);
-            }
-          } else {
-            console.log("[onJoin] Skipping publish (VIEWER mode)");
-          }
+          // ✅ REMOVED: Automatic camera/microphone publishing
+          // joinStream() now only connects to the room
+          // Media publishing occurs ONLY from explicit user actions via BroadcasterControls
+          // This ensures users have full control and prevents unwanted media access
+          console.log("[onJoin] Room connected - media publishing available via controls");
         } catch (e) {
           console.error("[onJoin] Error:", e);
           const errorMessage = e instanceof Error ? e.message : "Failed to join stream";

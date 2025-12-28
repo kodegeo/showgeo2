@@ -177,7 +177,9 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
   useEffect(() => {
     if (!room) return;
 
-    const addTrack = (
+    // ✅ Named handler functions for proper cleanup
+    // Using named functions ensures the same reference is used in both on() and off()
+    const onTrackSubscribed = (
       track: RemoteTrack,
       pub: RemoteTrackPublication,
       participant: { identity?: string }
@@ -193,25 +195,30 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
       });
     };
     
-    const removeTrack = (pub: RemoteTrackPublication) => {
+    const onTrackUnsubscribed = (
+      track: RemoteTrack,
+      pub: RemoteTrackPublication,
+      participant: { identity?: string }
+    ) => {
       setRemoteMedia((prev) => prev.filter((p) => p.id !== pub.trackSid));
     };
 
-    room.on("trackSubscribed", addTrack);
-    room.on("trackUnsubscribed", (_t, pub) => removeTrack(pub));
+    room.on("trackSubscribed", onTrackSubscribed);
+    room.on("trackUnsubscribed", onTrackUnsubscribed);
 
     // Capture already subscribed tracks
     room.remoteParticipants.forEach((participant) => {
       participant.trackPublications.forEach((pub) => {
         if (pub.isSubscribed && pub.track) {
-          addTrack(pub.track, pub as RemoteTrackPublication, participant);
+          onTrackSubscribed(pub.track, pub as RemoteTrackPublication, participant);
         }
       });
     });
     
     return () => {
-      room.off("trackSubscribed", addTrack);
-      room.off("trackUnsubscribed", (_t, pub) => removeTrack(pub));
+      // ✅ Use same function references for cleanup
+      room.off("trackSubscribed", onTrackSubscribed);
+      room.off("trackUnsubscribed", onTrackUnsubscribed);
     };
   }, [room]);
 

@@ -76,7 +76,7 @@ export function EventLivePage() {
         streamRole 
       });
 
-      // Join room
+      // Join room (connect only - no automatic publishing)
       const lkRoom = await joinStream({ token, serverUrl });
       
       // Log room state after connect
@@ -88,23 +88,9 @@ export function EventLivePage() {
       
       setRoom(lkRoom);
 
-      // Enable camera and microphone if broadcaster
-      if (isBroadcaster) {
-        console.log("[EventLivePage] Enabling camera and microphone as broadcaster");
-        setPublishing(true);
-        try {
-          // ✅ Use LiveKit's managed track APIs instead of manual publishLocal
-          // This prevents conflicts with BroadcasterControls which also uses setCameraEnabled
-          await lkRoom.localParticipant.setCameraEnabled(true);
-          await lkRoom.localParticipant.setMicrophoneEnabled(true);
-          console.log("[EventLivePage] Camera and microphone enabled");
-        } catch (publishError) {
-          console.error("[EventLivePage] Failed to enable camera/microphone:", publishError);
-          // Don't throw - allow connection even if enable fails
-        } finally {
-          setPublishing(false);
-        }
-      }
+      // ✅ REMOVED: Automatic camera/microphone publishing
+      // Media publishing now occurs ONLY from explicit user actions via BroadcasterControls
+      // This ensures users have full control over when their camera/mic are enabled
 
       hasRequestedTokenRef.current = false;
     } catch (error) {
