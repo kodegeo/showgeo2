@@ -88,9 +88,8 @@ export function EventLivePage() {
       
       setRoom(lkRoom);
 
-      // ✅ REMOVED: Automatic camera/microphone publishing
-      // Media publishing now occurs ONLY from explicit user actions via BroadcasterControls
-      // This ensures users have full control over when their camera/mic are enabled
+      // Camera is off by default - user can enable via BroadcasterControls
+      console.log("[EventLivePage] Room connected - camera off by default, enable via controls");
 
       hasRequestedTokenRef.current = false;
     } catch (error) {

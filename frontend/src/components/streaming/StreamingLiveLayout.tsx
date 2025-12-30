@@ -45,6 +45,7 @@ export function StreamingLiveLayout({
     };
   }, [room]);
 
+
   const handlePause = async () => {
     if (!room || !isBroadcaster) return;
 
@@ -81,8 +82,12 @@ export function StreamingLiveLayout({
       {/* Main Content Area - 3 Zone Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* PRIMARY VIDEO AREA - Center, Large */}
-        <div className="w-full h-full bg-black text-white">
-          LiveKitStage disabled
+        <div className="flex-1 relative">
+          <LiveKitStage 
+            room={room} 
+            isPaused={isPaused}
+            isBroadcaster={isBroadcaster}
+          />
         </div>
 
         {/* SIDEBAR - Right Side (Viewers/Reactions) */}

@@ -1,6 +1,6 @@
 // frontend/src/components/streaming/BroadcasterControls.tsx
 import { useState, useEffect } from "react";
-import { Room, ConnectionState } from "livekit-client";
+import { Room, ConnectionState, Track } from "livekit-client";
 import { isDevelopment } from "@/utils/env";
 
 type BroadcasterControlsProps = {
@@ -24,6 +24,9 @@ export function BroadcasterControls({
   const [micEnabled, setMicEnabled] = useState(false);
   const [camEnabled, setCamEnabled] = useState(false);
   const [screenEnabled, setScreenEnabled] = useState(false);
+  
+  // ✅ Track camera readiness state (has track available)
+  const [cameraReady, setCameraReady] = useState(false);
 
   // Reactively update state from room.localParticipant
   useEffect(() => {
@@ -38,6 +41,21 @@ export function BroadcasterControls({
       setCamEnabled(cam);
       setScreenEnabled(screen);
 
+      // ✅ Check if camera track is actually ready (not just enabled)
+      // A track is "ready" when it exists, is not muted, and is a camera (not screen share)
+      const videoPubs = Array.from(room.localParticipant.videoTrackPublications.values());
+      const cameraPub = videoPubs.find(
+        (pub) => {
+          if (!pub.track || pub.kind !== Track.Kind.Video) return false;
+          const source = (pub as any).source;
+          const isScreenShare = source === "screen_share" || source === Track.Source?.ScreenShare;
+          return !isScreenShare;
+        }
+      );
+      // Track is ready if it exists AND is not muted
+      const hasCameraTrack = !!cameraPub?.track && !cameraPub?.isMuted;
+      setCameraReady(hasCameraTrack);
+
       if (isDevelopment) {
         const videoTrackCount = room.localParticipant.videoTrackPublications.size;
         const audioTrackCount = room.localParticipant.audioTrackPublications.size;
@@ -45,6 +63,7 @@ export function BroadcasterControls({
           mic,
           cam,
           screen,
+          cameraReady: hasCameraTrack,
           videoTrackCount,
           audioTrackCount,
         });
@@ -53,17 +72,25 @@ export function BroadcasterControls({
 
     updateState();
 
-    // Listen for track changes
+    // Listen for track changes - these events fire when tracks are published/unpublished or muted/unmuted
+    // trackUnmuted is especially important - a track might exist but be muted initially
     room.localParticipant.on("trackPublished", updateState);
     room.localParticipant.on("trackUnpublished", updateState);
     room.localParticipant.on("trackMuted", updateState);
     room.localParticipant.on("trackUnmuted", updateState);
+    
+    // Also poll periodically to catch cases where events might be missed
+    // This ensures cameraReady updates even if events don't fire
+    const pollInterval = setInterval(() => {
+      updateState();
+    }, 500); // Check every 500ms
 
     return () => {
       room.localParticipant?.off("trackPublished", updateState);
       room.localParticipant?.off("trackUnpublished", updateState);
       room.localParticipant?.off("trackMuted", updateState);
       room.localParticipant?.off("trackUnmuted", updateState);
+      clearInterval(pollInterval);
     };
   }, [room]);
 
@@ -106,6 +133,7 @@ export function BroadcasterControls({
       }
     });
 
+  // ✅ Simplified: toggleCam ONLY calls setCameraEnabled - LiveKit is the single source of truth
   const toggleCam = () =>
     safe("cam", async () => {
       // Ensure room is connected before publishing
@@ -113,26 +141,20 @@ export function BroadcasterControls({
         throw new Error(`Room not connected: state is ${room.state}`);
       }
 
-      // Read current state directly from LiveKit, not React state
-      const currentState = !!room.localParticipant.isCameraEnabled;
+      const currentState = room.localParticipant.isCameraEnabled;
       const newState = !currentState;
       
-      if (isDevelopment) {
-        const beforeCount = room.localParticipant.videoTrackPublications.size;
-        console.log(`[BroadcasterControls] ${newState ? "Enabling" : "Disabling"} camera... (tracks before: ${beforeCount}, current LiveKit state: ${currentState})`);
-      }
+      // ✅ ONLY call setCameraEnabled - no React state updates
+      await room.localParticipant.setCameraEnabled(newState);
       
-      try {
-        await room.localParticipant.setCameraEnabled(newState);
-        
-        if (isDevelopment) {
-          const afterCount = room.localParticipant.videoTrackPublications.size;
-          console.log(`[BroadcasterControls] Camera ${newState ? "enabled" : "disabled"}, video tracks: ${afterCount}`);
-        }
-      } catch (error) {
-        console.error("[BroadcasterControls] Failed to toggle camera:", error);
-        throw error;
+      // ✅ Immediately update local state to reflect the change (for immediate UI feedback)
+      // This ensures the button shows yellow/starting state right away
+      setCamEnabled(newState);
+      if (!newState) {
+        // If disabling, also clear cameraReady
+        setCameraReady(false);
       }
+      // Note: cameraReady will be updated by the useEffect when track is published
     });
 
   const toggleScreen = () =>
@@ -187,12 +209,38 @@ export function BroadcasterControls({
       {/* Camera Controls */}
       <button
         onClick={toggleCam}
-        disabled={disabled || busy === "cam"}
-        className="px-4 py-2 rounded-lg bg-gray-800 text-white hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
-        title={camEnabled ? "Turn off camera" : "Turn on camera"}
+        disabled={disabled || busy === "cam" || (camEnabled && !cameraReady)}
+        className={`px-4 py-2 rounded-lg text-white hover:opacity-90 disabled:opacity-50 flex items-center gap-2 transition-all ${
+          !camEnabled 
+            ? "bg-gray-800 hover:bg-gray-700" 
+            : cameraReady 
+            ? "bg-green-600 hover:bg-green-700" 
+            : "bg-yellow-600 hover:bg-yellow-700 animate-pulse"
+        }`}
+        title={
+          !camEnabled 
+            ? "Turn on camera" 
+            : cameraReady 
+            ? "Camera is live" 
+            : "Camera is starting..."
+        }
       >
-        {camEnabled ? "📹" : "📷"}
-        <span className="text-sm">{camEnabled ? "Camera On" : "Camera Off"}</span>
+        {!camEnabled ? (
+          <>
+            <span>📷</span>
+            <span className="text-sm">Camera Off</span>
+          </>
+        ) : cameraReady ? (
+          <>
+            <span>📹</span>
+            <span className="text-sm">Camera Live</span>
+          </>
+        ) : (
+          <>
+            <span className="animate-spin">⏳</span>
+            <span className="text-sm">Starting...</span>
+          </>
+        )}
       </button>
 
       {/* Microphone Controls */}

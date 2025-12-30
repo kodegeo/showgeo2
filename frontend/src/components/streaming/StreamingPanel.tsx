@@ -277,6 +277,9 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
             if (shouldPublish) {
               console.log("[onJoin] Waiting for engine readiness before publishing...");
               await new Promise(resolve => setTimeout(resolve, 200));
+              
+              // Camera is off by default - user can enable via BroadcasterControls
+              console.log("[onJoin] Room connected - camera off by default, enable via controls");
             }
           } catch (connectError: any) {
             console.error("[onJoin] LiveKit connection failed:", {
@@ -351,6 +354,15 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
       });
     }
   }, [canManageStream, session?.id, session?.active, loading, connected, joining, onJoin]);
+
+  // ✅ CRITICAL: Redirect useEffect must be BEFORE all early returns
+  // This ensures hook order is consistent on every render
+  useEffect(() => {
+    if (connected && room && canManageStream) {
+      console.log("[StreamingPanel] Connected, redirecting to live page");
+      navigate(`/events/${eventId}/live`, { replace: true });
+    }
+  }, [connected, room, canManageStream, navigate, eventId]);
             
   // ✅ Refactored onGoLive: Supports joining existing active sessions
   // Flow: If session exists → join, Else → create → join
@@ -630,14 +642,7 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
   // State 3: Connected → Redirect to live page
   // After successful join, user should be redirected to /events/:eventId/live
   // This state should not normally be reached if redirect works correctly
-  // ✅ Fix 1: Move navigate() to useEffect to avoid React render violation
-  useEffect(() => {
-    if (connected && room && canManageStream) {
-      console.log("[StreamingPanel] Connected, redirecting to live page");
-      navigate(`/events/${eventId}/live`, { replace: true });
-    }
-  }, [connected, room, canManageStream, navigate, eventId]);
-
+  // ✅ Redirect useEffect is now at the top (before early returns) to ensure consistent hook order
   if (connected && room) {
     // Show loading state while redirect happens
     return (

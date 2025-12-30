@@ -5,10 +5,16 @@ import { notificationsService } from "@/services";
 import type { QueryParams, Notification } from "@/services";
 import { isDevelopment } from "@/utils/env";
 
-const WS_URL = import.meta.env.VITE_WS_URL || (isDevelopment ? "ws://localhost:3000" : "");
-
 
 export function useNotifications(params?: QueryParams & { unreadOnly?: boolean }) {
+  const isDevelopment = import.meta.env.DEV;
+  const WS_URL = import.meta.env.VITE_WS_URL;
+
+  // ✅ Guard INSIDE function
+  if (!WS_URL && !isDevelopment) {
+    console.warn("WebSocket notifications disabled in production");
+    return null;
+  }
   return useQuery({
     queryKey: ["notifications", params],
     queryFn: () => notificationsService.getAll(params),
@@ -58,6 +64,8 @@ export function useNotificationsSocket() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    const isDevelopment = import.meta.env.DEV;
+    const WS_URL = import.meta.env.VITE_WS_URL;
     // Skip WebSocket in development if backend URL not configured
     if (isDevelopment && !WS_URL) {
       if (isDevelopment) {

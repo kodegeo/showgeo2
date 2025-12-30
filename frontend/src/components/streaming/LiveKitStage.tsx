@@ -15,6 +15,7 @@ import { isDevelopment } from "@/utils/env";
 type LiveKitStageProps = {
   room: Room;
   isPaused: boolean;
+  isBroadcaster?: boolean;
 };
 
 type RemoteMedia = {
@@ -32,7 +33,7 @@ type LocalVideoState = {
   isEnabled: boolean;
 };
 
-export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
+export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitStageProps) {
   const [remoteMedia, setRemoteMedia] = useState<RemoteMedia[]>([]);
   const [localVideo, setLocalVideo] = useState<LocalVideoState>({
     track: null,
@@ -40,69 +41,130 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
     source: null,
     isEnabled: false,
   });
+  // ✅ Track if camera has ever been enabled (to hide guidance after first use)
+  const [cameraHasBeenEnabled, setCameraHasBeenEnabled] = useState(false);
 
   // Get broadcaster's local video tracks (camera and screen share)
   // Note: isPaused only affects UI (screensaver), not track state
   useEffect(() => {
+    console.log("[LiveKitStage] Local video effect running", {
+      hasRoom: !!room,
+      roomState: room?.state,
+      hasLocalParticipant: !!room?.localParticipant,
+    });
+    
     if (!room) {
+      console.warn("[LiveKitStage] No room available");
       setLocalVideo({ track: null, trackSid: null, source: null, isEnabled: false });
       return;
     }
 
     const localParticipant = room.localParticipant;
-    if (!localParticipant) return;
+    if (!localParticipant) {
+      console.warn("[LiveKitStage] No localParticipant available");
+      return;
+    }
+    
+    console.log("[LiveKitStage] Local participant found", {
+      identity: localParticipant.identity,
+      videoTrackCount: localParticipant.videoTrackPublications.size,
+      audioTrackCount: localParticipant.audioTrackPublications.size,
+    });
+    
+    // Store polling intervals for cleanup
+    const pollingIntervals: NodeJS.Timeout[] = [];
 
     const updateLocalVideo = () => {
       // Priority: screen share > camera
       const allVideoPubs = Array.from(localParticipant.videoTrackPublications.values());
-                  
-      if (isDevelopment) {
-        console.log("[LiveKitStage] updateLocalVideo called", {
-          videoPubCount: allVideoPubs.length,
-          pubs: allVideoPubs.map(p => ({
-            trackSid: p.trackSid,
-            hasTrack: !!p.track,
-            isMuted: p.isMuted,
-            source: (p as any).source,
-          })),
-        });
-      }
       
+      // ✅ FIX #3: If camera is enabled but no video publication found, wait a bit
+      const isCameraEnabled = localParticipant.isCameraEnabled;
+      if (isCameraEnabled && allVideoPubs.length === 0) {
+        console.warn("[LiveKitStage] Camera is enabled but no video publications found - waiting...", {
+          isCameraEnabled,
+          videoPubCount: allVideoPubs.length,
+          participantIdentity: localParticipant.identity,
+        });
+        // Wait a bit and try again - publication might not be in map yet
+        setTimeout(() => updateLocalVideo(), 200);
+        return;
+      }
+                  
+      // Always log to debug black screen issue
+      console.log("[LiveKitStage] updateLocalVideo called", {
+        videoPubCount: allVideoPubs.length,
+        isCameraEnabled,
+        pubs: allVideoPubs.map(p => ({
+          trackSid: p.trackSid,
+          hasTrack: !!p.track,
+          isMuted: p.isMuted,
+          source: (p as any).source,
+          sourceType: typeof (p as any).source,
+          kind: p.kind,
+        })),
+      });
+      
+      // ✅ CRITICAL FIX: Don't require pub.track in find() - publication might exist before track is available
       // Check for screen share first (screen share has source property)
       // Screen share source is typically "screen_share" or Track.Source.ScreenShare
       const screenPub = allVideoPubs.find(
-        (pub) => pub.track && 
-        pub.kind === Track.Kind.Video &&
+        (pub) => pub.kind === Track.Kind.Video &&
         ((pub as any).source === "screen_share" || 
          (pub as any).source === Track.Source?.ScreenShare)
       );
       
+      // ✅ FIX #1 & #4: Explicitly check for camera source with enhanced detection
       // Then check for camera (not screen share)
-      const cameraPub = allVideoPubs.find(
-        (pub) => pub.track && 
-        pub.kind === Track.Kind.Video &&
-        (pub as any).source !== "screen_share" &&
-        (pub as any).source !== Track.Source?.ScreenShare
-      );
+      // Don't filter by pub.track - publication exists even if track isn't ready yet
+      const cameraPub = allVideoPubs.find((pub) => {
+        const source = (pub as any).source;
+        const isVideo = pub.kind === Track.Kind.Video;
+        
+        // Log source for debugging
+        if (isVideo) {
+          console.log("[LiveKitStage] Checking publication for camera", {
+            trackSid: pub.trackSid,
+            source,
+            sourceType: typeof source,
+            isVideo,
+            hasTrack: !!pub.track,
+            isScreenShare: source === "screen_share" || source === Track.Source?.ScreenShare,
+          });
+        }
+        
+        return isVideo &&
+          (source === Track.Source?.Camera ||
+           source === "camera" ||
+           source === 1 || // Track.Source.Camera might be numeric
+           (source !== "screen_share" && 
+            source !== Track.Source?.ScreenShare &&
+            source !== Track.Source?.ScreenShareAudio &&
+            source !== undefined && // Accept undefined as potential camera
+            source !== null));
+      });
 
       const videoPub = screenPub || cameraPub;
 
-      if (videoPub?.track) {
-        const localTrack = videoPub.track as LocalVideoTrack;
+      // ✅ CRITICAL FIX: Check if track exists, but also handle case where track might be null initially
+      // When setCameraEnabled(true) is called, the publication is created but track might not be available yet
+      // We need to wait for the track to become available
+      if (videoPub) {
         const trackSid = videoPub.trackSid;
         const source = screenPub ? "screen" : "camera";
         
-        // Only update state if trackSid has changed (prevents unnecessary re-renders)
-        setLocalVideo((prev) => {
-          // If trackSid is the same, don't update (same track, avoid detach/attach)
-          if (prev.trackSid === trackSid) {
-            if (isDevelopment) {
-              console.log(`[LiveKitStage] Track ${trackSid} unchanged, skipping state update`);
-            }
-            return prev;
-          }
+        // If track is available, use it immediately
+        if (videoPub.track) {
+          const localTrack = videoPub.track as LocalVideoTrack;
           
-          if (isDevelopment) {
+          // Only update state if trackSid has changed (prevents unnecessary re-renders)
+          setLocalVideo((prev) => {
+            // If trackSid is the same, don't update (same track, avoid detach/attach)
+            if (prev.trackSid === trackSid) {
+              console.log(`[LiveKitStage] Track ${trackSid} unchanged, skipping state update`);
+              return prev;
+            }
+            
             console.log(`[LiveKitStage] Local ${source} track set`, {
               source,
               isMuted: videoPub.isMuted,
@@ -110,27 +172,56 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
               previousTrackSid: prev.trackSid,
               trackId: (localTrack as any).mediaStreamTrack?.id || "unknown",
             });
-          }
+            
+            return { track: localTrack, trackSid, source, isEnabled: true };
+          });
+        } else {
+          // ✅ FIX #2: Track publication exists but track is not yet available
+          // This can happen when setCameraEnabled(true) is called - publication is created but track is still initializing
+          console.warn(`[LiveKitStage] Video publication exists (${source}) but track not yet available, trackSid: ${trackSid}`);
           
-          return { track: localTrack, trackSid, source, isEnabled: true };
-        });
+          // ✅ CRITICAL FIX: Actively poll for track to become available
+          const maxAttempts = 20; // 2 seconds total (20 * 100ms)
+          let attempts = 0;
+          const pollInterval = setInterval(() => {
+            attempts++;
+            const pub = localParticipant.videoTrackPublications.get(trackSid);
+            if (pub?.track) {
+              console.log(`[LiveKitStage] Track ${trackSid} became available after ${attempts * 100}ms`);
+              clearInterval(pollInterval);
+              // Remove from tracking array
+              const index = pollingIntervals.indexOf(pollInterval);
+              if (index > -1) pollingIntervals.splice(index, 1);
+              updateLocalVideo(); // Retry now that track is available
+            } else if (attempts >= maxAttempts) {
+              console.error(`[LiveKitStage] Track ${trackSid} never became available after ${maxAttempts * 100}ms`);
+              clearInterval(pollInterval);
+              // Remove from tracking array
+              const index = pollingIntervals.indexOf(pollInterval);
+              if (index > -1) pollingIntervals.splice(index, 1);
+              // Still try to update in case something changed
+              updateLocalVideo();
+            }
+          }, 100);
+          
+          // Store interval reference for cleanup
+          pollingIntervals.push(pollInterval);
+        }
       } else {
-        // Only clear if there's really no track
+        // No video publication at all - clear the track
         setLocalVideo((prev) => {
           // Only update if we actually need to clear (avoid unnecessary re-renders)
           if (prev.track === null && prev.trackSid === null) return prev;
           
-          if (isDevelopment) {
-            console.warn("[LiveKitStage] No video track found, clearing", {
-              videoTrackCount: allVideoPubs.length,
-              previousTrackSid: prev.trackSid,
-              allPubs: allVideoPubs.map(p => ({
-                trackSid: p.trackSid,
-                hasTrack: !!p.track,
-                source: (p as any).source,
-              })),
-            });
-          }
+          console.warn("[LiveKitStage] No video publication found, clearing", {
+            videoTrackCount: allVideoPubs.length,
+            previousTrackSid: prev.trackSid,
+            allPubs: allVideoPubs.map(p => ({
+              trackSid: p.trackSid,
+              hasTrack: !!p.track,
+              source: (p as any).source,
+            })),
+          });
           
           return { track: null, trackSid: null, source: null, isEnabled: true };
         });
@@ -139,37 +230,97 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
 
     updateLocalVideo();
 
-    // Single event handler with inline debug logging
+    // ✅ FIX #2: Improved track detection in trackPublished handler
     const handleTrackPublished = (publication: any) => {
-      if (isDevelopment) {
-        console.log("[LiveKitStage] trackPublished event", {
-          trackSid: publication?.trackSid,
-          kind: publication?.kind,
-          source: publication?.source,
-        });
+      console.log("[LiveKitStage] trackPublished event", {
+        trackSid: publication?.trackSid,
+        kind: publication?.kind,
+        source: publication?.source,
+        hasTrack: !!publication?.track,
+        trackType: publication?.track ? typeof publication.track : "null",
+        publicationInMap: !!localParticipant.videoTrackPublications.get(publication?.trackSid),
+      });
+      
+      // ✅ FIX: Check if this publication is already in the map
+      const existingPub = localParticipant.videoTrackPublications.get(publication?.trackSid);
+      if (existingPub) {
+        // Publication is in map, update immediately
+        console.log("[LiveKitStage] Publication already in map, updating immediately");
+        updateLocalVideo();
+      } else {
+        // Publication not in map yet - wait a bit then check again
+        console.warn("[LiveKitStage] Publication from event not yet in videoTrackPublications map, waiting...");
+        setTimeout(() => {
+          const stillMissing = !localParticipant.videoTrackPublications.get(publication?.trackSid);
+          if (stillMissing) {
+            console.error("[LiveKitStage] Publication still not in map after 50ms delay");
+          }
+          updateLocalVideo();
+        }, 50);
       }
-      updateLocalVideo();
+      
+      // Also check again after longer delay in case track becomes available asynchronously
+      setTimeout(() => {
+        updateLocalVideo();
+      }, 200);
     };
 
     const handleTrackUnpublished = (publication: any) => {
-      if (isDevelopment) {
-        console.log("[LiveKitStage] trackUnpublished event", {
-          trackSid: publication?.trackSid,
-          kind: publication?.kind,
-        });
-      }
+      console.log("[LiveKitStage] trackUnpublished event", {
+        trackSid: publication?.trackSid,
+        kind: publication?.kind,
+      });
       updateLocalVideo();
     };
 
-    // Only listen to published/unpublished - muted/unmuted don't remove tracks
+    // ✅ Also listen to trackMuted/trackUnmuted to catch when track becomes available
+    // Sometimes the track becomes available when it's unmuted
+    const handleTrackMuted = (publication: any) => {
+      console.log("[LiveKitStage] trackMuted event", {
+        trackSid: publication?.trackSid,
+        hasTrack: !!publication?.track,
+      });
+      // Track might have become available, update
+      updateLocalVideo();
+    };
+
+    const handleTrackUnmuted = (publication: any) => {
+      console.log("[LiveKitStage] trackUnmuted event", {
+        trackSid: publication?.trackSid,
+        hasTrack: !!publication?.track,
+      });
+      // Track is definitely available now, update
+      updateLocalVideo();
+    };
+
+    // Listen to published/unpublished and muted/unmuted events
+    console.log("[LiveKitStage] Registering event listeners for local participant");
     localParticipant.on("trackPublished", handleTrackPublished);
     localParticipant.on("trackUnpublished", handleTrackUnpublished);
+    localParticipant.on("trackMuted", handleTrackMuted);
+    localParticipant.on("trackUnmuted", handleTrackUnmuted);
     
-    // Note: We don't listen to trackMuted/trackUnmuted because muted tracks should still be displayed
+    // Also check for already-published tracks
+    console.log("[LiveKitStage] Checking for already-published tracks");
+    localParticipant.videoTrackPublications.forEach((pub) => {
+      console.log("[LiveKitStage] Found existing video publication", {
+        trackSid: pub.trackSid,
+        hasTrack: !!pub.track,
+        source: (pub as any).source,
+        kind: pub.kind,
+      });
+    });
 
     return () => {
+      console.log("[LiveKitStage] Cleaning up event listeners and polling intervals");
       localParticipant.off("trackPublished", handleTrackPublished);
       localParticipant.off("trackUnpublished", handleTrackUnpublished);
+      localParticipant.off("trackMuted", handleTrackMuted);
+      localParticipant.off("trackUnmuted", handleTrackUnmuted);
+      
+      // Clean up any active polling intervals
+      pollingIntervals.forEach(interval => clearInterval(interval));
+      pollingIntervals.length = 0;
     };
   }, [room]);
 
@@ -256,6 +407,33 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
   const hasRemoteVideo = !!primaryRemoteVideoTrack;
   const hasVideo = hasLocalVideo || hasRemoteVideo;
   
+  // ✅ Check if camera is enabled but not ready (for broadcaster guidance)
+  // These values match BroadcasterControls logic exactly - ONLY camera state, NOT pause state
+  const cameraEnabled = room?.localParticipant?.isCameraEnabled ?? false;
+  // cameraReady: track exists, is not muted, and is camera (not screen share)
+  // This is computed using useMemo to match BroadcasterControls exactly
+  const cameraReady = useMemo(() => {
+    if (!room?.localParticipant) return false;
+    const videoPubs = Array.from(room.localParticipant.videoTrackPublications.values());
+    const cameraPub = videoPubs.find(
+      (pub) => {
+        if (!pub.track || pub.kind !== Track.Kind.Video) return false;
+        const source = (pub as any).source;
+        const isScreenShare = source === "screen_share" || source === Track.Source?.ScreenShare;
+        return !isScreenShare;
+      }
+    );
+    // Track is ready if it exists AND is not muted
+    return !!cameraPub?.track && !cameraPub?.isMuted;
+  }, [room?.localParticipant, room?.localParticipant?.videoTrackPublications]);
+  
+  // ✅ Track if camera has been enabled at least once (hide guidance after first use)
+  useEffect(() => {
+    if (cameraEnabled && !cameraHasBeenEnabled) {
+      setCameraHasBeenEnabled(true);
+    }
+  }, [cameraEnabled, cameraHasBeenEnabled]);
+  
   // Determine source and screen share status based on which track type we're using
   const isScreenShare = hasLocalVideo 
     ? localVideo.source === "screen"
@@ -316,13 +494,36 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
               </div>
             )}
             
-            {cameraOff && (
+            {/* ✅ Phase 1: Show initial guidance overlay only before first camera enable */}
+            {cameraOff && isBroadcaster && !cameraHasBeenEnabled && !cameraReady ? (
+              /* ✅ Phase 1: Initial guidance overlay - shows before camera is enabled for first time */
+              null
+            ) : isBroadcaster && hasLocalVideo && localVideo.source === "camera" && !isPaused ? (
+              /* ✅ Phase 2: Top indicators only - no guidance overlays after first use */
+              /* Match BroadcasterControls button states exactly */
+              !cameraEnabled ? (
+                /* Camera Off button (gray) → Show "To Go Live, Turn Camera On" */
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-gradient-to-r from-[#CD000E]/90 to-[#CD000E]/70 backdrop-blur-sm rounded-full border-2 border-[#CD000E] shadow-lg z-20">
+                  <span className="text-sm font-bold text-white uppercase tracking-wider">
+                    🎬 To Go Live, Turn Camera On
+                  </span>
+                </div>
+              ) : cameraEnabled && cameraReady ? (
+                /* Camera Live button (green) → Show "You are Live" */
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-gradient-to-r from-green-600/90 to-green-500/70 backdrop-blur-sm rounded-full border-2 border-green-400 shadow-lg z-20">
+                  <span className="text-sm font-bold text-white uppercase tracking-wider">
+                    🔴 You are Live
+                  </span>
+                </div>
+              ) : null
+            ) : cameraOff && !isPaused ? (
+              /* Fallback for non-broadcasters or other states */
               <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/70 backdrop-blur-sm rounded-full border border-gray-600">
                 <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
                   📷 Camera is off
                 </span>
               </div>
-            )}
+            ) : null}
           </>
         ) : hasRemoteVideo && primaryRemoteVideoTrack ? (
           <>
@@ -340,8 +541,63 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
               </div>
             )}
           </>
+        ) : isBroadcaster ? (
+          /* ✅ Broadcaster-specific guidance when no video */
+          <div className="text-center px-8 max-w-2xl mx-auto">
+            <div className="mb-6">
+              <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-[#CD000E]/20 to-[#CD000E]/5 flex items-center justify-center border-2 border-[#CD000E]/30">
+                <svg
+                  className="w-16 h-16 text-[#CD000E]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+            </div>
+            
+            {!cameraEnabled ? (
+              /* ✅ Phase 1: Initial guidance - only show before first camera enable */
+              !cameraHasBeenEnabled ? (
+                <>
+                  <h2 className="text-white text-2xl font-bold mb-3">Ready to Go Live!</h2>
+                  <p className="text-gray-300 text-lg mb-4">
+                    Click the <span className="font-semibold text-white">"Camera Off"</span> button below to start your camera
+                  </p>
+                  <div className="mt-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+                    <p className="text-gray-400 text-sm mb-2">💡 Quick Start:</p>
+                    <ol className="text-left text-gray-300 text-sm space-y-2 list-decimal list-inside">
+                      <li>Click <span className="font-semibold text-white">"Camera Off"</span> button <span className="font-semibold text-yellow-400">once</span> at the bottom</li>
+                      <li>The button will turn <span className="font-semibold text-yellow-400">yellow</span> and show "Starting..." - it will be <span className="font-semibold text-yellow-400">disabled</span> during this time</li>
+                      <li>Wait for the button to automatically turn <span className="font-semibold text-green-400">green</span> and show "Camera Live" - your video feed will appear here</li>
+                      <li className="text-yellow-400 font-semibold">✅ The button is disabled while starting - you can't click it by accident!</li>
+                    </ol>
+                  </div>
+                </>
+              ) : null
+            ) : !cameraReady ? (
+              <>
+                <h2 className="text-white text-2xl font-bold mb-3">Starting Camera...</h2>
+                <div className="mb-4">
+                  <div className="w-16 h-16 mx-auto border-4 border-gray-600 border-t-[#CD000E] rounded-full animate-spin" />
+                </div>
+                <p className="text-gray-300 text-lg mb-2">
+                  Your camera is initializing
+                </p>
+                <p className="text-gray-400 text-sm">
+                  The video feed will appear here shortly
+                </p>
+              </>
+            ) : null}
+          </div>
         ) : (
-          /* Friendly placeholder when no video available */
+          /* Viewer placeholder when no video available */
           <div className="text-center px-8">
             <div className="mb-4">
               <div className="w-24 h-24 mx-auto rounded-full bg-gray-800/50 flex items-center justify-center border-2 border-gray-700">
@@ -367,8 +623,9 @@ export function LiveKitStage({ room, isPaused }: LiveKitStageProps) {
       </div>
 
       {/* Screensaver Overlay - Only shown when paused, video tracks remain attached */}
+      {/* ✅ z-index lower than control bar (z-30) so controls remain accessible */}
       {isPaused && (
-        <div className="absolute inset-0 z-50">
+        <div className="absolute inset-0 z-10 pointer-events-none">
           <ScreensaverPlayer />
         </div>
       )}
@@ -402,24 +659,62 @@ function LocalVideo({ track, trackSid }: { track: LocalVideoTrack; trackSid: str
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !trackSid) return;
+    if (!video || !trackSid || !track) {
+      console.warn(`[LocalVideo] Cannot attach track - missing video element, trackSid, or track`, {
+        hasVideo: !!video,
+        hasTrackSid: !!trackSid,
+        hasTrack: !!track,
+      });
+      return;
+    }
 
-    // Attach track only when trackSid changes (stable identity)
-    // track object is in scope from props - we only react to trackSid changes
-    track.attach(video);
-
-    if (isDevelopment) {
-      console.log(`[LocalVideo] Attached track ${trackSid} to video element`);
+    // ✅ FIX #4: Add track attachment verification
+    console.log(`[LocalVideo] Attaching track ${trackSid} to video element`);
+    
+    try {
+      track.attach(video);
+      
+      // Verify attachment
+      const stream = video.srcObject;
+      if (!stream) {
+        console.error(`[LocalVideo] Track attached but video.srcObject is null`);
+      } else if (stream instanceof MediaStream) {
+        const videoTracks = stream.getVideoTracks();
+        console.log(`[LocalVideo] Track attached successfully`, {
+          trackSid,
+          streamId: stream.id,
+          videoTrackCount: videoTracks.length,
+          trackEnabled: videoTracks[0]?.enabled,
+          trackReadyState: videoTracks[0]?.readyState,
+          trackId: videoTracks[0]?.id,
+        });
+        
+        // Verify track is actually enabled and live
+        if (videoTracks.length === 0) {
+          console.error(`[LocalVideo] No video tracks in stream after attachment`);
+        } else if (!videoTracks[0].enabled) {
+          console.warn(`[LocalVideo] Video track is not enabled`);
+        } else if (videoTracks[0].readyState !== "live") {
+          console.warn(`[LocalVideo] Video track readyState is "${videoTracks[0].readyState}", expected "live"`);
+        }
+      } else {
+        console.warn(`[LocalVideo] video.srcObject is not a MediaStream`, { type: typeof stream });
+      }
+    } catch (error) {
+      console.error(`[LocalVideo] Failed to attach track:`, error);
     }
 
     return () => {
-      track.detach(video);
-      if (isDevelopment) {
-        console.log(`[LocalVideo] Detached track ${trackSid} from video element`);
+      console.log(`[LocalVideo] Detaching track ${trackSid}`);
+      if (video && track) {
+        try {
+          track.detach(video);
+        } catch (error) {
+          console.error(`[LocalVideo] Error detaching track:`, error);
+        }
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackSid]); // Only trackSid - track object is stable for same trackSid due to state update prevention
+  }, [trackSid, track]); // ✅ FIX #4: Include track in dependencies to handle track object changes
 
   return (
     <video
