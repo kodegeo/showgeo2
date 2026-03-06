@@ -8,6 +8,10 @@ type ModalType =
   | "addProduct"
   | "manageFan"
   | "confirmDelete"
+  | "confirmPhaseTransition"
+  | "scheduleReminder"
+  | "reportUser"
+  | "codeOfConduct"
   | null;
 
 interface ModalContextType {

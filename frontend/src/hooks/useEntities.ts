@@ -151,17 +151,50 @@ export function useCreatorApplication() {
     mutationFn: (data: {
       brandName: string;
       category: "musician" | "comedian" | "speaker" | "dancer" | "fitness";
-      purpose: string;
+      purpose?: string; // Accept "purpose" (matches DTO and form field name)
+      bio?: string; // Also accept "bio" for backward compatibility
       socialLinks?: Record<string, string>;
       website?: string;
       thumbnail?: string;
       bannerImage?: string;
       termsAccepted: boolean;
-    }) => entitiesService.creatorApply(data),
+      phone?: string; // Contact phone number for verification
+      proofFile?: File;
+      businessDocFile?: File;
+      trademarkDocFile?: File;
+      proof?: Record<string, any>; // Additional proof data (legacy)
+    }) => entitiesService.creatorApply(
+      {
+        brandName: data.brandName,
+        category: data.category,
+        bio: data.purpose || data.bio, // Map purpose to bio (service maps bio to purpose for DTO)
+        socialLinks: data.socialLinks,
+        website: data.website,
+        thumbnail: data.thumbnail,
+        bannerImage: data.bannerImage,
+        termsAccepted: data.termsAccepted,
+        phone: data.phone,
+        proof: data.proof,
+      },
+      data.proofFile,
+      data.businessDocFile,
+      data.trademarkDocFile
+    ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["entities"] });
       queryClient.invalidateQueries({ queryKey: ["users"] });
     },
+  });
+}
+
+/**
+ * Get current user's entity applications
+ */
+export function useMyApplications() {
+  return useQuery({
+    queryKey: ["entities", "my-applications"],
+    queryFn: () => entitiesService.getMyApplications(),
+    staleTime: 30000, // Cache for 30 seconds
   });
 }
 

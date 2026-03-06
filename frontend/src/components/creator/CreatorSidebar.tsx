@@ -12,31 +12,31 @@ interface SidebarItem {
 const sidebarItems: SidebarItem[] = [
   {
     label: "Dashboard",
-    path: "/creator/dashboard",
+    path: "/studio/dashboard",
     icon: <LayoutDashboard className="w-5 h-5" />,
     section: "main",
   },
   {
     label: "Events",
-    path: "/creator/events",
+    path: "/studio/events",
     icon: <Calendar className="w-5 h-5" />,
     section: "main",
   },
   {
     label: "Store",
-    path: "/creator/store",
+    path: "/studio/store",
     icon: <ShoppingBag className="w-5 h-5" />,
     section: "main",
   },
   {
     label: "Analytics",
-    path: "/creator/analytics",
+    path: "/studio/analytics",
     icon: <BarChart3 className="w-5 h-5" />,
     section: "main",
   },
   {
     label: "Settings",
-    path: "/creator/settings",
+    path: "/settings/creator",
     icon: <Settings className="w-5 h-5" />,
     section: "main",
   },

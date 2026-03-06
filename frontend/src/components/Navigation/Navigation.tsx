@@ -44,14 +44,17 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-6 sm:px-8">
         <div className="flex justify-between items-center h-24 md:h-28 lg:h-32">
           {/* Logo */}
-          <Link to="/" className="flex items-center space-x-2">
+          <div 
+            onClick={() => navigate(isAuthenticated ? "/profile" : "/")}
+            className="flex items-center space-x-2 cursor-pointer"
+          >
             <img
               src="/assets/branding/logo-red.svg"
               alt="Showgeo"
               className="h-24 md:h-32 lg:h-40 w-auto"
               style={{ minWidth: "300px" }}
             />
-          </Link>
+          </div>
 
           {/* Desktop Links */}
           <div className="hidden md:flex items-center space-x-6 text-sm font-medium">
@@ -61,7 +64,7 @@ export default function Navigation() {
               <Link to="/dashboard" className="text-white hover:text-[#CD000E] transition-colors">Dashboard</Link>
             )}
             {showAuthenticated && userIsCreator && (
-              <Link to="/creator/dashboard" className="text-white hover:text-[#CD000E] transition-colors">Creator Dashboard</Link>
+              <Link to="/studio/dashboard" className="text-white hover:text-[#CD000E] transition-colors">Creator Dashboard</Link>
             )}
           </div>
 
@@ -117,7 +120,7 @@ export default function Navigation() {
             <Link to="/entities" onClick={() => setIsOpen(false)}>Creators</Link>
             {showAuthenticated && <Link to="/dashboard" onClick={() => setIsOpen(false)}>Dashboard</Link>}
             {showAuthenticated && userIsCreator && (
-              <Link to="/creator/dashboard" onClick={() => setIsOpen(false)}>Creator Dashboard</Link>
+              <Link to="/studio/dashboard" onClick={() => setIsOpen(false)}>Creator Dashboard</Link>
             )}
             <hr className="border-gray-700" />
             {showAuthenticated ? (

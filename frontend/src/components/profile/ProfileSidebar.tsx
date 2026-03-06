@@ -134,7 +134,7 @@ export function ProfileSidebar() {
       icon: <Mail className="w-5 h-5" />,
     },
     {
-      label: "Find Artists",
+      label: "Find Creators",
       path: "/entities",
       icon: <Search className="w-5 h-5" />,
     },

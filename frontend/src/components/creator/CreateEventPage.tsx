@@ -22,43 +22,50 @@ export function CreateEventPage() {
   }
 
   const submit = async () => {
-    // Validate required fields
-    if (!form.name || !form.startTime) {
-      alert("Name and start time are required");
+    // ✅ Guard: Validate entityId
+    if (!currentEntity?.id) {
+      alert("No entity selected. Please select an entity before creating an event.");
       return;
     }
 
-    // Construct payload strictly aligned with CreateEventDto
+    // ✅ Guard: Validate required fields
+    if (!form.name) {
+      alert("Event name is required");
+      return;
+    }
+
+    if (!form.startTime) {
+      alert("Start time is required");
+      return;
+    }
+
+    // Construct minimal payload - backend applies defaults
     const startTimeDate = new Date(form.startTime);
     const endTimeDate = new Date(startTimeDate.getTime() + 60 * 60 * 1000); // Default: 1 hour after start
 
     const payload: CreateEventRequest = {
-      // REQUIRED FIELDS (must match CreateEventDto exactly)
-      entityId: currentEntity.id, // UUID string
-      name: form.name, // string
-      eventType: "LIVE" as const, // EventType enum: "LIVE" | "PRERECORDED"
-      phase: "PRE_LIVE" as const, // EventPhase enum: "PRE_LIVE" | "LIVE" | "POST_LIVE"
-      status: "DRAFT" as const, // EventStatus enum: "DRAFT" | "SCHEDULED" | "LIVE" | "COMPLETED" | "CANCELLED"
-      startTime: startTimeDate.toISOString(), // ISO date string
-      isVirtual: form.isVirtual, // boolean (required)
-      geoRestricted: false, // boolean (required)
-      ticketRequired: true, // boolean (required)
-      entryCodeRequired: false, // boolean (required)
-      entryCodeDelivery: false, // boolean (required)
-      testingEnabled: false, // boolean (required)
+      // ✅ REQUIRED FIELDS ONLY
+      entityId: currentEntity.id,
+      name: form.name,
+      startTime: startTimeDate.toISOString(),
       
-      // OPTIONAL FIELDS (only include if value exists)
+      // ✅ OPTIONAL FIELDS
       ...(form.description ? { description: form.description } : {}),
       ...(form.location ? { location: form.location } : {}),
-      endTime: endTimeDate.toISOString(), // ISO date string (optional)
+      endTime: endTimeDate.toISOString(),
     };
 
     // Log payload immediately before submission
     console.log("CreateEvent payload", payload);
 
-    await createEvent.mutateAsync(payload);
+    const createdEvent = await createEvent.mutateAsync(payload);
   
-    navigate("/creator/events");
+    // ✅ Redirect to Event Dashboard after creation
+    if (createdEvent?.id) {
+      navigate(`/studio/events/${createdEvent.id}`);
+    } else {
+      navigate("/studio/events");
+    }
   };
   
   return (

@@ -1,4 +1,4 @@
-import { PrismaClient, EventStatus } from "@prisma/client";
+import { PrismaClient, EventStatus, EventPhase } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -24,9 +24,9 @@ async function main() {
       id: eventId,
       name: "DJ Yessir – Live Test Stream",
       description: "Streaming test for real entity user",
-      entityId,
+      entities_events_entityIdToentities: { connect: { id: entityId } },
       eventType: "LIVE",
-      phase: "PRE_LIVE" as any,
+      phase: EventPhase.PRE_LIVE,
       status: EventStatus.SCHEDULED,
       startTime,
       endTime,
@@ -34,6 +34,7 @@ async function main() {
       ticketRequired: false,
       geoRestricted: false,
       testingEnabled: true,
+      updatedAt: new Date(),
     },
   });
 

@@ -85,7 +85,7 @@ export function StartStreamModal() {
       // StreamingPanel will detect the active session via useStreaming hook refetch
       // and automatically join as broadcaster when host=1 is present
       closeModal();
-      navigate(`/creator/events/${targetEventId}?host=1`);
+      navigate(`/studio/events/${targetEventId}?host=1`);
 
 
       

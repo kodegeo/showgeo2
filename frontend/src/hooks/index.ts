@@ -108,6 +108,34 @@ export {
 // Fan hooks
 export { useManageFan } from "./useFans";
 
+// Event Activities hooks
+export {
+  useEventActivities,
+  useLaunchActivity,
+  useCompleteActivity,
+} from "./useEventActivities";
+
+// Meet & Greet hooks
+export {
+  useMeetGreetQueue,
+  useMeetGreetCurrent,
+  useStartNextSession,
+  useCompleteSession,
+  useMissSession,
+  useJoinVip,
+} from "./useMeetGreet";
+
+// Moderation hooks
+export {
+  useCreateReport,
+  useMyReports,
+  useEventReports,
+  useUpdateReportStatus,
+} from "./useModeration";
+
+// Consent hooks
+export { useConsent, useConsentRequired } from "./useConsent";
+
 // Utility hooks
 export { useDebounce } from "./useDebounce";
 export { useLocalStorage } from "./useLocalStorage";

@@ -21,11 +21,11 @@ export function ProfileSetupGuard({ children }: ProfileSetupGuardProps) {
 
     // 🔹 ENTITY USERS:
     // They are allowed to access /profile
-    // They should NOT be forced into /entity/profile
+    // They should NOT be forced into /studio/profile
     if (user.isEntity) {
       // Only block profile setup, not profile itself
       if (isSetupPage) {
-        navigate("/entity/profile", { replace: true });
+        navigate("/studio/profile", { replace: true });
       }
       return;
     }

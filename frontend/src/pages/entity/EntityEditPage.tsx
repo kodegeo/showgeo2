@@ -77,7 +77,7 @@ export function EntityEditPage() {
       // Invalidate cache and redirect to public entity page
       queryClient.invalidateQueries({ queryKey: ["entity", "edit", slug] });
       queryClient.invalidateQueries({ queryKey: ["entities"] });
-      navigate(`/entity/${updated.slug}`, { replace: true });
+      navigate(`/creators/${updated.slug}`, { replace: true });
     },
   });
 
@@ -167,7 +167,7 @@ export function EntityEditPage() {
         <h1 className="text-2xl font-bold text-white">Edit Entity Profile</h1>
         {entity && (
           <Link
-            to={`/entity/${entity.slug}`}
+            to={`/creators/${entity.slug}`}
             className="text-sm text-blue-400 hover:underline"
           >
             View Public Page
@@ -314,7 +314,7 @@ export function EntityEditPage() {
         <div className="flex justify-end gap-3">
           {entity && (
             <Link
-              to={`/entity/${entity.slug}`}
+              to={`/creators/${entity.slug}`}
               className="px-4 py-2 rounded-md border border-zinc-600 text-gray-200 hover:bg-zinc-800 transition"
             >
               Cancel

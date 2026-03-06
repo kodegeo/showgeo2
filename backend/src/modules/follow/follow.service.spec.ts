@@ -1,210 +1,215 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
+import { NotFoundException, BadRequestException } from "@nestjs/common";
 import { FollowService } from "./follow.service";
 import { PrismaService } from "../../prisma/prisma.service";
-import { TestUtils } from "../../../test/test-utils";
 
-describe("FollowService", () => {
+describe("FollowService (Idempotent)", () => {
   let service: FollowService;
-  let prismaService: PrismaService;
+  let prisma: any;
 
   beforeEach(async () => {
-    const module: TestingModule = await TestUtils.createTestingModule({
-      imports: [],
+    const module: TestingModule = await Test.createTestingModule({
       providers: [
         FollowService,
         {
           provide: PrismaService,
-          useValue: TestUtils.createMockPrismaService(),
+          useValue: {
+            app_users: {
+              findUnique: jest.fn(),
+              findFirst: jest.fn(),
+            },
+            entities: {
+              findUnique: jest.fn(),
+            },
+            events: {
+              findUnique: jest.fn(),
+            },
+            follows: {
+              upsert: jest.fn(),
+              deleteMany: jest.fn(),
+              findUnique: jest.fn(),
+              count: jest.fn(),
+              findMany: jest.fn(),
+              update: jest.fn(),
+            },
+          },
         },
       ],
-    });
+    }).compile();
 
     service = module.get<FollowService>(FollowService);
-    prismaService = module.get<PrismaService>(PrismaService);
-
-    (prismaService as any).reset();
+    prisma = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
+  // =========================================
+  // ENTITY FOLLOW
+  // =========================================
+
   describe("followEntity", () => {
-    it("should successfully follow an entity", async () => {
-      const userId = "user-123";
-      const entityId = "entity-123";
-
-      const user = await TestUtils.createTestUser({ id: userId });
-      const entity = await TestUtils.createTestEntity({ id: entityId, ownerId: "other-user" });
-
-      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.follows.findUnique as jest.Mock).mockResolvedValue(null);
-      (prismaService.follows.create as jest.Mock).mockResolvedValue({
-        id: "follow-123",
-        userId,
-        entityId,
-        createdAt: new Date(),
+    it("should upsert follow record", async () => {
+      prisma.app_users.findUnique.mockResolvedValue({ id: "user-1" });
+      prisma.entities.findUnique.mockResolvedValue({
+        id: "entity-1",
+        ownerId: "other-user",
       });
 
-      const result = await service.followEntity(userId, entityId);
-
-      expect(result).toHaveProperty("userId", userId);
-      expect(result).toHaveProperty("entityId", entityId);
-      expect(prismaService.follows.create).toHaveBeenCalled();
-    });
-
-    it("should throw NotFoundException if user not found", async () => {
-      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(null);
-
-      await expect(service.followEntity("invalid-user", "entity-123")).rejects.toThrow(NotFoundException);
-    });
-
-    it("should throw NotFoundException if entity not found", async () => {
-      const user = await TestUtils.createTestUser();
-      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(null);
-
-      await expect(service.followEntity(user.id, "invalid-entity")).rejects.toThrow(NotFoundException);
-    });
-
-    it("should throw ConflictException if already following", async () => {
-      const userId = "user-123";
-      const entityId = "entity-123";
-
-      const user = await TestUtils.createTestUser({ id: userId });
-      const entity = await TestUtils.createTestEntity({ id: entityId });
-
-      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.follows.findUnique as jest.Mock).mockResolvedValue({
-        id: "follow-123",
-        userId,
-        entityId,
+      prisma.follows.upsert.mockResolvedValue({
+        id: "follow-1",
+        user_id: "user-1",
+        target_id: "entity-1",
       });
 
-      await expect(service.followEntity(userId, entityId)).rejects.toThrow(ConflictException);
+      const result = await service.followEntity("user-1", "entity-1");
+
+      expect(prisma.follows.upsert).toHaveBeenCalled();
+      expect(result.target_id).toBe("entity-1");
     });
 
-    it("should throw BadRequestException if trying to follow own entity", async () => {
-      const userId = "user-123";
-      const entityId = "entity-123";
+    it("should throw if user not found", async () => {
+      prisma.app_users.findUnique.mockResolvedValue(null);
+      prisma.app_users.findFirst.mockResolvedValue(null);
 
-      const user = await TestUtils.createTestUser({ id: userId });
-      const entity = await TestUtils.createTestEntity({ id: entityId, ownerId: userId });
+      await expect(
+        service.followEntity("invalid-user", "entity-1"),
+      ).rejects.toThrow(NotFoundException);
+    });
 
-      (prismaService.app_users.findUnique as jest.Mock).mockResolvedValue(user);
-      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
+    it("should throw if entity not found", async () => {
+      prisma.app_users.findUnique.mockResolvedValue({ id: "user-1" });
+      prisma.entities.findUnique.mockResolvedValue(null);
 
-      await expect(service.followEntity(userId, entityId)).rejects.toThrow(BadRequestException);
+      await expect(
+        service.followEntity("user-1", "invalid-entity"),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("should throw if following own entity", async () => {
+      prisma.app_users.findUnique.mockResolvedValue({ id: "user-1" });
+      prisma.entities.findUnique.mockResolvedValue({
+        id: "entity-1",
+        ownerId: "user-1",
+      });
+
+      await expect(
+        service.followEntity("user-1", "entity-1"),
+      ).rejects.toThrow(BadRequestException);
     });
   });
+
+  // =========================================
+  // UNFOLLOW ENTITY
+  // =========================================
 
   describe("unfollowEntity", () => {
-    it("should successfully unfollow an entity", async () => {
-      const userId = "user-123";
-      const entityId = "entity-123";
+    it("should deleteMany without throwing", async () => {
+      prisma.follows.deleteMany.mockResolvedValue({ count: 1 });
 
-      const follow = {
-        id: "follow-123",
-        userId,
-        entityId,
-        createdAt: new Date(),
-      };
+      const result = await service.unfollowEntity("user-1", "entity-1");
 
-      (prismaService.follows.findUnique as jest.Mock).mockResolvedValue(follow);
-      (prismaService.follows.delete as jest.Mock).mockResolvedValue(follow);
-
-      const result = await service.unfollowEntity(userId, entityId);
-
+      expect(prisma.follows.deleteMany).toHaveBeenCalled();
       expect(result).toHaveProperty("message");
-      expect(prismaService.follows.delete).toHaveBeenCalled();
     });
 
-    it("should throw NotFoundException if follow relationship not found", async () => {
-      (prismaService.follows.findUnique as jest.Mock).mockResolvedValue(null);
+    it("should not throw if follow does not exist", async () => {
+      prisma.follows.deleteMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.unfollowEntity("user-123", "entity-123")).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  describe("getFollowers", () => {
-    it("should return paginated list of followers", async () => {
-      const entityId = "entity-123";
-      const followers = [
-        {
-          id: "follow-1",
-          userId: "user-1",
-          entityId,
-          user: {
-            id: "user-1",
-            email: "user1@example.com",
-            profile: {
-              username: "user1",
-              avatarUrl: null,
-            },
-          },
-        },
-        {
-          id: "follow-2",
-          userId: "user-2",
-          entityId,
-          user: {
-            id: "user-2",
-            email: "user2@example.com",
-            profile: {
-              username: "user2",
-              avatarUrl: null,
-            },
-          },
-        },
-      ];
-
-      const entity = await TestUtils.createTestEntity({ id: entityId });
-      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(entity);
-      (prismaService.follows.findMany as jest.Mock).mockResolvedValue(followers);
-      (prismaService.follows.count as jest.Mock).mockResolvedValue(2);
-
-      const result = await service.getFollowers(entityId, 1, 20);
-
-      expect(result.data).toHaveLength(2);
-      expect(result.meta.total).toBe(2);
-    });
-
-    it("should throw NotFoundException if entity not found", async () => {
-      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue(null);
-
-      await expect(service.getFollowers("invalid-entity", 1, 20)).rejects.toThrow(NotFoundException);
+      await expect(
+        service.unfollowEntity("user-1", "entity-1"),
+      ).resolves.toHaveProperty("message");
     });
   });
+
+  // =========================================
+  // IS FOLLOWING
+  // =========================================
 
   describe("isFollowing", () => {
-    it("should return true if user is following entity", async () => {
-      const userId = "user-123";
-      const entityId = "entity-123";
-
-      (prismaService.follows.findUnique as jest.Mock).mockResolvedValue({
-        id: "follow-123",
-        userId,
-        entityId,
+    it("should return true if follow exists", async () => {
+      prisma.follows.findUnique.mockResolvedValue({
+        id: "follow-1",
       });
 
-      const result = await service.isFollowing(userId, entityId);
+      const result = await service.isFollowing("user-1", "entity-1");
 
       expect(result).toBe(true);
     });
 
-    it("should return false if user is not following entity", async () => {
-      const userId = "user-123";
-      const entityId = "entity-123";
+    it("should return false if follow does not exist", async () => {
+      prisma.follows.findUnique.mockResolvedValue(null);
 
-      (prismaService.follows.findUnique as jest.Mock).mockResolvedValue(null);
-
-      const result = await service.isFollowing(userId, entityId);
+      const result = await service.isFollowing("user-1", "entity-1");
 
       expect(result).toBe(false);
     });
   });
-});
 
+  // =========================================
+  // GET FOLLOW COUNTS
+  // =========================================
+
+  describe("getFollowCounts", () => {
+    it("should return entity follower count", async () => {
+      prisma.follows.count.mockResolvedValue(5);
+
+      const result = await service.getFollowCounts("entity-1", "entity");
+
+      expect(result.followers).toBe(5);
+      expect(result.following).toBe(0);
+    });
+
+    it("should return user following count", async () => {
+      prisma.follows.count.mockResolvedValue(3);
+
+      const result = await service.getFollowCounts("user-1", "user");
+
+      expect(result.following).toBe(3);
+      expect(result.followers).toBe(0);
+    });
+  });
+
+  // =========================================
+  // EVENT FOLLOW + NOTIFY
+  // =========================================
+
+  describe("followEvent", () => {
+    it("should upsert event follow", async () => {
+      prisma.app_users.findUnique.mockResolvedValue({ id: "user-1" });
+      prisma.events.findUnique.mockResolvedValue({ id: "event-1" });
+
+      prisma.follows.upsert.mockResolvedValue({
+        id: "follow-1",
+        target_id: "event-1",
+      });
+
+      const result = await service.followEvent("user-1", "event-1");
+
+      expect(prisma.follows.upsert).toHaveBeenCalled();
+      expect(result.target_id).toBe("event-1");
+    });
+  });
+
+  describe("setEventNotify", () => {
+    it("should update notify flag", async () => {
+      prisma.follows.upsert.mockResolvedValue({
+        id: "follow-1",
+      });
+
+      prisma.follows.update.mockResolvedValue({
+        notify: true,
+      });
+
+      const result = await service.setEventNotify(
+        "user-1",
+        "event-1",
+        true,
+      );
+
+      expect(prisma.follows.update).toHaveBeenCalled();
+      expect(result.notify).toBe(true);
+    });
+  });
+});

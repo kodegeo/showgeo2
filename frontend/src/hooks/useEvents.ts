@@ -6,8 +6,11 @@ import type {
   UpdateEventRequest,
   UpdateMetricsRequest,
   TestResultsRequest,
+  EventAnalytics,
+  EventAccess,
 } from "@/services";
-import type { EventPhase, EventStatus, Event } from "../../../packages/shared/types";
+import type { EventPhase, EventStatus } from "@/types/eventPhase";
+import type { Event } from "@/types/event.types";
 import type { PaginatedResponse } from "@/services/types";
 import { isDevelopment } from "@/utils/env";
 
@@ -34,6 +37,23 @@ export function useEvent(id: string) {
     queryKey: ["events", id],
     queryFn: () => eventsService.getById(id),
     enabled: !!id,
+  });
+}
+
+/**
+ * Current user's event-scoped access (accessRole + operationalRoles).
+ * Use to show/hide phase controls and production links instead of global role strings.
+ * Returns null when not authenticated or user has no event role.
+ */
+export function useEventAccess(
+  eventId: string | undefined,
+  options?: { enabled?: boolean },
+) {
+  return useQuery({
+    queryKey: ["events", eventId, "access"],
+    queryFn: () => eventsService.getAccess(eventId!),
+    enabled: !!eventId && (options?.enabled !== false),
+    staleTime: 60 * 1000,
   });
 }
 
@@ -131,6 +151,15 @@ export function useLogTestResults() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["events", variables.id] });
     },
+  });
+}
+
+export function useEventAnalytics(eventId: string) {
+  return useQuery({
+    queryKey: ["events", eventId, "analytics"],
+    queryFn: () => eventsService.getAnalytics(eventId),
+    enabled: !!eventId,
+    staleTime: 30 * 1000, // 30 seconds - analytics can be slightly stale
   });
 }
 

@@ -31,7 +31,7 @@ import {
   MediaPurpose,
 } from "./dto";
 import * as path from "path";
-import * as crypto from "crypto";
+import { randomUUID } from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { EntitiesService } from "../entities/entities.service";
 import { AssetUploadDebug } from "../../debug/asset-upload-debug";
@@ -106,7 +106,7 @@ export class AssetsService {
 
       // Generate unique file path
       const fileExtension = path.extname(file.originalname).toLowerCase();
-      const fileName = `${crypto.randomUUID()}${fileExtension}`;
+      const fileName = `${randomUUID()}${fileExtension}`;
       const folderPath = this.generateFolderPath(uploadDto.ownerType, uploadDto.ownerId);
       const filePath = `${folderPath}/${fileName}`;
 
@@ -143,6 +143,7 @@ export class AssetsService {
       const asset = await this.prisma.$transaction(async (tx) => {
         const createdAsset = await (tx as any).assets.create({
           data: {
+            id: randomUUID(),
             ownerId: uploadDto.ownerId,
             ownerType: uploadDto.ownerType,
             url: publicUrl,
@@ -589,23 +590,36 @@ export class AssetsService {
         throw new ForbiddenException("You can only upload assets for your own account");
       }
     } else if (ownerType === AssetOwnerType.ENTITY) {
-      const entity = await (this.prisma as any).entities.findUnique({
+      // Query entity WITHOUT includes
+      const entity = await this.prisma.entities.findUnique({
         where: { id: ownerId },
-        include: { roles: true },
       });
 
       if (!entity) {
         throw new NotFoundException("Entity not found");
       }
 
+      // Separately query entity_roles to confirm the authenticated user has access
       const allowedRoles: EntityRoleType[] = [
         EntityRoleType.OWNER,
         EntityRoleType.ADMIN,
         EntityRoleType.MANAGER,
       ];
+      
+      const role = await this.prisma.entity_roles.findFirst({
+        where: {
+          entityId: ownerId,
+          userId,
+          role: {
+            in: allowedRoles,
+          },
+        },
+      });
+
+      // Check if user is owner, has role, or is admin
       const hasAccess =
         entity.ownerId === userId ||
-        entity.roles.some((role) => role.userId === userId && allowedRoles.includes(role.role)) ||
+        role !== null ||
         userRole === UserRole.ADMIN;
 
       if (!hasAccess) {
@@ -620,22 +634,31 @@ export class AssetsService {
    * Check if user has access to entity
    */
   private async checkEntityAccess(entityId: string, userId: string): Promise<boolean> {
-    const entity = await (this.prisma as any).entities.findUnique({
+    // Query entity WITHOUT includes
+    const entity = await this.prisma.entities.findUnique({
       where: { id: entityId },
-      include: { roles: true },
     });
 
     if (!entity) return false;
 
+    // Separately query entity_roles to confirm the authenticated user has access
     const allowedRoles: EntityRoleType[] = [
       EntityRoleType.OWNER,
       EntityRoleType.ADMIN,
       EntityRoleType.MANAGER,
     ];
-    return (
-      entity.ownerId === userId ||
-      entity.roles.some((role) => role.userId === userId && allowedRoles.includes(role.role))
-    );
+    
+    const role = await this.prisma.entity_roles.findFirst({
+      where: {
+        entityId,
+        userId,
+        role: {
+          in: allowedRoles,
+        },
+      },
+    });
+
+    return entity.ownerId === userId || role !== null;
   }
 
   /**

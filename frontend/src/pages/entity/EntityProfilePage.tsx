@@ -42,14 +42,14 @@ export default function EntityProfilePage() {
       {/* Action Buttons */}
       <div className="flex gap-4 px-8 mt-6">
         <Link
-          to="/entity/edit"
+          to="/studio/edit"
           className="px-5 py-2 rounded-lg bg-purple-600 text-white"
         >
           Edit Profile
         </Link>
 
         <Link
-          to="/creator/events/new"
+          to="/studio/events/new"
           className="px-5 py-2 rounded-lg bg-blue-600 text-white"
         >
           Create Event

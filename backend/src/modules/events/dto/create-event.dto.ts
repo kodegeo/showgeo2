@@ -24,10 +24,20 @@ export class TicketTypeDto {
 }
 
 export class CreateEventDto {
+  // ✅ REQUIRED FIELDS ONLY
   @ApiProperty()
   @IsString()
   name: string;
 
+  @ApiProperty()
+  @IsDateString()
+  startTime: string;
+
+  @ApiProperty()
+  @IsUUID()
+  entityId: string;
+
+  // ✅ OPTIONAL FIELDS
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -36,19 +46,7 @@ export class CreateEventDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  thumbnail?: string;
-
-  @ApiProperty({ enum: RuntimeEnums.EventType, default: "LIVE" })
-  @IsIn(RuntimeEnums.EventType)
-  eventType: EventType;
-
-  @ApiProperty({ enum: RuntimeEnums.EventPhase, default: "PRE_LIVE" })
-  @IsIn(RuntimeEnums.EventPhase)
-  phase: EventPhase;
-
-  @ApiProperty()
-  @IsDateString()
-  startTime: string;
+  location?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -58,15 +56,23 @@ export class CreateEventDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  location?: string;
+  thumbnail?: string;
 
-  @ApiProperty({ enum: RuntimeEnums.EventStatus, default: "DRAFT" })
+  // ❌ DO NOT REQUIRE - These are set by backend defaults
+  @ApiPropertyOptional({ enum: RuntimeEnums.EventType, default: "LIVE" })
+  @IsOptional()
+  @IsIn(RuntimeEnums.EventType)
+  eventType?: EventType;
+
+  @ApiPropertyOptional({ enum: RuntimeEnums.EventPhase, default: "PRE_LIVE" })
+  @IsOptional()
+  @IsIn(RuntimeEnums.EventPhase)
+  phase?: EventPhase;
+
+  @ApiPropertyOptional({ enum: RuntimeEnums.EventStatus, default: "SCHEDULED" })
+  @IsOptional()
   @IsIn(RuntimeEnums.EventStatus)
-  status: EventStatus;
-
-  @ApiProperty()
-  @IsUUID()
-  entityId: string;
+  status?: EventStatus;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -78,10 +84,11 @@ export class CreateEventDto {
   @IsUUID()
   tourId?: string;
 
-  // Streaming
-  @ApiProperty({ default: false })
+  // Streaming - Optional
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
   @IsBoolean()
-  isVirtual: boolean;
+  isVirtual?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -109,14 +116,16 @@ export class CreateEventDto {
   @IsString({ each: true })
   geoRegions?: string[];
 
-  @ApiProperty({ default: false })
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
   @IsBoolean()
-  geoRestricted: boolean;
+  geoRestricted?: boolean;
 
-  // Ticketing
-  @ApiProperty({ default: true })
+  // Ticketing - Optional
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
   @IsBoolean()
-  ticketRequired: boolean;
+  ticketRequired?: boolean;
 
   @ApiPropertyOptional({ type: [TicketTypeDto] })
   @IsOptional()
@@ -125,23 +134,26 @@ export class CreateEventDto {
   @Type(() => TicketTypeDto)
   ticketTypes?: TicketTypeDto[];
 
-  @ApiProperty({ default: false })
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
   @IsBoolean()
-  entryCodeRequired: boolean;
+  entryCodeRequired?: boolean;
 
-  @ApiProperty({ default: false })
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
   @IsBoolean()
-  entryCodeDelivery: boolean;
+  entryCodeDelivery?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   ticketEmailTemplate?: string;
 
-  // Event Management
-  @ApiProperty({ default: false })
+  // Event Management - Optional
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
   @IsBoolean()
-  testingEnabled: boolean;
+  testingEnabled?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

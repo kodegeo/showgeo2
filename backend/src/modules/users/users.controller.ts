@@ -15,7 +15,7 @@ import {
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { UsersService } from "./users.service";
-import { CreateUserProfileDto, UpdateUserProfileDto, ConvertToEntityDto } from "./dto";
+import { CreateUserProfileDto, UpdateUserProfileDto, ConvertToEntityDto, PromoteToEntityDto } from "./dto";
 import { LinkSupabaseUserDto } from "./dto/link-supabase-user.dto";
 import { RolesGuard } from "../../common/guards";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
@@ -188,6 +188,35 @@ export class UsersController {
       throw new ForbiddenException("You can only link your own account");
     }
     return this.usersService.linkSupabaseUser(id, linkDto.authUserId);
+  }
+
+  @Post(":id/promote-to-entity")
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles("ADMIN")
+  @ApiBearerAuth()
+  @ApiOperation({ 
+    summary: "Promote user to ENTITY creator (Admin only)",
+    description: "Creates a new entity owned by the user and sets user.role = ENTITY. " +
+                 "This bypasses the normal creator application process. " +
+                 "User must not have any pending creator applications."
+  })
+  @ApiParam({ name: "id", type: String, description: "User ID to promote" })
+  @ApiResponse({ status: 201, description: "User promoted to ENTITY creator successfully" })
+  @ApiResponse({ 
+    status: 400, 
+    description: "Bad request - User has pending creator applications or data integrity violation" 
+  })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
+  @ApiResponse({ status: 404, description: "User not found" })
+  @ApiResponse({ status: 409, description: "Entity slug/name already exists" })
+  promoteToEntity(
+    @Param("id") id: string,
+    @Body() promoteDto: PromoteToEntityDto,
+    @Req() req?: Request & { user?: User },
+  ) {
+    assertFullUser(req?.user);
+    return this.usersService.promoteUserToEntity(id, promoteDto);
   }
 
   @Delete(":id")

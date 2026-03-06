@@ -14,14 +14,20 @@ export interface StreamingSession {
   endTime?: string | null;
 }
 
-async function getAuthToken(): Promise<string> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
+async function getAuthToken(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.warn("[useStreaming] Supabase session error:", error);
+      return null;
+    }
 
-  const accessToken = data.session?.access_token;
-  if (!accessToken) throw new Error("Not authenticated");
-
-  return accessToken;
+    const accessToken = data.session?.access_token;
+    return accessToken || null;
+  } catch (e) {
+    console.warn("[useStreaming] Failed to get auth token:", e);
+    return null;
+  }
 }
 
 export function useStreaming(eventId: string) {

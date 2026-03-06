@@ -11,10 +11,9 @@ export enum EntityRoleType {
 }
 
 export enum EntityStatus {
-  PENDING = "PENDING",
-  APPROVED = "APPROVED",
-  INACTIVE = "INACTIVE",
-  REJECTED = "REJECTED",
+  ACTIVE = "ACTIVE",
+  SUSPENDED = "SUSPENDED",
+  DISABLED = "DISABLED",
 }
 
 export interface Entity {

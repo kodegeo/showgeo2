@@ -10,7 +10,10 @@ import {
   AddProductModal,
   ManageFanModal,
   ConfirmDeleteModal,
+  ConfirmPhaseTransitionModal,
+  ScheduleReminderModal,
 } from "@/modals/creator";
+import { ReportUserModal, CodeOfConductModal } from "@/modals/common";
 
 /**
  * Provider wrapper for all Creator routes
@@ -29,6 +32,10 @@ export function CreatorProviders({ children }: { children: ReactNode }) {
         <AddProductModal />
         <ManageFanModal />
         <ConfirmDeleteModal />
+        <ConfirmPhaseTransitionModal />
+        <ScheduleReminderModal />
+        <ReportUserModal />
+        <CodeOfConductModal />
         {/* Global toast container */}
         <ToastContainer />
       </ModalProvider>

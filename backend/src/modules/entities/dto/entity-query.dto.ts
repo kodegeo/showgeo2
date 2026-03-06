@@ -45,5 +45,10 @@ export class EntityQueryDto {
   @IsOptional()
   @Type(() => Number)
   limit?: number;
-}
 
+  // ✅ ADD THIS
+  @ApiPropertyOptional({ enum: ['newest', 'most_followed', 'trending'] })
+  @IsOptional()
+  @IsIn(['newest', 'most_followed', 'trending'])
+  sort?: string;
+}

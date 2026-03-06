@@ -49,6 +49,10 @@ export function SettingsCreatorPage() {
   const creatorApplication = useCreatorApplication();
 
   const [activeTab, setActiveTab] = useState<TabIndex>(0);
+  // Root cause: proofFile state was missing - file selection wasn't being stored
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [businessDocFile, setBusinessDocFile] = useState<File | null>(null);
+  const [trademarkDocFile, setTrademarkDocFile] = useState<File | null>(null);
   const [form, setForm] = useState<CreatorForm>({
     brandName: "",
     category: "",
@@ -201,6 +205,16 @@ export function SettingsCreatorPage() {
         }
       });
 
+      // Extract phone number from verification form field
+      const phoneNumber = (form.verification as any).verificationPhone?.trim() || undefined;
+
+      // Root cause fix: proofFile was not being passed to the mutation
+      console.log("[CREATOR_FORM] Submitting with files:", {
+        proofFile: proofFile?.name,
+        businessDocFile: businessDocFile?.name,
+        trademarkDocFile: trademarkDocFile?.name,
+        phone: phoneNumber,
+      });
       await creatorApplication.mutateAsync({
         brandName: form.brandName.trim(),
         category: (form.category ||
@@ -216,6 +230,10 @@ export function SettingsCreatorPage() {
         thumbnail: form.thumbnail.trim() || undefined,
         bannerImage: form.bannerImage.trim() || undefined,
         termsAccepted: form.termsAccepted,
+        phone: phoneNumber,
+        proofFile: proofFile || undefined,
+        businessDocFile: businessDocFile || undefined,
+        trademarkDocFile: trademarkDocFile || undefined,
       });
 
       // clear draft
@@ -479,23 +497,44 @@ export function SettingsCreatorPage() {
                 placeholder="Link to your LLC filing, EIN registration, or business listing"
               />
 
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  // Store filename for now – upload system can be added later
-                  setForm((prev) => ({
-                    ...prev,
-                    verification: {
-                      ...prev.verification,
-                      businessDocs: `${prev.verification.businessDocs || ""} | FILE: ${file.name}`,
-                    },
-                  }));
-                }}
-                className="block text-sm text-gray-300"
-              />
+              {businessDocFile ? (
+                <div className="flex items-center justify-between p-3 border border-gray-700 rounded-md bg-black/40 mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-white">{businessDocFile.name}</span>
+                    <span className="text-xs text-gray-400">
+                      ({(businessDocFile.size / 1024 / 1024).toFixed(2)} MB)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      console.log("[CREATOR_FORM] Removing business doc file");
+                      setBusinessDocFile(null);
+                    }}
+                    className="text-red-400 hover:text-red-300 text-sm"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.txt"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    console.log("[CREATOR_FORM] Selected business doc file:", file);
+                    if (file) {
+                      // Validate file size (max 10MB)
+                      if (file.size > 10 * 1024 * 1024) {
+                        toast.error("File size exceeds 10MB limit");
+                        return;
+                      }
+                      setBusinessDocFile(file);
+                    }
+                  }}
+                  className="block text-sm text-gray-300 w-full rounded-md bg-black/60 border border-gray-700 px-3 py-2"
+                />
+              )}
 
               <p className="text-xs text-gray-500 mt-1">
                 You may provide a link OR upload a document.
@@ -517,22 +556,44 @@ export function SettingsCreatorPage() {
                 placeholder="Link to USPTO / WIPO record, copyright page, etc."
               />
 
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  setForm((prev) => ({
-                    ...prev,
-                    verification: {
-                      ...prev.verification,
-                      trademarkDocs: `${prev.verification.trademarkDocs || ""} | FILE: ${file.name}`,
-                    },
-                  }));
-                }}
-                className="block text-sm text-gray-300"
-              />
+              {trademarkDocFile ? (
+                <div className="flex items-center justify-between p-3 border border-gray-700 rounded-md bg-black/40 mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-white">{trademarkDocFile.name}</span>
+                    <span className="text-xs text-gray-400">
+                      ({(trademarkDocFile.size / 1024 / 1024).toFixed(2)} MB)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      console.log("[CREATOR_FORM] Removing trademark doc file");
+                      setTrademarkDocFile(null);
+                    }}
+                    className="text-red-400 hover:text-red-300 text-sm"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.txt"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    console.log("[CREATOR_FORM] Selected trademark doc file:", file);
+                    if (file) {
+                      // Validate file size (max 10MB)
+                      if (file.size > 10 * 1024 * 1024) {
+                        toast.error("File size exceeds 10MB limit");
+                        return;
+                      }
+                      setTrademarkDocFile(file);
+                    }
+                  }}
+                  className="block text-sm text-gray-300 w-full rounded-md bg-black/60 border border-gray-700 px-3 py-2"
+                />
+              )}
 
               <p className="text-xs text-gray-500 mt-1">
                 You may provide a link OR upload a document.
@@ -564,6 +625,60 @@ export function SettingsCreatorPage() {
 
               <p className="text-xs text-gray-500 mt-1">
                 We may contact you briefly to confirm identity or business association.
+              </p>
+            </div>
+
+            {/* PROOF DOCUMENT UPLOAD */}
+            <div>
+              <label className="block text-sm font-medium text-gray-200 mb-1">
+                Proof Document (Optional)
+              </label>
+              <p className="text-xs text-gray-400 mb-2">
+                Upload a document to support your application (e.g., verification letter, portfolio, ID verification).
+                Accepted formats: PDF, images (JPEG/PNG), Word documents, or text files. Max size: 10MB.
+              </p>
+              
+              {proofFile ? (
+                <div className="flex items-center justify-between p-3 border border-gray-700 rounded-md bg-black/40 mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-white">{proofFile.name}</span>
+                    <span className="text-xs text-gray-400">
+                      ({(proofFile.size / 1024 / 1024).toFixed(2)} MB)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      console.log("[CREATOR_FORM] Removing proof file");
+                      setProofFile(null);
+                    }}
+                    className="text-red-400 hover:text-red-300 text-sm"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.txt"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    console.log("[CREATOR_FORM] Selected proof file:", file);
+                    if (file) {
+                      // Validate file size (max 10MB)
+                      if (file.size > 10 * 1024 * 1024) {
+                        toast.error("File size exceeds 10MB limit");
+                        return;
+                      }
+                      setProofFile(file);
+                    }
+                  }}
+                  className="block text-sm text-gray-300 w-full rounded-md bg-black/60 border border-gray-700 px-3 py-2"
+                />
+              )}
+
+              <p className="text-xs text-gray-500 mt-1">
+                Optional: Upload supporting documentation for faster verification.
               </p>
             </div>
           </div>

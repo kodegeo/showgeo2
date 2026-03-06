@@ -43,4 +43,14 @@ export class GenerateTokenDto {
   @IsOptional()
   @IsString()
   timezone?: string;
+
+  @ApiPropertyOptional({ description: "Ticket ID for VIEWER role (if authenticated user)" })
+  @IsOptional()
+  @IsString()
+  ticketId?: string;
+
+  @ApiPropertyOptional({ description: "Access code for VIEWER role (if guest user)" })
+  @IsOptional()
+  @IsString()
+  accessCode?: string;
 }

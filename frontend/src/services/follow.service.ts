@@ -86,5 +86,61 @@ export const followService = {
     );
     return response.data.isFollowing;
   },
+
+  /**
+   * Get follower count for an entity
+   */
+  async getFollowCounts(entityId: string): Promise<{ followers: number; following: number }> {
+    const response = await apiClient.get<{ followers: number; following: number }>(
+      `/follow/counts/entity/${entityId}`,
+    );
+    return response.data;
+  },
+
+  /**
+   * Follow an event (like / bookmark)
+   */
+  async followEvent(eventId: string): Promise<{ id: string; eventId: string; notify: boolean }> {
+    const response = await apiClient.post<{ id: string; eventId: string; notify: boolean }>(
+      `/follow/event/${eventId}`,
+    );
+    return response.data;
+  },
+
+  /**
+   * Unfollow an event
+   */
+  async unfollowEvent(eventId: string): Promise<void> {
+    await apiClient.delete(`/follow/event/${eventId}`);
+  },
+
+  /**
+   * Check if current user follows event and get notify preference
+   */
+  async getEventFollowStatus(
+    eventId: string,
+  ): Promise<{ isFollowing: boolean; notify?: boolean }> {
+    const response = await apiClient.get<{
+      eventId: string;
+      userId: string;
+      isFollowing: boolean;
+      notify?: boolean;
+    }>(`/follow/event/status/${eventId}`);
+    return {
+      isFollowing: response.data.isFollowing,
+      notify: response.data.notify,
+    };
+  },
+
+  /**
+   * Set notify/reminder preference for a followed event
+   */
+  async setEventNotify(eventId: string, notify: boolean): Promise<{ notify: boolean }> {
+    const response = await apiClient.patch<{ notify: boolean }>(
+      `/follow/event/${eventId}/notify`,
+      { notify },
+    );
+    return response.data;
+  },
 };
 

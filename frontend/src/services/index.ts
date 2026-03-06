@@ -18,6 +18,9 @@ export { assetsService } from "./assets.service";
 export { postsService } from "./posts.service";
 export { fansService } from "./fans.service";
 export { paymentsService} from "./payments.service";
+export { mailboxService } from "./mailbox.service";
+export { eventActivitiesService } from "./event-activities.service";
+export { meetGreetService } from "./meet-greet.service";
 
 // Re-export request/response types
 export type {
@@ -52,6 +55,8 @@ export type {
   PhaseTransitionRequest,
   UpdateMetricsRequest,
   TestResultsRequest,
+  EventAnalytics,
+  EventAccess,
 } from "./events.service";
 
 export type { Follower, Following } from "./follow.service";
@@ -112,4 +117,35 @@ export type {
   CreateRefundRequest,
   GetOrdersParams,
 } from "../../../packages/shared/types/payments.types";
+
+export type {
+  EventActivity,
+  EventActivityType,
+  EventActivityStatus,
+  ActivityVisibility,
+} from "./event-activities.service";
+
+export type {
+  MeetGreetSession,
+  MeetGreetSessionStatus,
+  StartNextSessionResponse,
+} from "./meet-greet.service";
+export { moderationService } from "./moderation.service";
+export type {
+  ModerationReport,
+  ModerationReason,
+  ModerationStatus,
+  ModerationRoleContext,
+  CreateReportRequest,
+  UpdateReportStatusRequest,
+} from "./moderation.service";
+export { adminService } from "./admin.service";
+export type {
+  SuspendUserRequest,
+  ReinstateUserRequest,
+  DisableEntityRequest,
+  ReinstateEntityRequest,
+  TerminateEventRequest,
+  AdminReport,
+} from "./admin.service";
 

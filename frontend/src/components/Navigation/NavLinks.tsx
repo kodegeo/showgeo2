@@ -11,7 +11,7 @@ interface NavLinksProps {
 
 const links = [
   { name: "Events", path: "/events" },
-  { name: "Creators", path: "/entities" },
+  { name: "Creators", path: "/creators" },
   { name: "About", path: "/about" },
 ];
 
@@ -59,9 +59,9 @@ const NavLinks: React.FC<NavLinksProps> = ({ isAuthenticated, onNavigate }) => {
         ))}
       {isAuthenticated && userIsCreator && (
         <Link
-          to="/creator/dashboard"
+          to="/studio/dashboard"
           onClick={onNavigate}
-          className={`${isActive("/creator/dashboard")} transition-colors`}
+          className={`${isActive("/studio/dashboard")} transition-colors`}
         >
           Creator Dashboard
         </Link>

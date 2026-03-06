@@ -28,22 +28,23 @@ export function ProtectedRoute({
     );
   }
 
-  // Redirect to login if authentication is required but user is not authenticated
+  // Redirect unauthenticated users to home (not /login)
   // Only redirect if we're sure the user is not authenticated (not just loading)
   if (requireAuth && !isLoading && !isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/" replace />;
   }
 
   // Check role requirements
   if (requireRole && user) {
     const userRole = user.role;
     if (!requireRole.includes(userRole)) {
-      // User doesn't have required role, redirect to home or show access denied
+      // User doesn't have required role, redirect to home
       return <Navigate to="/" replace />;
     }
   }
 
-  // Render children if all checks pass
+  // Authenticated users: Always render children and let downstream guards (ProfileSetupGuard, StudioRoute) handle routing
+  // Do NOT redirect authenticated users to /dashboard or anywhere else
   return <>{children}</>;
 }
 

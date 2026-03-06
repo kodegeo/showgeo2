@@ -1,47 +1,27 @@
 import { apiClient } from "./api";
 import type { PaginatedResponse, QueryParams } from "./types";
-import type { Event, EventPhase, EventStatus } from "../../../packages/shared/types";
-import type  { ProfileEvent }  from "../../../packages/shared/types/event.views";
-import type { EventWithEntity } from "../../../packages/shared/types/event.api";
+import type { EventPhase, EventStatus } from "@/types/eventPhase";
+import type { Event } from "@/types/event.types";
+import type { ProfileEvent } from "@/types/event.types";
+import type { EventWithEntity } from "@/types/event.types";
 
 
 // events.service.ts
 export interface CreateEventRequest {
-  // Required fields
+  // ✅ REQUIRED FIELDS ONLY
   entityId: string; // UUID of entity
   name: string;
-  eventType: "LIVE" | "PRERECORDED";
-  phase: "PRE_LIVE" | "LIVE" | "POST_LIVE";
-  status: "DRAFT" | "SCHEDULED" | "LIVE" | "COMPLETED" | "CANCELLED";
   startTime: string; // ISO date string
-  isVirtual: boolean;
-  geoRestricted: boolean;
-  ticketRequired: boolean;
-  entryCodeRequired: boolean;
-  entryCodeDelivery: boolean;
-  testingEnabled: boolean;
   
-  // Optional fields
+  // ✅ OPTIONAL FIELDS
   description?: string;
-  thumbnail?: string;
-  endTime?: string; // ISO date string
   location?: string;
-  eventCoordinatorId?: string; // UUID
-  tourId?: string; // UUID
-  streamUrl?: string;
-  testStreamUrl?: string;
-  videoUrl?: string;
-  streamingAccessLevel?: "LOCAL" | "REGIONAL" | "NATIONAL" | "INTERNATIONAL";
-  geoRegions?: string[];
-  ticketTypes?: Array<{
-    type: "FREE" | "GIFTED" | "PAID";
-    price?: number;
-    currency?: string;
-    availability: number;
-  }>;
-  ticketEmailTemplate?: string;
-  customBranding?: Record<string, unknown>;
-  collaboratorEntityIds?: string[]; // Array of UUIDs
+  endTime?: string; // ISO date string
+  thumbnail?: string;
+  
+  // ❌ DO NOT SEND - Backend applies defaults
+  // phase, status, eventType, geoRestricted, ticketRequired, etc.
+  // These are handled by the backend automatically
 }
 
 export interface UpdateEventRequest {
@@ -84,10 +64,24 @@ export interface UpdateEventRequest {
   // Relationships
   collaboratorEntityIds?: string[];
   tourId?: string;
+
+  // Live Introduction
+  liveIntroduction?: {
+    enabled: boolean;
+    videoUrl?: string;
+  };
 }
 
 export interface PhaseTransitionRequest {
   phase: EventPhase;
+}
+
+export type AudienceActionType = "SEND_REMINDER" | "INVITE_AUDIENCE" | "SCHEDULE_REMINDER";
+
+export interface AudienceActionRequest {
+  actionType: AudienceActionType;
+  message?: string;
+  scheduledFor?: string; // ISO date string for scheduled reminders
 }
 
 export interface UpdateMetricsRequest {
@@ -160,6 +154,14 @@ export const eventsService = {
   },
 
   /**
+   * Get current user's event-scoped access (role + operational roles). Returns null if not authenticated or no role.
+   */
+  async getAccess(id: string): Promise<EventAccess | null> {
+    const response = await apiClient.get<EventAccess | null>(`/events/${id}/access`);
+    return response.data;
+  },
+
+  /**
    * Update event
    */
   async update(id: string, data: UpdateEventRequest): Promise<Event> {
@@ -185,8 +187,10 @@ export const eventsService = {
   /**
    * Extend event phase
    */
-  async extendPhase(id: string, duration: number): Promise<Event> {
-    const response = await apiClient.post<Event>(`/events/${id}/phase/extend`, { duration });
+  async extendPhase(id: string, minutes: number): Promise<Event> {
+    const response = await apiClient.post<Event>(`/events/${id}/phase/extend`, null, {
+      params: { minutes },
+    });
     return response.data;
   },
 
@@ -213,7 +217,79 @@ export const eventsService = {
     const response = await apiClient.post<Event>(`/events/${id}/test-results`, data);
     return response.data;
   },
+
+  /**
+   * Get event analytics (Phase 3B)
+   */
+  async getAnalytics(id: string): Promise<EventAnalytics> {
+    const response = await apiClient.get<EventAnalytics>(`/events/${id}/analytics`);
+    return response.data;
+  },
+
+  /**
+   * Perform audience action (send reminder, invite audience, schedule reminder)
+   */
+  async performAudienceAction(
+    id: string,
+    data: AudienceActionRequest,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post<{ success: boolean; message: string }>(
+      `/events/${id}/audience-action`,
+      data,
+    );
+    return response.data;
+  },
+
+  /**
+   * Create a scheduled reminder
+   */
+  async createReminder(
+    id: string,
+    data: {
+      type: "FOLLOWERS" | "TICKET_HOLDERS" | "CUSTOM";
+      scheduledFor: string;
+      messageTemplate?: string;
+    },
+  ): Promise<any> {
+    const response = await apiClient.post<any>(`/events/${id}/reminders`, data);
+    return response.data;
+  },
+
+  /**
+   * Get all reminders for an event
+   */
+  async getReminders(id: string): Promise<any[]> {
+    const response = await apiClient.get<any[]>(`/events/${id}/reminders`);
+    return response.data;
+  },
+
+  /**
+   * Create a blast (message blast to audience)
+   */
+  async createBlast(
+    id: string,
+    data: {
+      audience: "FOLLOWERS" | "TICKET_HOLDERS" | "CUSTOM";
+      channel: "IN_APP" | "EMAIL";
+      title: string;
+      message: string;
+    },
+  ): Promise<{ success: boolean; recipientsCount: number }> {
+    const response = await apiClient.post<{ success: boolean; recipientsCount: number }>(`/events/${id}/blasts`, data);
+    return response.data;
+  },
 };
+
+export interface EventAnalytics {
+  registrationsCount: number;
+  ticketsIssued: number;
+  viewersJoined: number;
+  joinRate: number;
+  guestViewers: number;
+  loggedInViewers: number;
+  remindersSent10Min: number;
+  remindersSent30Min: number;
+}
 
 
 

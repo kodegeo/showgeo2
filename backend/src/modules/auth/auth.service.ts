@@ -2,6 +2,9 @@ import {
   Injectable,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
+  Logger,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -12,9 +15,11 @@ type User = any;
 import { UserRole } from "@prisma/client";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { RegisterDto, LoginDto, RefreshTokenDto } from "./dto";
+import { randomUUID } from "crypto";
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private supabase: SupabaseClient;
 
   constructor(
@@ -50,6 +55,19 @@ export class AuthService {
     }
 
     const authUser = data.user;
+
+    // Check account_status from JWT app_metadata first (immediate enforcement)
+    // This ensures suspended/disabled users are blocked even with cached tokens
+    const jwtAccountStatus = (authUser.app_metadata as any)?.account_status;
+    if (jwtAccountStatus && jwtAccountStatus !== "ACTIVE") {
+      const statusMessage =
+        jwtAccountStatus === "SUSPENDED"
+          ? "Your account has been suspended. Please contact support for assistance."
+          : jwtAccountStatus === "DISABLED"
+          ? "Your account has been disabled. Please contact support for assistance."
+          : "Your account is not active. Please contact support for assistance.";
+      throw new ForbiddenException(statusMessage);
+    }
 
     try {
       // Try to find existing app user tied to this Supabase auth user
@@ -124,8 +142,24 @@ export class AuthService {
         }
       }
 
+      // Check account_status from database (single source of truth)
+      // Only ACTIVE users can access protected endpoints
+      if (dbUser.account_status !== "ACTIVE") {
+        const statusMessage =
+          dbUser.account_status === "SUSPENDED"
+            ? "Your account has been suspended. Please contact support for assistance."
+            : dbUser.account_status === "DISABLED"
+            ? "Your account has been disabled. Please contact support for assistance."
+            : "Your account is not active. Please contact support for assistance.";
+        throw new ForbiddenException(statusMessage);
+      }
+
       return dbUser;
     } catch (prismaError) {
+      // Re-throw ForbiddenException for disabled users
+      if (prismaError instanceof ForbiddenException) {
+        throw prismaError;
+      }
       // If Prisma query fails, return minimal user object based on Supabase auth data
       console.warn(
         `[AuthService] Prisma error while fetching user for authUserId ${authUser.id}:`,
@@ -140,6 +174,22 @@ export class AuthService {
         user_profiles: null,
         entity_roles: [],
       };
+    }
+  }
+
+  /**
+   * Get Supabase user by ID (for debugging/metadata access)
+   * Used by /auth/me to include Supabase app_metadata for consistency checking
+   */
+  async getSupabaseUserById(authUserId: string): Promise<any> {
+    try {
+      const { data, error } = await this.supabase.auth.admin.getUserById(authUserId);
+      if (error || !data?.user) {
+        return null;
+      }
+      return data.user;
+    } catch (error) {
+      return null;
     }
   }
 
@@ -168,6 +218,11 @@ export class AuthService {
    * This is called by the frontend AFTER Supabase signUp succeeds.
    * 
    * IDEMPOTENT: If user already exists, returns existing user without error.
+   * 
+   * Error Handling:
+   * - P2002 (Unique constraint violation) → ConflictException (409)
+   * - P2003 (Foreign key constraint violation) → BadRequestException (400)
+   * - Other Prisma errors → InternalServerErrorException (500) with logging
    */
   async createAppUserFromSupabaseAuth(data: {
     authUserId: string;
@@ -177,77 +232,185 @@ export class AuthService {
   }) {
     const { authUserId, email, firstName, lastName } = data;
   
+    this.logger.log(`[REGISTER_APP_USER] Starting registration for authUserId: ${authUserId}, email: ${email}`);
+    this.logger.debug(`[REGISTER_APP_USER] DTO: ${JSON.stringify({ authUserId, email, hasFirstName: !!firstName, hasLastName: !!lastName })}`);
+  
+    // VALIDATION: Required fields
     if (!authUserId || !email) {
+      this.logger.warn(`[REGISTER_APP_USER] Missing required fields: authUserId=${!!authUserId}, email=${!!email}`);
       throw new BadRequestException("authUserId and email are required");
     }
   
-    // 1️⃣ Check existing user by authUserId (idempotent check)
-    const existingUser = await (this.prisma as any).app_users.findUnique({
-      where: { authUserId },
-      include: {
-        user_profiles: true,
-        entity_roles: {
-          include: {
-            entities: true,
+    // VALIDATION: Email format (basic)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      this.logger.warn(`[REGISTER_APP_USER] Invalid email format: ${email}`);
+      throw new BadRequestException("Invalid email format");
+    }
+  
+    // VALIDATION: UUID format for authUserId (since schema has @db.Uuid)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(authUserId)) {
+      this.logger.warn(`[REGISTER_APP_USER] Invalid UUID format for authUserId: ${authUserId}`);
+      throw new BadRequestException(`authUserId must be a valid UUID format. Received: ${authUserId}`);
+    }
+  
+    try {
+      // 1️⃣ Check existing user by authUserId (idempotent check)
+      this.logger.debug(`[REGISTER_APP_USER] Checking for existing user by authUserId: ${authUserId}`);
+      const existingUser = await (this.prisma as any).app_users.findUnique({
+        where: { authUserId },
+        include: {
+          user_profiles: true,
+          entity_roles: {
+            include: {
+              entities: true,
+            },
           },
-        },
-      },
-    });
-  
-    // If user exists, return it (idempotent behavior)
-    if (existingUser) {
-      const { password: _, ...userWithoutPassword } = existingUser;
-      return userWithoutPassword;
-    }
-  
-    // 2️⃣ Defensive email check (prevent duplicate emails)
-    const existingEmail = await (this.prisma as any).app_users.findUnique({
-      where: { email },
-    });
-  
-    if (existingEmail) {
-      throw new ConflictException("User with this email already exists");
-    }
-  
-    // 3️⃣ Create app user with id = authUserId (primary key alignment)
-    const user = await (this.prisma as any).app_users.create({
-      data: {
-        id: authUserId, // Use authUserId as primary key
-        authUserId,
-        email,
-        role: UserRole.USER,
-        isEntity: false,
-        password: null, // No password stored for Supabase-auth users
-      },
-    });
-  
-    // 4️⃣ Create profile ONLY if names provided
-    if (firstName || lastName) {
-      await (this.prisma as any).user_profiles.create({
-        data: {
-          id: crypto.randomUUID(), // user_profiles.id is required (no default)
-          userId: user.id, // user_profiles.userId references app_users.id
-          firstName,
-          lastName,
         },
       });
-    }
-  
-    // 5️⃣ Fetch and return complete user with relations
-    const completeUser = await (this.prisma as any).app_users.findUnique({
-      where: { id: user.id },
-      include: {
-        user_profiles: true,
-        entity_roles: {
-          include: {
-            entities: true,
+    
+      // If user exists, return it (idempotent behavior)
+      if (existingUser) {
+        this.logger.log(`[REGISTER_APP_USER] User already exists (idempotent): ${authUserId}`);
+        const { password: _, ...userWithoutPassword } = existingUser;
+        return userWithoutPassword;
+      }
+    
+      // 2️⃣ Defensive email check (prevent duplicate emails)
+      this.logger.debug(`[REGISTER_APP_USER] Checking for existing user by email: ${email}`);
+      const existingEmail = await (this.prisma as any).app_users.findUnique({
+        where: { email },
+      });
+    
+      if (existingEmail) {
+        this.logger.warn(`[REGISTER_APP_USER] Email already exists: ${email}`);
+        throw new ConflictException("User with this email already exists");
+      }
+    
+      // 3️⃣ Atomic transaction: Create app user + profile (if names provided)
+      this.logger.debug(`[REGISTER_APP_USER] Creating user in transaction: authUserId=${authUserId}, email=${email}`);
+      
+      const user = await (this.prisma as any).$transaction(async (tx: any) => {
+        // Create app user
+        this.logger.debug(`[REGISTER_APP_USER] Creating app_users record: id=${authUserId}, authUserId=${authUserId}, email=${email}`);
+        const newUser = await tx.app_users.create({
+          data: {
+            id: authUserId, // Use authUserId as primary key
+            authUserId,
+            email,
+            role: UserRole.USER,
+            password: null, // No password stored for Supabase-auth users
+            // Note: isEntity is not in schema - removed to prevent errors
+          },
+        });
+        
+        this.logger.debug(`[REGISTER_APP_USER] Created app_users record: ${newUser.id}`);
+        
+        // Create profile ONLY if names provided (within same transaction)
+        if (firstName || lastName) {
+          const profileId = randomUUID();
+          this.logger.debug(`[REGISTER_APP_USER] Creating user_profiles record: id=${profileId}, userId=${newUser.id}`);
+          await tx.user_profiles.create({
+            data: {
+              id: profileId, // user_profiles.id is required (no default)
+              userId: newUser.id, // user_profiles.userId references app_users.id
+              firstName: firstName || null,
+              lastName: lastName || null,
+            },
+          });
+          this.logger.debug(`[REGISTER_APP_USER] Created user_profiles record: ${profileId}`);
+        }
+        
+        return newUser;
+      });
+    
+      this.logger.log(`[REGISTER_APP_USER] Successfully created user: ${user.id}`);
+    
+      // 4️⃣ Fetch and return complete user with relations
+      this.logger.debug(`[REGISTER_APP_USER] Fetching complete user with relations: ${user.id}`);
+      const completeUser = await (this.prisma as any).app_users.findUnique({
+        where: { id: user.id },
+        include: {
+          user_profiles: true,
+          entity_roles: {
+            include: {
+              entities: true,
+            },
           },
         },
-      },
-    });
-  
-    const { password: _, ...userWithoutPassword } = completeUser;
-    return userWithoutPassword;
+      });
+    
+      if (!completeUser) {
+        this.logger.error(`[REGISTER_APP_USER] User created but not found on fetch: ${user.id}`);
+        throw new InternalServerErrorException("User created but could not be retrieved");
+      }
+    
+      const { password: _, ...userWithoutPassword } = completeUser;
+      this.logger.log(`[REGISTER_APP_USER] Registration complete: ${user.id}`);
+      return userWithoutPassword;
+      
+    } catch (error) {
+      // Handle Prisma known errors
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        this.logger.error(`[REGISTER_APP_USER] Prisma error (code: ${error.code}): ${error.message}`);
+        
+        // P2002: Unique constraint violation
+        if (error.code === "P2002") {
+          const target = (error.meta as any)?.target;
+          if (Array.isArray(target) && target.includes("email")) {
+            this.logger.warn(`[REGISTER_APP_USER] Email conflict: ${email}`);
+            throw new ConflictException("User with this email already exists");
+          }
+          if (Array.isArray(target) && target.includes("authUserId")) {
+            this.logger.warn(`[REGISTER_APP_USER] authUserId conflict: ${authUserId}`);
+            throw new ConflictException("User with this authUserId already exists");
+          }
+          if (Array.isArray(target) && target.includes("users_pkey")) {
+            this.logger.warn(`[REGISTER_APP_USER] Primary key conflict: ${authUserId}`);
+            throw new ConflictException("User with this ID already exists");
+          }
+          // Generic unique constraint
+          this.logger.warn(`[REGISTER_APP_USER] Unique constraint violation: ${JSON.stringify(target)}`);
+          throw new ConflictException("A user with this information already exists");
+        }
+        
+        // P2003: Foreign key constraint violation
+        if (error.code === "P2003") {
+          const field = (error.meta as any)?.field_name;
+          this.logger.error(`[REGISTER_APP_USER] Foreign key violation: ${field}`);
+          throw new BadRequestException(`Invalid reference: ${field || "foreign key constraint violated"}`);
+        }
+        
+        // P2025: Record not found (shouldn't happen on create, but handle it)
+        if (error.code === "P2025") {
+          this.logger.error(`[REGISTER_APP_USER] Record not found: ${error.message}`);
+          throw new BadRequestException("Referenced record not found");
+        }
+        
+        // Other Prisma errors
+        this.logger.error(`[REGISTER_APP_USER] Unhandled Prisma error: ${error.code} - ${error.message}`);
+        throw new InternalServerErrorException(
+          `Database error during user registration: ${error.message}`
+        );
+      }
+      
+      // Handle NestJS HTTP exceptions (re-throw as-is)
+      if (error instanceof ConflictException || 
+          error instanceof BadRequestException ||
+          error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      
+      // Handle unknown errors
+      this.logger.error(
+        `[REGISTER_APP_USER] Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined
+      );
+      throw new InternalServerErrorException(
+        `Unexpected error during user registration: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
   
   // ───────────────────────────────────────────────────────────────

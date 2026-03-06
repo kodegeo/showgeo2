@@ -6,7 +6,7 @@ export function CreatorProfileActions() {
   return (
     <div className="flex gap-3 border-b border-white/10 px-6 py-4">
       <button
-        onClick={() => navigate("/creator/events/new")}
+        onClick={() => navigate("/studio/events/new")}
         className="rounded bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90"
       >
         Create Event

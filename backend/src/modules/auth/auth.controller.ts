@@ -67,7 +67,30 @@ export class AuthController {
   async getMe(@CurrentUser() user: User) {
     // user is already the Prisma user injected by SupabaseAuthGuard
     const { password, ...userWithoutPassword } = user as any;
-    return userWithoutPassword;
+    
+    // Include account_status from database (single source of truth)
+    // Also include Supabase app_metadata.account_status for debugging consistency
+    const response: any = {
+      ...userWithoutPassword,
+      account_status: user.account_status || "ACTIVE",
+    };
+
+    // If user has authUserId, include Supabase metadata for debugging
+    if (user.authUserId) {
+      try {
+        const supabaseUser = await this.authService.getSupabaseUserById(user.authUserId);
+        if (supabaseUser?.app_metadata) {
+          response._supabase_metadata = {
+            account_status: supabaseUser.app_metadata.account_status,
+          };
+        }
+      } catch (error) {
+        // Non-blocking: if Supabase lookup fails, still return user data
+        // This is for debugging only, not required for functionality
+      }
+    }
+
+    return response;
   }
 
   /**

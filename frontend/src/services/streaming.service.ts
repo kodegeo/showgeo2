@@ -16,6 +16,9 @@ export interface GenerateTokenRequest {
 
   streamRole?: "VIEWER" | "BROADCASTER";
 
+  // Ticket authorization for VIEWER role
+  ticketId?: string;
+  accessCode?: string;
 }
 
 export interface StreamingSession {

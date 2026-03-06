@@ -1,240 +1,200 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { follows as Follow, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+
+const ENTITY = "ENTITY" as const;
+const USER = "USER" as const;
+const EVENT = "EVENT" as const;
 
 @Injectable()
 export class FollowService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async followEntity(userId: string, entityId: string): Promise<Follow> {
-    // Validate user exists
-    const user = await (this.prisma as any).app_users.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
-
-    // Validate entity exists
-    const entity = await (this.prisma as any).entities.findUnique({
-      where: { id: entityId },
-    });
-
-    if (!entity) {
-      throw new NotFoundException("Entity not found");
-    }
-
-    // Prevent self-follow (if user owns the entity)
-    if (entity.ownerId === userId) {
-      throw new BadRequestException("Cannot follow your own entity");
-    }
-
-    // Check if already following
-    const existingFollow = await (this.prisma as any).follows.findUnique({
-      where: {
-        userId_entityId: {
-          userId,
-          entityId,
-        },
-      },
-    });
-
-    if (existingFollow) {
-      throw new ConflictException("Already following this entity");
-    }
-
-    // Create follow relationship
-    const follow = await (this.prisma as any).follows.create({
-      data: {
-        userId,
-        entityId,
-      },
-      include: {
-        app_users: {
-          select: {
-            id: true,
-            email: true,
-            user_profiles: true,
-          },
-        },
-        entities: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            type: true,
-            isVerified: true,
-          },
-        },
-      },
-    });
-
-    return follow;
+  private async resolveAppUser(authUserId: string) {
+    return (
+      (await this.prisma.app_users.findUnique({
+        where: { id: authUserId },
+      })) ||
+      (await this.prisma.app_users.findFirst({
+        where: { authUserId },
+      }))
+    );
   }
 
-  async unfollowEntity(userId: string, entityId: string): Promise<{ message: string }> {
-    // Validate follow exists
-    const follow = await (this.prisma as any).follows.findUnique({
+  // =========================================
+  // GENERIC ENSURE FOLLOW (UPSERT CORE)
+  // =========================================
+
+  private async ensureFollow(
+    userId: string,
+    targetId: string,
+    targetType: "ENTITY" | "USER" | "EVENT",
+  ) {
+    return this.prisma.follows.upsert({
       where: {
-        userId_entityId: {
-          userId,
-          entityId,
+        user_id_target_id_target_type: {
+          user_id: userId,
+          target_id: targetId,
+          target_type: targetType,
         },
+      } as Prisma.followsWhereUniqueInput,
+      update: {
+        updatedAt: new Date(),
       },
+      create: {
+        id: crypto.randomUUID(),
+        user_id: userId,
+        target_id: targetId,
+        target_type: targetType,
+        notify: false,
+        updatedAt: new Date(),
+      } as Prisma.followsUncheckedCreateInput,
     });
+  }
 
-    if (!follow) {
-      throw new NotFoundException("Follow relationship not found");
-    }
-
-    // Delete follow relationship
-    await (this.prisma as any).follows.delete({
+  private async removeFollow(
+    userId: string,
+    targetId: string,
+    targetType: "ENTITY" | "USER" | "EVENT",
+  ) {
+    await this.prisma.follows.deleteMany({
       where: {
-        userId_entityId: {
-          userId,
-          entityId,
-        },
-      },
+        user_id: userId,
+        target_id: targetId,
+        target_type: targetType,
+      } as Prisma.followsWhereInput,
     });
 
     return { message: "Unfollowed successfully" };
   }
 
-  async getFollowers(entityId: string, page = 1, limit = 20) {
-    try {
-      // Validate entity exists
-      const entity = await (this.prisma as any).entities.findUnique({
-        where: { id: entityId },
-      });
+  // =========================================
+  // ENTITY FOLLOW
+  // =========================================
 
-      if (!entity) {
-        throw new NotFoundException("Entity not found");
-      }
+  async followEntity(userId: string, entityId: string) {
+    const user = await this.resolveAppUser(userId);
+    if (!user) throw new NotFoundException("User not found");
 
-      const skip = (page - 1) * limit;
+    const entity = await this.prisma.entities.findUnique({
+      where: { id: entityId },
+    });
+    if (!entity) throw new NotFoundException("Entity not found");
 
-      const [follows, total] = await Promise.all([
-        (this.prisma as any).follows.findMany({
-          where: { entityId },
-          include: {
-            app_users: {
-              select: {
-                id: true,
-                email: true,
-                user_profiles: {
-                  select: {
-                    id: true,
-                    username: true,
-                    firstName: true,
-                    lastName: true,
-                    avatarUrl: true,
-                    bio: true,
-                    location: true,
-                  },
-                },
-              },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-          skip,
-          take: limit,
-        }),
-        (this.prisma as any).follows.count({
-          where: { entityId },
-        }),
-      ]);
-
-      return {
-        data: follows.map((follow) => ({
-          id: follow.id,
-          userId: follow.userId,
-          entityId: follow.entityId,
-          createdAt: follow.createdAt,
-          app_users: follow.app_users,
-        })),
-        meta: {
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
-        },
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      console.error("[FollowService.getFollowers] Error:", error);
-      // Return empty result instead of throwing to prevent blocking pages
-      return {
-        data: [],
-        meta: {
-          total: 0,
-          page,
-          limit,
-          totalPages: 0,
-        },
-      };
+    if (entity.ownerId === user.id) {
+      throw new BadRequestException("Cannot follow your own entity");
     }
+
+    return this.ensureFollow(userId, entityId, ENTITY);
   }
 
-  async getFollowing(userId: string, page = 1, limit = 20) {
-    // Validate user exists
-    const user = await (this.prisma as any).app_users.findUnique({
-      where: { id: userId },
+  async unfollowEntity(userId: string, entityId: string) {
+    return this.removeFollow(userId, entityId, ENTITY);
+  }
+
+  // =========================================
+  // EVENT FOLLOW (LIKE EVENT)
+  // =========================================
+
+  async followEvent(userId: string, eventId: string) {
+    const user = await this.resolveAppUser(userId);
+    if (!user) throw new NotFoundException("User not found");
+
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+    });
+    if (!event) throw new NotFoundException("Event not found");
+
+    return this.ensureFollow(userId, eventId, EVENT);
+  }
+
+  async unfollowEvent(userId: string, eventId: string) {
+    return this.removeFollow(userId, eventId, EVENT);
+  }
+
+  // =========================================
+  // NOTIFY TOGGLE (EVENT)
+  // =========================================
+
+  async setEventNotify(userId: string, eventId: string, notify: boolean) {
+    const follow = await this.ensureFollow(userId, eventId, EVENT);
+
+    const updated = await this.prisma.follows.update({
+      where: {
+        user_id_target_id_target_type: {
+          user_id: userId,
+          target_id: eventId,
+          target_type: EVENT,
+        },
+      } as Prisma.followsWhereUniqueInput,
+      data: {
+        notify,
+        updatedAt: new Date(),
+      },
     });
 
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
+    return { notify: updated.notify };
+  }
 
+  // =========================================
+  // STATUS HELPERS
+  // =========================================
+
+  async isFollowingEvent(userId: string, eventId: string) {
+    const follow = await this.prisma.follows.findUnique({
+      where: {
+        user_id_target_id_target_type: {
+          user_id: userId,
+          target_id: eventId,
+          target_type: EVENT,
+        },
+      } as Prisma.followsWhereUniqueInput,
+    });
+
+    return !!follow;
+  }
+
+  async isFollowing(userId: string, entityId: string): Promise<boolean> {
+    const follow = await this.prisma.follows.findUnique({
+      where: {
+        user_id_target_id_target_type: {
+          user_id: userId,
+          target_id: entityId,
+          target_type: ENTITY,
+        },
+      },
+    });
+  
+    return !!follow;
+  }
+
+  async getFollowers(entityId: string, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
-
+  
     const [follows, total] = await Promise.all([
-      (this.prisma as any).follows.findMany({
-        where: { userId },
-        include: {
-          entities: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              thumbnail: true,
-              bannerImage: true,
-              type: true,
-              isVerified: true,
-              location: true,
-              bio: true,
-              tags: true,
-              _count: {
-                select: {
-                  events_events_entityIdToentities: true,
-                  tours_tours_primaryEntityIdToentities: true,
-                  stores_stores_entityIdToentities: true,
-                  follows: true,
-                },
-              },
-            },
-          },
+      this.prisma.follows.findMany({
+        where: {
+          target_id: entityId,
+          target_type: ENTITY,
         },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
       }),
-      (this.prisma as any).follows.count({
-        where: { userId },
+      this.prisma.follows.count({
+        where: {
+          target_id: entityId,
+          target_type: ENTITY,
+        },
       }),
     ]);
-
+  
     return {
-      data: follows.map((follow) => ({
-        id: follow.id,
-        userId: follow.userId,
-        entityId: follow.entityId,
-        createdAt: follow.createdAt,
-        entities: follow.entities,
-      })),
+      data: follows,
       meta: {
         total,
         page,
@@ -244,69 +204,77 @@ export class FollowService {
     };
   }
 
-  async isFollowing(userId: string, entityId: string): Promise<boolean> {
-    const follow = await (this.prisma as any).follows.findUnique({
-      where: {
-        userId_entityId: {
-          userId,
-          entityId,
+  async getFollowing(userId: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+  
+    const [follows, total] = await Promise.all([
+      this.prisma.follows.findMany({
+        where: {
+          user_id: userId,
+          target_type: ENTITY,
         },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      this.prisma.follows.count({
+        where: {
+          user_id: userId,
+          target_type: ENTITY,
+        },
+      }),
+    ]);
+  
+    return {
+      data: follows,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getFollowCounts(
+    id: string,
+    type: "entity" | "user",
+  ): Promise<{ followers: number; following: number }> {
+    if (type === "entity") {
+      const followers = await this.prisma.follows.count({
+        where: {
+          target_id: id,
+          target_type: ENTITY,
+        },
+      });
+  
+      return { followers, following: 0 };
+    }
+  
+    const following = await this.prisma.follows.count({
+      where: {
+        user_id: id,
+        target_type: ENTITY,
       },
     });
-
-    return !!follow;
+  
+    return { followers: 0, following };
   }
 
-  async getFollowCounts(id: string, type: "entity" | "user"): Promise<{ followers: number; following: number }> {
-    if (type === "entity") {
-      const followers = await (this.prisma as any).follows.count({
-        where: { entityId: id },
-      });
-
-      return {
-        followers,
-        following: 0, // Entities don't have "following" count
-      };
-    } else {
-      const following = await (this.prisma as any).follows.count({
-        where: { userId: id },
-      });
-
-      return {
-        followers: 0, // Users don't have "followers" count in this context
-        following,
-      };
-    }
-  }
-
-  async getEntityFollowersCount(entityId: string): Promise<number> {
-    return (this.prisma as any).follows.count({
-      where: { entityId },
-    });
-  }
-
-  async getUserFollowingCount(userId: string): Promise<number> {
-    return (this.prisma as any).follows.count({
-      where: { userId },
-    });
-  }
-
-  async getUserFollowedEntities(userId: string): Promise<string[]> {
-    const follows = await (this.prisma as any).follows.findMany({
-      where: { userId },
-      select: { entityId: true },
+  async getEventFollowStatus(userId: string, eventId: string) {
+    const follow = await this.prisma.follows.findUnique({
+      where: {
+        user_id_target_id_target_type: {
+          user_id: userId,
+          target_id: eventId,
+          target_type: EVENT,
+        },
+      } as Prisma.followsWhereUniqueInput,
     });
 
-    return follows.map((follow) => follow.entityId);
-  }
-
-  async getEntityFollowers(userId: string): Promise<string[]> {
-    const follows = await (this.prisma as any).follows.findMany({
-      where: { entityId: userId },
-      select: { userId: true },
-    });
-
-    return follows.map((follow) => follow.userId);
+    return {
+      isFollowing: !!follow,
+      notify: follow?.notify ?? false,
+    };
   }
 }
-

@@ -67,7 +67,7 @@ export function SettingsHomePage() {
     if (creatorStatus === EntityStatus.PENDING) return;
 
     if (creatorStatus === EntityStatus.APPROVED) {
-      return navigate("/creator/profile"); // or /creator/dashboard
+      return navigate("/studio/profile");
     }
 
     navigate("/settings/creator");

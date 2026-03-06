@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Modal } from "@/components/creator/Modal";
 import { useModalContext } from "@/state/creator/modalContext";
 import { useEntityContext } from "@/hooks/useEntityContext";
@@ -8,6 +9,7 @@ import { toast } from "sonner";
 export function CreateEventModal() {
   const { currentModal, closeModal } = useModalContext();
   const { currentEntity } = useEntityContext();
+  const navigate = useNavigate();
   const createEvent = useCreateEventWithThumbnail();
 
   const [formData, setFormData] = useState({
@@ -29,20 +31,32 @@ export function CreateEventModal() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!currentEntity) {
-      toast.error("No entity selected");
+    // ✅ Guard: Validate entityId
+    if (!currentEntity?.id) {
+      toast.error("No entity selected. Please select an entity before creating an event.");
+      return;
+    }
+
+    // ✅ Guard: Validate required fields
+    if (!formData.name) {
+      toast.error("Event name is required");
+      return;
+    }
+
+    if (!formData.startTime) {
+      toast.error("Start time is required");
       return;
     }
 
     try {
-      await createEvent.mutateAsync({
+      // ✅ Send minimal payload - backend applies defaults
+      const createdEvent = await createEvent.mutateAsync({
         entityId: currentEntity.id,
         name: formData.name,
-        description: formData.description || undefined,
-        eventType: "LIVE",
         startTime: new Date(formData.startTime).toISOString(),
-        location: formData.location || undefined,
-        isVirtual: Boolean(formData.isVirtual),
+        ...(formData.description ? { description: formData.description } : {}),
+        ...(formData.location ? { location: formData.location } : {}),
+        ...(formData.thumbnail ? { thumbnailFile: formData.thumbnail } : {}),
       });
             
       closeModal();
@@ -58,6 +72,11 @@ export function CreateEventModal() {
         thumbnail: null,
       });
       setThumbnailUrl(null);
+      
+      // ✅ Redirect to Event Dashboard after creation
+      if (createdEvent?.id) {
+        navigate(`/studio/events/${createdEvent.id}`);
+      }
     } catch (error) {
       // Error handling is done in the hook
     }

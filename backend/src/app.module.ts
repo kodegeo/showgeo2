@@ -16,6 +16,12 @@ import { PaymentsModule } from "./modules/payments/payments.module";
 import { AssetsModule } from "./modules/assets/assets.module";
 import { UploadModule } from "./modules/upload/upload.module";
 import { SupabaseModule } from "./modules/supabase/supabase.module";
+import { RegistrationsModule } from "./modules/registrations/registrations.module";
+import { MeetGreetModule } from "./modules/meet-greet/meet-greet.module";
+import { EventActivitiesModule } from "./modules/event-activities/event-activities.module";
+import { ModerationModule } from "./modules/moderation/moderation.module";
+import { AdminModule } from "./modules/admin/admin.module";
+import { AdminReportsModule } from "./modules/admin-reports/admin-reports.module";
 import { HealthModule } from "./health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -55,6 +61,12 @@ import { LoggerModule } from "nestjs-pino";
     AssetsModule,
     UploadModule,
     SupabaseModule,
+    RegistrationsModule,
+    MeetGreetModule,
+    EventActivitiesModule,
+    ModerationModule,
+    AdminModule,
+    AdminReportsModule,
     HealthModule,
   ],
   controllers: [AppController],

@@ -3,8 +3,10 @@ import {
   Get,
   Post,
   Delete,
+  Patch,
   Param,
   Query,
+  Body,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -22,16 +24,72 @@ type User = any;
 export class FollowController {
   constructor(private readonly followService: FollowService) {}
 
+  // ---------- Event follow (must be before :entityId to avoid "event" captured as entityId) ----------
+  @Post("event/:eventId")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Follow an event (like / bookmark)" })
+  @ApiParam({ name: "eventId", type: String })
+  @ApiResponse({ status: 201, description: "Follow ensured" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 404, description: "Event not found" })
+  followEvent(@Param("eventId") eventId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
+    return this.followService.followEvent(user.id, eventId);
+  }
+  
+  @Delete("event/:eventId")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Unfollow an event" })
+  @ApiParam({ name: "eventId", type: String })
+  @ApiResponse({ status: 204, description: "Unfollow ensured" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  async unfollowEvent(@Param("eventId") eventId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
+    await this.followService.unfollowEvent(user.id, eventId);
+  }
+
+  @Get("event/status/:eventId")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Check if current user follows event and notify preference" })
+  @ApiParam({ name: "eventId", type: String })
+  @ApiResponse({ status: 200, description: "Follow status" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  async getEventFollowStatus(@Param("eventId") eventId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
+    const status = await this.followService.getEventFollowStatus(user.id, eventId);
+    return { eventId, userId: user.id, ...status };
+  }
+
+  @Patch("event/:eventId/notify")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Set notify/reminder preference" })
+  @ApiParam({ name: "eventId", type: String })
+  @ApiResponse({ status: 200, description: "Notify preference updated" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  setEventNotify(
+    @Param("eventId") eventId: string,
+    @Body("notify") notify: boolean,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.followService.setEventNotify(user.id, eventId, !!notify);
+  }
+  
+  // ---------- Entity follow ----------
   @Post(":entityId")
   @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Follow an entity (authenticated)" })
+  @ApiOperation({ summary: "Follow an entity" })
   @ApiParam({ name: "entityId", type: String })
-  @ApiResponse({ status: 201, description: "Successfully followed entity" })
+  @ApiResponse({ status: 201, description: "Follow ensured" })
   @ApiResponse({ status: 400, description: "Cannot follow own entity" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 404, description: "Entity not found" })
-  @ApiResponse({ status: 409, description: "Already following this entity" })
   followEntity(@Param("entityId") entityId: string, @CurrentUser() user: User) {
     assertFullUser(user);
     return this.followService.followEntity(user.id, entityId);
@@ -41,11 +99,10 @@ export class FollowController {
   @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: "Unfollow an entity (authenticated)" })
+  @ApiOperation({ summary: "Unfollow an entity" })
   @ApiParam({ name: "entityId", type: String })
-  @ApiResponse({ status: 204, description: "Successfully unfollowed entity" })
+  @ApiResponse({ status: 204, description: "Unfollow ensured" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  @ApiResponse({ status: 404, description: "Follow relationship not found" })
   unfollowEntity(@Param("entityId") entityId: string, @CurrentUser() user: User) {
     assertFullUser(user);
     return this.followService.unfollowEntity(user.id, entityId);

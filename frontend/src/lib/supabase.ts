@@ -38,6 +38,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 console.log("[supabase.ts] Supabase client created successfully.");
 
 // --------------------------------------------------
+// 🔑 Get current session access token for API calls
+// --------------------------------------------------
+export async function getAuthToken(): Promise<string | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
+}
+
+// --------------------------------------------------
 // 🧪 Optional: tiny helper to sanity-check auth
 // --------------------------------------------------
 export async function debugSupabaseAuthPing() {
@@ -50,6 +60,13 @@ export async function debugSupabaseAuthPing() {
     console.error("   💥 getSession threw:", err);
   }
 }
+
+
+
+
+
+
+
 
 
 

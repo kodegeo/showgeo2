@@ -9,6 +9,8 @@ import { useLiveKitRoom } from "../../hooks/useLiveKitRoom";
 import { LiveKitViewer } from "./LiveKitViewer";
 import { StreamingLive } from "../../components/streaming/StreamingLive";
 import { StreamingNotLive } from "../../components/streaming/StreamingNotLive";
+import { getPhaseCapabilities } from "@/utils/eventPhaseCapabilities";
+import type { EventPhase } from "@/types/eventPhase";
 
 
 type StreamingPanelProps = {
@@ -19,9 +21,10 @@ type StreamingPanelProps = {
       startTime?: string | null;
     };
     isEntity: boolean;
+    disableAutoJoin?: boolean; // ✅ Prevent auto-join when displayed in Event Dashboard
   };
 
-export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: StreamingPanelProps) {
+export function StreamingPanel({ eventId, isEntity: isEntityProp, event, disableAutoJoin = false }: StreamingPanelProps) {
   // ✅ CRITICAL FIX: All hooks must be called before any early returns
   // This ensures consistent hook order on every render (React production requirement)
   const { user } = useAuth();
@@ -77,6 +80,10 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
       ? new Date(event.startTime)
       : null;
 
+  // ✅ Phase-based capability check - computed early for use in effects
+  const eventPhase = event?.phase as EventPhase | undefined;
+  const capabilities = eventPhase ? getPhaseCapabilities(eventPhase) : null;
+
   // ✅ Fix 5: Wrap onJoin in useCallback to fix auto-join effect dependencies
   const onJoin = useCallback(async (opts?: { publish?: boolean; sessionOverride?: typeof session }) => {
         const activeSession = opts?.sessionOverride || session;
@@ -120,6 +127,13 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
           
           const streamRole: "BROADCASTER" | "VIEWER" = shouldPublish ? "BROADCASTER" : "VIEWER";
           
+          // Code of Conduct consent check for VIEWER role (required for LIVE events)
+          if (streamRole === "VIEWER" && user?.id) {
+            const { useConsentRequired } = await import("@/hooks/useConsent");
+            // Note: This is a synchronous check, but we need to check the actual user profile
+            // For now, let the backend handle the check and show modal on 403 error
+          }
+          
           // ✅ Temporary logging: request details before API call
           const tokenRequestBody: { streamRole: "BROADCASTER" | "VIEWER" } = { streamRole };
           console.log("[onJoin] About to call generateToken:", {
@@ -144,6 +158,15 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
               eventId,
               streamRole,
             });
+            
+            // ✅ Handle 403 Forbidden - stop retrying and show clear error
+            if (tokenError?.response?.status === 403) {
+              const errorMsg = "Streaming session not ready. Try again.";
+              console.error("[onJoin] 403 Forbidden - stopping retries:", errorMsg);
+              setStreamError(errorMsg);
+              hasRequestedTokenRef.current = false; // Reset guard to prevent retries
+              throw new Error(errorMsg);
+            }
             
             // Extract actual error message from backend if available
             let errorMsg = "Unable to connect to streaming server. Please check your connection and try again.";
@@ -328,7 +351,19 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
   
   // Auto-join creator as BROADCASTER when session is active but not connected
   // This enforces broadcaster-first workflow: creators start streaming immediately
+  // ✅ DISABLED in Event Dashboard context - streaming must be explicit
+  // ✅ Also disabled if streaming capability is not enabled for current phase
   useEffect(() => {
+    // ✅ Do not auto-join if disabled (e.g., in Event Dashboard)
+    if (disableAutoJoin) {
+      return;
+    }
+    
+    // ✅ Do not auto-join if streaming is not enabled for this phase
+    if (!capabilities?.streaming || eventPhase !== "LIVE") {
+      return;
+    }
+    
     // Viewers NEVER auto-generate tokens
     if (!canManageStream) {
       return;
@@ -353,7 +388,7 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
         autoJoinAttemptedRef.current = false;
       });
     }
-  }, [canManageStream, session?.id, session?.active, loading, connected, joining, onJoin]);
+  }, [disableAutoJoin, capabilities?.streaming, eventPhase, canManageStream, session?.id, session?.active, loading, connected, joining, onJoin]);
 
   // ✅ CRITICAL: Redirect useEffect must be BEFORE all early returns
   // This ensures hook order is consistent on every render
@@ -474,6 +509,37 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
     autoJoinAttemptedRef.current = false;
   };
 
+  // ✅ Phase-based streaming guard - Use centralized capabilities
+  // (capabilities and eventPhase are computed above, before useEffect)
+  
+  // ✅ Streaming only enabled in LIVE phase - guard all streaming actions
+  if (!capabilities?.streaming || eventPhase !== "LIVE") {
+    if (eventPhase === "POST_LIVE") {
+      return (
+        <div className="border border-gray-800 bg-[#0B0B0B] p-6 rounded-lg space-y-4">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-white mb-2">Event Ended</h3>
+            <p className="text-[#9A9A9A] font-body">
+              This event has completed. Streaming is no longer available.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    // PRE_LIVE: Show preparation state (streaming not yet available)
+    return (
+      <div className="border border-gray-800 bg-[#0B0B0B] p-6 rounded-lg space-y-4">
+        <p className="text-[#9A9A9A] font-body">Streaming will be available when the event goes live.</p>
+        {scheduledStart && (
+          <p className="text-xs text-gray-400">
+            Scheduled to start at{" "}
+            <span className="text-white">{scheduledStart.toLocaleString()}</span>
+          </p>
+        )}
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="border border-gray-800 p-4 rounded-lg text-sm text-gray-400">
@@ -490,8 +556,18 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
     );
   }
 
-  // State 1: No session → Show Go Live button
+  // State 1: No session → Show Go Live button (only if streaming capability enabled)
+  // ✅ Note: This state should only be reachable in LIVE phase due to early return above
   if (!session?.active) {
+    // ✅ Double-check: Only show Go Live if streaming is enabled for this phase
+    if (!capabilities?.streaming || !capabilities?.goLive) {
+      return (
+        <div className="border border-gray-800 bg-[#0B0B0B] p-6 rounded-lg space-y-4">
+          <p className="text-[#9A9A9A] font-body">Streaming is not available for this event phase.</p>
+        </div>
+      );
+    }
+
     return (
       <div className="border border-gray-800 bg-[#0B0B0B] p-6 rounded-lg space-y-4">
         <p className="text-[#9A9A9A] font-body">This event is not live yet.</p>
@@ -518,7 +594,8 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event }: Strea
           </div>
         )}
 
-        {canManageStream && (
+        {/* ✅ Go Live button - Only shown when goLive capability is enabled */}
+        {canManageStream && capabilities?.goLive && (
           <div className="flex gap-3">
             <button
               onClick={() => void onGoLive()}

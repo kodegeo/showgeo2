@@ -36,14 +36,14 @@ export function CreatorQuickActions() {
       label: "Manage Store",
       icon: <ShoppingBag className="w-5 h-5" />,
       type: "link",
-      path: "/creator/store",
+      path: "/studio/store",
       description: "View products and sales",
     },
     {
       label: "View Analytics",
       icon: <BarChart3 className="w-5 h-5" />,
       type: "link",
-      path: "/creator/analytics",
+      path: "/studio/analytics",
       description: "Track performance",
     },
     {

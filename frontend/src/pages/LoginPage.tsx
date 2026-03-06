@@ -5,15 +5,23 @@ import { useAuth } from "@/hooks/useAuth";
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { loginAsync, loginLoading, loginError } = useAuth();
+  const { loginAsync, loginLoading, loginError, isAuthenticated, isLoading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  // Get redirect path from location state or default to profile
-  const from = (location.state as { from?: string })?.from || "/profile";
+  // Redirect already-authenticated users
+  // AuthRedirect component will handle role-based redirect from "/login"
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      // AuthRedirect will handle the redirect based on role
+      // We just need to trigger it by staying on "/login" or navigating to "/"
+      // AuthRedirect watches both paths and will redirect appropriately
+      navigate("/", { replace: true });
+    }
+  }, [isAuthenticated, isLoading, navigate]);
   
   // Check for registration message in location state
   useEffect(() => {
@@ -31,16 +39,10 @@ export function LoginPage() {
     setError(null);
 
     try {
-      const result = await loginAsync({ email, password });
+      await loginAsync({ email, password });
       
-      // Wait a bit to ensure auth state is updated before navigating
-      // This prevents race conditions where ProtectedRoute checks auth before state is set
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Check if profile is complete - if not, redirect to setup
-      // For now, always go to /profile and let ProfileSetupGuard handle the redirect
-      const targetPath = from === "/profile" ? "/profile" : from;
-      navigate(targetPath, { replace: true });
+      // AuthRedirect component will handle role-based redirect after /auth/me resolves
+      // No need to manually navigate here - let the centralized handler do it
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to login. Please try again.";

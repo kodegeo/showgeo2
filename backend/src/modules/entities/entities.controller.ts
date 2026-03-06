@@ -10,8 +10,12 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UploadedFile,
+  UploadedFiles,
+  UseInterceptors,
 } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
+import { FileInterceptor, FileFieldsInterceptor } from "@nestjs/platform-express";
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery, ApiConsumes } from "@nestjs/swagger";
 import { EntitiesService } from "./entities.service";
 import { CreateEntityDto, UpdateEntityDto, AddCollaboratorDto, EntityQueryDto, CreatorApplicationDto } from "./dto";
 import { RolesGuard } from "../../common/guards";
@@ -26,21 +30,65 @@ type User = any;
 export class EntitiesController {
   constructor(private readonly entitiesService: EntitiesService) {}
 
-  @Post("creator-apply")
+  @Get("my-applications")
   @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
+  @ApiOperation({ 
+    summary: "Get current user's entity applications",
+    description: "Returns all entity applications for the authenticated user"
+  })
+  @ApiResponse({ status: 200, description: "User's entity applications" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  async getMyApplications(@CurrentUser() user: User) {
+    assertFullUser(user);
+    return this.entitiesService.getUserApplications(user.id);
+  }
+
+  @Post("creator-apply")
+  @UseGuards(SupabaseAuthGuard)
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: "proof", maxCount: 1 },
+    { name: "businessDoc", maxCount: 1 },
+    { name: "trademarkDoc", maxCount: 1 },
+  ], {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB max per file
+    },
+    // FileFieldsInterceptor is optional - files will be undefined if not present
+  }))
+  @ApiBearerAuth()
+  @ApiConsumes("multipart/form-data", "application/json")
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ 
     summary: "Apply to become a creator",
-    description: "Creates an Entity with PENDING status. User must wait for admin approval."
+    description: "Creates an Entity with PENDING status. User must wait for admin approval. Supports both JSON and multipart/form-data (with optional proof, businessDoc, and trademarkDoc files)."
   })
   @ApiResponse({ status: 201, description: "Creator application submitted successfully" })
-  @ApiResponse({ status: 400, description: "Bad request - user already has pending application" })
+  @ApiResponse({ status: 400, description: "Bad request - validation error, missing terms acceptance, or file upload failure" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 409, description: "Entity with this brand name already exists" })
-  async creatorApply(@Body() applicationDto: CreatorApplicationDto, @CurrentUser() user: User) {
+  async creatorApply(
+    @Body() applicationDto: CreatorApplicationDto,
+    @UploadedFiles() files: { proof?: Express.Multer.File[], businessDoc?: Express.Multer.File[], trademarkDoc?: Express.Multer.File[] } | undefined,
+    @CurrentUser() user: User
+  ) {
     assertFullUser(user);
-    return this.entitiesService.createCreatorApplication(applicationDto, user.id);
+    // Extract files from the files object (FileFieldsInterceptor returns an object with arrays)
+    const proofFile = files?.proof?.[0];
+    const businessDocFile = files?.businessDoc?.[0];
+    const trademarkDocFile = files?.trademarkDoc?.[0];
+    
+    // Files will be undefined if:
+    // 1. Request is JSON (application/json)
+    // 2. Request is multipart but no file field is present
+    // Service handles both cases gracefully
+    return this.entitiesService.createCreatorApplication(
+      applicationDto, 
+      user.id, 
+      proofFile,
+      businessDocFile,
+      trademarkDocFile
+    );
   }
 
   @Post()
@@ -60,17 +108,42 @@ export class EntitiesController {
   @Get()
   @Public()
   @ApiOperation({ summary: "Browse all entities (public)" })
+  @ApiQuery({ name: "q", required: false, type: String, description: "Search query (name or tags)" })
+  @ApiQuery({ name: "genre", required: false, type: String })
+  @ApiQuery({ name: "verified", required: false, type: String })
+  @ApiQuery({ name: "hasEvents", required: false, type: String })
+  @ApiQuery({ name: "sort", required: false, enum: ["newest", "most_followed", "trending"] })
+  @ApiQuery({ name: "page", required: false, type: Number })
+  @ApiQuery({ name: "limit", required: false, type: Number })
   @ApiQuery({ name: "search", required: false, type: String })
   @ApiQuery({ name: "type", required: false, enum: ["INDIVIDUAL", "ORGANIZATION"] })
   @ApiQuery({ name: "isVerified", required: false, type: Boolean })
   @ApiQuery({ name: "isPublic", required: false, type: Boolean })
   @ApiQuery({ name: "location", required: false, type: String })
   @ApiQuery({ name: "tag", required: false, type: String })
-  @ApiQuery({ name: "page", required: false, type: Number })
-  @ApiQuery({ name: "limit", required: false, type: Number })
   @ApiResponse({ status: 200, description: "List of entities" })
-  findAll(@Query() query: EntityQueryDto) {
-    return this.entitiesService.findAll(query);
+  async findAll(
+    @Query("q") q?: string,
+    @Query("genre") genre?: string,
+    @Query("verified") verified?: string,
+    @Query("hasEvents") hasEvents?: string,
+    @Query("sort") sort?: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+    @Query() query?: EntityQueryDto,
+  ) {
+    return this.entitiesService.findAll({
+      q: q ?? query?.search,
+      genre: genre ?? query?.tag,
+      verified: verified ?? (query?.isVerified !== undefined ? String(query.isVerified) : undefined),
+      hasEvents,
+      sort,
+      page: page ? parseInt(page, 10) : query?.page ?? 1,
+      limit: limit ? parseInt(limit, 10) : query?.limit ?? 12,
+      isPublic: query?.isPublic,
+      location: query?.location,
+      type: query?.type,
+    });
   }
 
   @Get("slug/:slug")

@@ -8,6 +8,7 @@ import {
     IsUrl,
     IsBoolean 
   } from "class-validator";
+  import { Transform } from "class-transformer";
   import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
   
   export enum CreatorCategory {
@@ -55,6 +56,17 @@ import {
         youtube: "https://youtube.com/channel/xyz",
       },
     })
+    @Transform(({ value }) => {
+      // Handle JSON string from multipart form data
+      if (typeof value === "string") {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
+      return value;
+    })
     @IsOptional()
     @IsObject()
     socialLinks?: Record<string, string>;
@@ -86,7 +98,44 @@ import {
         "Must be true — user acknowledges entity rules, brand legitimacy, and platform terms",
       example: true,
     })
+    @Transform(({ value }) => {
+      // Normalize boolean from string (multipart form data) or boolean
+      if (value === "true" || value === true) return true;
+      if (value === "false" || value === false) return false;
+      return value;
+    })
     @IsBoolean()
     termsAccepted: boolean;
+
+    @ApiPropertyOptional({
+      description: "Contact phone number for verification",
+      example: "+1 (555) 123-4567",
+    })
+    @IsOptional()
+    @IsString()
+    phone?: string;
+
+    @ApiPropertyOptional({
+      description: "Additional proof or evidence for the application",
+      example: {
+        verificationLink: "https://example.com/verification",
+        additionalInfo: "Any additional information",
+      },
+    })
+    @Transform(({ value }) => {
+      // Handle JSON string from multipart form data
+      if (typeof value === "string") {
+        try {
+          return JSON.parse(value);
+        } catch {
+          // If parsing fails, return as-is (might be a plain string)
+          return value;
+        }
+      }
+      return value;
+    })
+    @IsOptional()
+    @IsObject()
+    proof?: Record<string, any>;
   }
   

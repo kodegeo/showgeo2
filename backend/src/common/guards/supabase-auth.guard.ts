@@ -3,6 +3,7 @@ import {
     CanActivate,
     ExecutionContext,
     UnauthorizedException,
+    ForbiddenException,
   } from "@nestjs/common";
   import { AuthService } from "../../modules/auth/auth.service";
   
@@ -24,17 +25,27 @@ import {
       throw new UnauthorizedException("Invalid Authorization header format");
     }
 
-    // Validate the token with Supabase Auth
-    const user = await this.authService.verifySupabaseToken(token);
+    try {
+      // Validate the token with Supabase Auth
+      // This will throw ForbiddenException if user is disabled
+      const user = await this.authService.verifySupabaseToken(token);
 
-    if (!user) {
-      throw new UnauthorizedException("Invalid or expired token");
+      if (!user) {
+        throw new UnauthorizedException("Invalid or expired token");
+      }
+
+      // Attach user record to the request (may be full Prisma user or minimal user object)
+      req.user = user;
+
+      return true;
+    } catch (error) {
+      // Re-throw ForbiddenException (for disabled users) and UnauthorizedException
+      if (error instanceof ForbiddenException || error instanceof UnauthorizedException) {
+        throw error;
+      }
+      // For any other errors, throw UnauthorizedException
+      throw new UnauthorizedException("Authentication failed");
     }
-
-    // Attach user record to the request (may be full Prisma user or minimal user object)
-    req.user = user;
-
-    return true;
   }
   }
   

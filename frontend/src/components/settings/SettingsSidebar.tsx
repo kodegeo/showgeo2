@@ -59,6 +59,11 @@ export function SettingsSidebar() {
       icon: <SettingsIcon className="w-5 h-5" />,
     },
     {
+      label: "Notifications",
+      path: "/settings/notifications",
+      icon: <Bell className="w-5 h-5" />,
+    },
+    {
       label: "Become a Creator",
       path: "/settings/creator",
       icon: <Sparkles className="w-5 h-5" />,
@@ -71,12 +76,6 @@ export function SettingsSidebar() {
       label: "Security",
       path: "/settings/security",
       icon: <Lock className="w-5 h-5" />,
-      disabled: true,
-    },
-    {
-      label: "Notifications",
-      path: "/settings/notifications",
-      icon: <Bell className="w-5 h-5" />,
       disabled: true,
     },
     {
