@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { entitiesService } from "@/services";
 import type {
   QueryParams,
@@ -210,8 +209,7 @@ export function useUpdateEntityDraft() {
   return useMutation({
     mutationFn: async (params: { id: string; data: any }) => {
       const { id, data } = params;
-      const res = await axios.patch(`/api/entities/${id}`, data);
-      return res.data;
+      return entitiesService.update(id, data);
     },
 
     onSuccess: (_, variables) => {

@@ -4,6 +4,7 @@ import { MessageCircle, Send, Loader2 } from "lucide-react";
 import { chatService, type ChatMessage } from "@/services/chat.service";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
+import { getSocketIoOrigin } from "@/lib/apiBase";
 
 const FALLBACK_POLL_INTERVAL_MS = 5000;
 
@@ -47,16 +48,17 @@ export function EventChat({ eventId, className = "" }: EventChatProps) {
         data: { session },
       } = await supabase.auth.getSession();
       const token = session?.access_token ?? null;
-      const wsUrl = import.meta.env.VITE_WS_URL;
+      const socketOrigin = getSocketIoOrigin();
 
       // Initial load via HTTP (kept for fallback and history)
       await fetchMessages();
 
-      if (wsUrl && token) {
-        const socket = io(`${wsUrl}/chat`, {
+      if (socketOrigin && token) {
+        const socket = io(`${socketOrigin}/chat`, {
           auth: { token },
           transports: ["websocket"],
           reconnection: true,
+          withCredentials: true,
         });
 
         socket.on("connect", () => {

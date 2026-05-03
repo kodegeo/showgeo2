@@ -1,10 +1,11 @@
 import axios, { Axios, AxiosError, AxiosResponse } from "axios";
 import type { ApiError } from "./types";
 import { supabase } from "@/lib/supabase";
+import { getRestApiBaseUrl } from "@/lib/apiBase";
 import { isDevelopment } from "@/utils/env";
 
 export const apiClient = axios.create({
-  baseURL: "/api",
+  baseURL: getRestApiBaseUrl(),
   withCredentials: true,
   timeout: isDevelopment ? 10000 : 15000, // Longer timeout in dev to account for slower backend
 });
@@ -48,10 +49,11 @@ apiClient.interceptors.response.use(
       }
       // Don't redirect on network errors, just reject with helpful message
       return Promise.reject(
-        new Error(isDevelopment 
-          ? 'Backend unavailable. Is the server running on http://localhost:3000?'
-          : 'Service temporarily unavailable'
-        )
+        new Error(
+          isDevelopment
+            ? "Backend unavailable. Check the API server and VITE_API_URL / Vite proxy."
+            : "Service temporarily unavailable",
+        ),
       );
     }
 

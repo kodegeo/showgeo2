@@ -1,21 +1,25 @@
 import { io, type Socket } from "socket.io-client";
+import { getSocketIoOrigin } from "@/lib/apiBase";
 
 // Connects to the NestJS backend's /events WebSocket namespace.
-// This is separate from the legacy realtime service (socket-shared.ts → port 3001).
-//
-// In development: connects directly to the backend (port 3000).
-// In production: set VITE_BACKEND_URL to the deployed backend origin.
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:3000";
+// Set `VITE_API_URL` (absolute) or `VITE_WS_URL` so the origin can be resolved.
 
 let shared: Socket | null = null;
 
 export function getBackendEventSocket(): Socket {
   if (!shared) {
-    shared = io(`${backendUrl}/events`, {
+    const origin = getSocketIoOrigin();
+    if (!origin) {
+      throw new Error(
+        "Socket origin not configured: set VITE_API_URL (absolute URL) or VITE_WS_URL for production.",
+      );
+    }
+    shared = io(`${origin}/events`, {
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 2_000,
+      withCredentials: true,
     });
   }
   return shared;

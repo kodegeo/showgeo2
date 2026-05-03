@@ -1,8 +1,10 @@
 import axios from "axios";
 import { supabase } from "@/lib/supabase";
+import { getRestApiBaseUrl } from "@/lib/apiBase";
 
 export const api = axios.create({
-  baseURL: "/api",
+  baseURL: getRestApiBaseUrl(),
+  withCredentials: true,
 });
 
 // Some files may import default; support both:

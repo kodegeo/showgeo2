@@ -2,9 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar } from "lucide-react";
 import { getAuthToken } from "@/lib/supabase";
+import { apiUrl } from "@/lib/apiBase";
 import type { ProfileEvent } from "../../../../packages/shared/types/event.views";
-
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 interface EventCardProps {
   event: ProfileEvent & { entityId?: string };
@@ -32,7 +31,7 @@ export function EventCard({ event }: EventCardProps) {
     }
     try {
       const method = following ? "DELETE" : "POST";
-      await fetch(`${API}/api/follow/${entityId}`, {
+      await fetch(apiUrl(`/follow/${entityId}`), {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -56,7 +55,7 @@ export function EventCard({ event }: EventCardProps) {
     }
     try {
       const nextNotify = !notifyEnabled;
-      await fetch(`${API}/api/follow/event/${event.id}/notify`, {
+      await fetch(apiUrl(`/follow/event/${event.id}/notify`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

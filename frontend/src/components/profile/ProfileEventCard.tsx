@@ -3,9 +3,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, MapPin, Bookmark, Bell } from "lucide-react";
 import { getAuthToken } from "@/lib/supabase";
+import { apiUrl } from "@/lib/apiBase";
 import type { ProfileEvent } from "../../../../packages/shared/types/event.views";
-
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 interface Props {
   event: ProfileEvent & { entityId?: string; entityName?: string };
@@ -26,7 +25,7 @@ export function ProfileEventCard({ event }: Props) {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/follow/event/status/${event.id}`, {
+      const res = await fetch(apiUrl(`/follow/event/status/${event.id}`), {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });
@@ -59,7 +58,7 @@ export function ProfileEventCard({ event }: Props) {
     }
     try {
       if (isFollowing) {
-        await fetch(`${API}/api/follow/event/${event.id}`, {
+        await fetch(apiUrl(`/follow/event/${event.id}`), {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
           credentials: "include",
@@ -67,7 +66,7 @@ export function ProfileEventCard({ event }: Props) {
         setIsFollowing(false);
         setNotify(false);
       } else {
-        await fetch(`${API}/api/follow/event/${event.id}`, {
+        await fetch(apiUrl(`/follow/event/${event.id}`), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -93,7 +92,7 @@ export function ProfileEventCard({ event }: Props) {
     }
     try {
       const nextNotify = !notify;
-      const res = await fetch(`${API}/api/follow/event/${event.id}/notify`, {
+      const res = await fetch(apiUrl(`/follow/event/${event.id}/notify`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

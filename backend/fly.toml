@@ -1,4 +1,4 @@
-app = "backend-solitary-forest-2422"
+app = "showgeo"
 primary_region = "dfw"
 
 [build]

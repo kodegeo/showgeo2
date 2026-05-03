@@ -3,18 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { io, Socket } from "socket.io-client";
 import { notificationsService } from "@/services";
 import type { QueryParams, Notification } from "@/services";
+import { getSocketIoOrigin } from "@/lib/apiBase";
 import { isDevelopment } from "@/utils/env";
 
-
 export function useNotifications(params?: QueryParams & { unreadOnly?: boolean }) {
-  const isDevelopment = import.meta.env.DEV;
-  const WS_URL = import.meta.env.VITE_WS_URL;
-
-  // ✅ Guard INSIDE function
-  if (!WS_URL && !isDevelopment) {
-    console.warn("WebSocket notifications disabled in production");
-    return null;
-  }
   return useQuery({
     queryKey: ["notifications", params],
     queryFn: () => notificationsService.getAll(params),
@@ -64,12 +56,13 @@ export function useNotificationsSocket() {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const isDevelopment = import.meta.env.DEV;
-    const WS_URL = import.meta.env.VITE_WS_URL;
-    // Skip WebSocket in development if backend URL not configured
-    if (isDevelopment && !WS_URL) {
-      if (isDevelopment) {
-        console.warn("[useNotificationsSocket] WebSocket URL not configured, skipping connection");
+    const isDev = import.meta.env.DEV;
+    const socketOrigin = getSocketIoOrigin();
+    if (!socketOrigin) {
+      if (isDev) {
+        console.warn(
+          "[useNotificationsSocket] No WebSocket origin; set VITE_API_URL (absolute) or VITE_WS_URL.",
+        );
       }
       return;
     }
@@ -77,32 +70,32 @@ export function useNotificationsSocket() {
     const token = localStorage.getItem("accessToken");
     if (!token) return;
 
-    // Initialize WebSocket connection with better error handling
-    const newSocket = io(`${WS_URL}/notifications`, {
+    const newSocket = io(`${socketOrigin}/notifications`, {
       auth: { token },
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: isDevelopment ? 3 : 5, // Fewer retries in dev
-      timeout: isDevelopment ? 5000 : 10000, // Shorter timeout in dev
+      reconnectionAttempts: isDev ? 3 : 5,
+      timeout: isDev ? 5000 : 10000,
+      withCredentials: true,
     });
 
     newSocket.on("connect", () => {
       setIsConnected(true);
-      if (isDevelopment) {
+      if (isDev) {
         console.log("Connected to notifications WebSocket");
       }
     });
 
     newSocket.on("disconnect", (reason) => {
       setIsConnected(false);
-      if (isDevelopment) {
+      if (isDev) {
         console.log("Disconnected from notifications WebSocket:", reason);
       }
     });
 
     newSocket.on("connect_error", (error) => {
-      if (isDevelopment) {
+      if (isDev) {
         console.warn("[useNotificationsSocket] Connection error:", error.message);
       }
     });

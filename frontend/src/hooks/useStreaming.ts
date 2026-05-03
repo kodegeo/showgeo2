@@ -1,6 +1,7 @@
 // frontend/src/components/streaming/useStreaming.ts
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { apiUrl } from "@/lib/apiBase";
 import { isDevelopment } from "@/utils/env";
 
 export interface StreamingSession {
@@ -44,14 +45,18 @@ export function useStreaming(eventId: string) {
 
       // IMPORTANT: disable caching so we don't get 304/ETag stale state
       // Add both Cache-Control and Pragma headers to prevent all forms of caching
-      const res = await fetch(`/api/streaming/active?eventId=${encodeURIComponent(eventId)}`, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          "Cache-Control": "no-store, no-cache, must-revalidate",
-          "Pragma": "no-cache",
+      const res = await fetch(
+        apiUrl(`/streaming/active?eventId=${encodeURIComponent(eventId)}`),
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            Pragma: "no-cache",
+          },
+          credentials: "include",
+          cache: "no-store",
         },
-        cache: "no-store",
-      });
+      );
 
       // Handle 304 Not Modified: reuse last known state, but ensure loading is false
       if (res.status === 304) {
@@ -114,18 +119,20 @@ export function useStreaming(eventId: string) {
     };
 
     // Debug log before POST
+    const sessionUrl = apiUrl(`/streaming/session/${eventId}`);
     console.log("[useStreaming.createSession] Request details:", {
       eventId,
       requestBody,
-      url: `/api/streaming/session/${eventId}`,
+      url: sessionUrl,
     });
 
-    const res = await fetch(`/api/streaming/session/${eventId}`, {
+    const res = await fetch(sessionUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
+      credentials: "include",
       cache: "no-store",
       body: JSON.stringify(requestBody),
     });
@@ -188,14 +195,18 @@ export function useStreaming(eventId: string) {
   const getActiveSession = useCallback(async (): Promise<StreamingSession | null> => {
     const token = await getAuthToken();
 
-    const res = await fetch(`/api/streaming/active?eventId=${encodeURIComponent(eventId)}`, {
-      headers: { 
-        Authorization: `Bearer ${token}`,
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-        "Pragma": "no-cache",
+    const res = await fetch(
+      apiUrl(`/streaming/active?eventId=${encodeURIComponent(eventId)}`),
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+        credentials: "include",
+        cache: "no-store",
       },
-      cache: "no-store",
-    });
+    );
 
     // Handle 304: return null (no new data available)
     if (res.status === 304) {
@@ -219,9 +230,10 @@ export function useStreaming(eventId: string) {
   const endSession = useCallback(async (sessionId: string) => {
     const token = await getAuthToken();
 
-    await fetch(`/api/streaming/session/${sessionId}/end`, {
+    await fetch(apiUrl(`/streaming/session/${sessionId}/end`), {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
       cache: "no-store",
     });
 
