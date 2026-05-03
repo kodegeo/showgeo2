@@ -12,14 +12,16 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  // Redirect already-authenticated users
-  // AuthRedirect component will handle role-based redirect from "/login"
+  // Redirect already-authenticated users (deep link from e.g. event ticket flow)
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      // AuthRedirect will handle the redirect based on role
-      // We just need to trigger it by staying on "/login" or navigating to "/"
-      // AuthRedirect watches both paths and will redirect appropriately
-      navigate("/", { replace: true });
+      const returnTo = sessionStorage.getItem("showgeo_return_to");
+      if (returnTo) {
+        sessionStorage.removeItem("showgeo_return_to");
+        navigate(returnTo, { replace: true });
+        return;
+      }
+      navigate("/home", { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate]);
   
@@ -40,9 +42,6 @@ export function LoginPage() {
 
     try {
       await loginAsync({ email, password });
-      
-      // AuthRedirect component will handle role-based redirect after /auth/me resolves
-      // No need to manually navigate here - let the centralized handler do it
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to login. Please try again.";

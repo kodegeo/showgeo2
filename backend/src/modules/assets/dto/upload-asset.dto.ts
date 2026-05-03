@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsIn, IsBoolean, IsOptional, IsString, IsObject } from "class-validator";
+import { IsIn, IsBoolean, IsOptional, IsString, IsObject, ValidateIf } from "class-validator";
 import { Transform } from "class-transformer";
 import { RuntimeEnums, AssetType, AssetOwnerType } from "../../../common/runtime-enums";
 
@@ -8,13 +8,21 @@ export class UploadAssetDto {
   @IsIn(RuntimeEnums.AssetType)
   type: AssetType;
 
-  @ApiProperty({ description: "Owner type", enum: RuntimeEnums.AssetOwnerType, example: "USER" })
+  @ApiPropertyOptional({ description: "Owner type (required when eventId is not set)", enum: RuntimeEnums.AssetOwnerType, example: "USER" })
+  @ValidateIf((o) => !o.eventId)
   @IsIn(RuntimeEnums.AssetOwnerType)
-  ownerType: AssetOwnerType;
+  ownerType?: AssetOwnerType;
 
-  @ApiProperty({ description: "Owner ID (user or entity ID)" })
+  @ApiPropertyOptional({ description: "Owner ID (required when eventId is not set)" })
+  @ValidateIf((o) => !o.eventId)
   @IsString()
-  ownerId: string;
+  ownerId?: string;
+
+  /** When set, upload is stored at events/{eventId}/thumbnail.{ext} and event access is validated. Use with type IMAGE for event thumbnails. */
+  @ApiPropertyOptional({ description: "Event ID for event-scoped upload (e.g. event thumbnail)" })
+  @IsOptional()
+  @IsString()
+  eventId?: string;
 
   @ApiPropertyOptional({ description: "Whether asset is public", default: false })
   @Transform(({ value }) => {

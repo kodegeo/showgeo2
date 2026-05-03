@@ -21,20 +21,13 @@ import {
   UserRole,
   EntityType,
   Prisma,
+  EntityStatus,
 } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-
+import type { MulterFile } from "@/types/multer-file";
 
 type Entity = any;
-
-// Define EntityStatus locally to match Prisma schema
-type EntityStatus = "PENDING" | "APPROVED" | "REJECTED";
-const EntityStatusEnum = {
-  PENDING: "PENDING" as EntityStatus,
-  APPROVED: "APPROVED" as EntityStatus,
-  REJECTED: "REJECTED" as EntityStatus,
-};
 
 @Injectable()
 export class EntitiesService {
@@ -223,6 +216,9 @@ export class EntitiesService {
   }) {
     const where: any = {};
 
+    // Public browse: only live accounts (see /creators, discovery).
+    where.status = EntityStatus.ACTIVE;
+
     // Default: Only show public entities (backward compatible)
     if (filters.isPublic !== false) {
       where.isPublic = true;
@@ -252,7 +248,7 @@ export class EntitiesService {
     }
 
     if (filters.hasEvents === "true") {
-      where.events_events_entityIdToentities = {
+      where.events = {
         some: {
           startTime: { gte: new Date() },
         },
@@ -271,7 +267,8 @@ export class EntitiesService {
         break;
       case "most_followed":
       case "trending":
-        orderBy.follows = { _count: "desc" };
+        // entities has no direct follows relation (follows table uses target_id/target_type)
+        orderBy.createdAt = "desc";
         break;
       default:
         orderBy.createdAt = "desc";
@@ -283,32 +280,33 @@ export class EntitiesService {
     const skip = (page - 1) * limit;
     const take = limit;
     
-    const [data, total] = await this.prisma.$transaction([
+    const [rawData, total] = await this.prisma.$transaction([
       (this.prisma as any).entities.findMany({
         where,
         orderBy,
         skip,
         take,
         include: {
-          app_users: {
-            select: {
-              id: true,
-              email: true,
-              user_profiles: true,
-            },
-          },
           _count: {
             select: {
-              events_events_entityIdToentities: true,
-              tours_tours_primaryEntityIdToentities: true,
-              stores_stores_entityIdToentities: true,
-              follows: true,
+              events: true,
+              toursPrimaryEntity: true,
             },
           },
         },
       }),
       (this.prisma as any).entities.count({ where }),
     ]);
+
+    const data = rawData.map((entity: any) => ({
+      ...entity,
+      _count: {
+        ...entity._count,
+        // Keep legacy keys used by existing frontend cards.
+        events: entity?._count?.events ?? 0,
+        tours_tours_primaryEntityIdToentities: entity?._count?.toursPrimaryEntity ?? 0,
+      },
+    }));
 
     const pagination = {
       total,
@@ -334,7 +332,7 @@ export class EntitiesService {
    * @param subfolder Optional subfolder (e.g., "business-docs", "trademark-docs")
    */
   private async uploadDocumentFile(
-    file: Express.Multer.File,
+    file: MulterFile,
     userId: string,
     subfolder: string = "proof",
   ): Promise<string> {
@@ -417,9 +415,9 @@ export class EntitiesService {
   async createCreatorApplication(
     applicationDto: CreatorApplicationDto,
     userId: string,
-    proofFile?: Express.Multer.File,
-    businessDocFile?: Express.Multer.File,
-    trademarkDocFile?: Express.Multer.File,
+    proofFile?: MulterFile,
+    businessDocFile?: MulterFile,
+    trademarkDocFile?: MulterFile,
   ): Promise<Entity> {
     // Log request type
     const hasFiles = proofFile || businessDocFile || trademarkDocFile;
@@ -454,7 +452,7 @@ export class EntitiesService {
     const existingPending = await (this.prisma as any).entities.findFirst({
       where: {
         ownerId: userId,
-        status: EntityStatusEnum.PENDING,
+        status: EntityStatus.PENDING,
       } as any, // Type assertion needed until Prisma client is fully regenerated
     });
 
@@ -516,7 +514,7 @@ export class EntitiesService {
       slug,
       ownerId: userId,
       type: entityType,
-      status: EntityStatusEnum.PENDING,
+      status: EntityStatus.PENDING,
       isPublic: false,
       bio: purpose, // Map purpose → bio
       tags: [category],
@@ -542,7 +540,7 @@ export class EntitiesService {
     
     // Helper function to validate and upload a file
     const validateAndUploadFile = async (
-      file: Express.Multer.File | undefined,
+      file: MulterFile | undefined,
       fieldName: string,
       subfolder: string
     ): Promise<string | null> => {
@@ -800,35 +798,38 @@ export class EntitiesService {
    * Returns all applications for a specific user
    */
   async getUserApplications(userId: string): Promise<{ data: any[] }> {
-    const applications = await (this.prisma as any).entity_applications.findMany({
-      where: { owner_id: userId },
-      orderBy: { created_at: "desc" },
-      include: {
-        entities: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            status: true,
-          },
-        },
-      },
+    const applications = await this.prisma.entity_applications.findMany({
+      where: { ownerId: userId },
+      orderBy: { createdAt: "desc" },
     });
 
-    // Transform to camelCase for frontend
-    const applicationsWithDetails = applications.map((app: any) => ({
-      id: app.id,
-      entityId: app.entity_id,
-      ownerId: app.owner_id,
-      status: app.status,
-      reason: app.reason,
-      proof: app.proof,
-      createdAt: app.created_at,
-      updatedAt: app.updated_at,
-      entityName: app.entities?.name || null,
-      entitySlug: app.entities?.slug || null,
-      entityStatus: app.entities?.status || null,
-    }));
+    const entityIds = [...new Set(applications.map((a) => a.entityId).filter(Boolean))];
+    const entities =
+      entityIds.length > 0
+        ? await this.prisma.entities.findMany({
+            where: { id: { in: entityIds } },
+            select: { id: true, name: true, slug: true, status: true },
+          })
+        : [];
+    const entityMap = new Map(entities.map((e) => [e.id, e]));
+
+    // Transform to camelCase for frontend (Prisma returns camelCase when schema uses @map)
+    const applicationsWithDetails = applications.map((app) => {
+      const ent = entityMap.get(app.entityId);
+      return {
+        id: app.id,
+        entityId: app.entityId,
+        ownerId: app.ownerId,
+        status: app.status,
+        reason: app.reason,
+        proof: app.proof,
+        createdAt: app.createdAt,
+        updatedAt: app.updatedAt,
+        entityName: ent?.name ?? null,
+        entitySlug: ent?.slug ?? null,
+        entityStatus: ent?.status ?? null,
+      };
+    });
 
     return { data: applicationsWithDetails };
   }
@@ -887,7 +888,7 @@ export class EntitiesService {
             },
           },
         },
-        events_events_entityIdToentities: {
+        events: {
           select: {
             id: true,
             name: true,
@@ -925,10 +926,9 @@ export class EntitiesService {
         },
         _count: {
           select: {
-            events_events_entityIdToentities: true,
+            events: true,
             tours_tours_primaryEntityIdToentities: true,
             stores_stores_entityIdToentities: true,
-            follows: true,
           },
         },
       },

@@ -12,6 +12,8 @@ import {
   HttpStatus,
   ForbiddenException,
   Req,
+  Logger,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { UsersService } from "./users.service";
@@ -28,6 +30,8 @@ type User = any;
 @ApiTags("users")
 @Controller("users")
 export class UsersController {
+  private readonly logger = new Logger(UsersController.name);
+
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
@@ -68,6 +72,23 @@ export class UsersController {
     // TODO: Verify Supabase JWT token from Authorization header
     // For now, we'll trust the frontend (in production, verify Supabase token)
     return this.usersService.findByAuthUserId(authUserId);
+  }
+
+  @Post("accept-code-of-conduct")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Record Code of Conduct acceptance (required for live streaming token)" })
+  @ApiResponse({ status: 200, description: "Consent saved on user profile" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 404, description: "User not found" })
+  acceptCodeOfConduct(@CurrentUser() user: User) {
+    if (!user?.id) {
+      this.logger.warn("[acceptCodeOfConduct] Missing user.id on request after guard");
+      throw new UnauthorizedException("Authentication required");
+    }
+    this.logger.log(`[acceptCodeOfConduct] userId=${user.id}`);
+    assertFullUser(user);
+    return this.usersService.acceptCodeOfConduct(user.id);
   }
 
   @Get(":id")

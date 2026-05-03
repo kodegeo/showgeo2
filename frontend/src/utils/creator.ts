@@ -33,5 +33,9 @@ export function isCreator(
   return hasEntities;
 }
 
-
+/** Creator redirect without async entity list (e.g. /home routing). */
+export function isCreatorForRouting(user: User | null | undefined): boolean {
+  if (!user) return false;
+  return user.role === UserRole.ENTITY || user.isEntity === true;
+}
 

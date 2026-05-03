@@ -24,7 +24,7 @@ async function main() {
       id: eventId,
       name: "DJ Yessir – Live Test Stream",
       description: "Streaming test for real entity user",
-      entities_events_entityIdToentities: { connect: { id: entityId } },
+      entityId,
       eventType: "LIVE",
       phase: EventPhase.PRE_LIVE,
       status: EventStatus.SCHEDULED,

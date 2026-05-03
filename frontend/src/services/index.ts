@@ -11,14 +11,19 @@ export { entitiesService } from "./entities.service";
 export { eventsService } from "./events.service";
 export { followService } from "./follow.service";
 export { storeService } from "./store.service";
-export { streamingService } from "./streaming.service";
+export {
+  streamingService,
+  StreamingTokenError,
+  CODE_OF_CONDUCT_REQUIRED,
+} from "./streaming.service";
 export { notificationsService } from "./notifications.service";
 export { analyticsService } from "./analytics.service";
 export { assetsService } from "./assets.service";
 export { postsService } from "./posts.service";
 export { fansService } from "./fans.service";
-export { paymentsService} from "./payments.service";
+export { paymentsService } from "./payments.service";
 export { mailboxService } from "./mailbox.service";
+export { registrationsService } from "./registrations.service";
 export { eventActivitiesService } from "./event-activities.service";
 export { meetGreetService } from "./meet-greet.service";
 
@@ -74,6 +79,7 @@ export type {
   StreamingSession,
   LivekitTokenResponse,
   UpdateMetricsRequest as UpdateStreamingMetricsRequest,
+  StreamingTokenErrorCode,
 } from "./streaming.service";
 
 export type { Notification, NotificationResponse } from "./notifications.service";

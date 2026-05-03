@@ -1,12 +1,15 @@
 import { Module } from "@nestjs/common";
-// TODO: Implement ToursModule
-// This module will manage tour collections
+import { ToursController } from "./tours.controller";
+import { ToursService } from "./tours.service";
+import { PrismaModule } from "../../prisma/prisma.module";
+import { AuthModule } from "../auth/auth.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
-  imports: [],
-  controllers: [],
-  providers: [],
-  exports: [],
+  imports: [PrismaModule, AuthModule, NotificationsModule],
+  controllers: [ToursController],
+  providers: [ToursService],
+  exports: [ToursService],
 })
 export class ToursModule {}
 

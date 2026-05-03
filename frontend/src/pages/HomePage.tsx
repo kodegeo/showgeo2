@@ -1,14 +1,26 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserEntities } from "@/hooks/useUsers";
+import { isCreator } from "@/utils/creator";
+import { UserRole } from "../../../packages/shared/types";
 import Navigation from "@/components/Navigation/Navigation";
 import { Footer } from "@/components/Footer";
 
 export function HomePage() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const { data: entitiesData } = useUserEntities(user?.id || "");
+  const hasEntities =
+    entitiesData && (entitiesData.owned?.length > 0 || entitiesData.managed?.length > 0);
+  const userIsCreator = !isLoading && isAuthenticated && isCreator(user, hasEntities);
 
   // Don't block render while auth is loading - show page with default (unauthenticated) state
   // The page will update when auth state resolves
   const showAuthenticated = !isLoading && isAuthenticated;
+
+  // Fans (USER): marketing home is not their default — send them to profile.
+  if (!isLoading && isAuthenticated && user?.role === UserRole.USER) {
+    return <Navigate to="/profile" replace />;
+  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 pt-20 md:pt-24">
@@ -81,10 +93,12 @@ export function HomePage() {
                 </>
               ) : (
                 <Link
-                  to="/dashboard"
+                  to={userIsCreator ? "/studio/overview" : "/profile"}
                   className="px-8 py-4 bg-brand-red text-white rounded-lg hover:bg-brand-red/90 transition-all duration-300 font-heading font-semibold text-lg shadow-2xl hover:shadow-brand-red/50 transform hover:scale-105 hover:-translate-y-1 uppercase tracking-wider relative overflow-hidden group"
                 >
-                  <span className="relative z-10">Go to Dashboard</span>
+                  <span className="relative z-10">
+                    {userIsCreator ? "Go to Dashboard" : "Go to Profile"}
+                  </span>
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
                 </Link>
               )}

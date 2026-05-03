@@ -110,6 +110,15 @@ export const usersService = {
   },
 
   /**
+   * Record Code of Conduct acceptance (merges preferences.consent server-side).
+   * Prefer this over PATCH-only preferences when the user may not have a profile row yet.
+   */
+  async acceptCodeOfConduct(): Promise<{ success: true }> {
+    const response = await apiClient.post<{ success: true }>("/users/accept-code-of-conduct");
+    return response.data;
+  },
+
+  /**
    * Convert user to entity (create first entity)
    */
   async convertToEntity(userId: string, data: ConvertToEntityRequest): Promise<Entity> {

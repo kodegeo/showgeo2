@@ -1,9 +1,12 @@
-// frontend/src/pages/creator/events/EventLivePage.tsx
+// Studio live broadcast — mounted outside CreatorDashboardLayout (see App.tsx)
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import axios from "axios";
 import { useStreaming } from "@/hooks/useStreaming";
 import { useAuth } from "@/hooks/useAuth";
 import { useLiveKitRoom } from "@/hooks/useLiveKitRoom";
+import { useEvent } from "@/hooks/useEvents";
+import { useEntityContext } from "@/hooks/useEntityContext";
 import { streamingService } from "@/services";
 import { joinStream } from "@/lib/livekit/joinStream";
 // Removed publishLocal import - using setCameraEnabled/setMicrophoneEnabled instead
@@ -13,7 +16,9 @@ export function EventLivePage() {
   const { id: eventId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { session, loading: sessionLoading, refetch, getActiveSession, endSession } = useStreaming(eventId!);
+  const { data: event, isLoading: eventLoading } = useEvent(eventId!);
+  const { currentEntity } = useEntityContext();
+  const { session, loading: sessionLoading, endSession } = useStreaming(eventId!);
   const { room, setRoom, connected } = useLiveKitRoom();
 
   const [joining, setJoining] = useState(false);
@@ -22,16 +27,15 @@ export function EventLivePage() {
   const [localTracks, setLocalTracks] = useState<any[]>([]);
   const hasRequestedTokenRef = useRef(false);
 
-  // Determine if user is broadcaster
   const isBroadcaster = !!(
-    user?.isEntity ||
     user?.role === "ADMIN" ||
-    user?.role === "COORDINATOR"
+    user?.role === "COORDINATOR" ||
+    (event && currentEntity && event.entityId === currentEntity.id)
   );
 
   // Join LiveKit room
   const handleJoin = useCallback(async () => {
-    if (!eventId || !session || hasRequestedTokenRef.current) {
+    if (!eventId || !session || !event || hasRequestedTokenRef.current) {
       return;
     }
 
@@ -94,13 +98,25 @@ export function EventLivePage() {
       hasRequestedTokenRef.current = false;
     } catch (error) {
       console.error("[EventLivePage] Join failed:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to join stream";
+      let errorMessage = error instanceof Error ? error.message : "Failed to join stream";
+      if (axios.isAxiosError(error) && error.response?.status === 403) {
+        const data = error.response.data as { message?: string | string[] } | undefined;
+        const msg = Array.isArray(data?.message)
+          ? data.message[0]
+          : typeof data?.message === "string"
+            ? data.message
+            : "";
+        if (msg.toLowerCase().includes("not live")) {
+          errorMessage =
+            "This event is not in a live window yet. Open the event dashboard and use Go Live when you are ready, then return here.";
+        }
+      }
       setJoinError(errorMessage);
-      hasRequestedTokenRef.current = false;
+      // Keep hasRequestedTokenRef true so auto-join does not loop on 403; use Retry to try again.
     } finally {
       setJoining(false);
     }
-  }, [eventId, session, isBroadcaster, room, connected, setRoom]);
+  }, [eventId, session, event, isBroadcaster, room, connected, setRoom]);
 
   // Auto-join when session becomes active
   useEffect(() => {
@@ -108,7 +124,7 @@ export function EventLivePage() {
       console.log("[EventLivePage] Auto-joining room");
       handleJoin();
     }
-  }, [session?.active, connected, joining, handleJoin]);
+  }, [session?.active, connected, joining, handleJoin, event]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -149,16 +165,16 @@ export function EventLivePage() {
       }
 
       // Navigate away
-      navigate(`/creator/events/${eventId}`);
+      navigate(`/studio/events/${eventId}/dashboard`);
     } catch (error) {
       console.error("[EventLivePage] Failed to end stream:", error);
       // Still navigate away even if end fails
-      navigate(`/creator/events/${eventId}`);
+      navigate(`/studio/events/${eventId}/dashboard`);
     }
   }, [session, room, localTracks, isBroadcaster, eventId, navigate, setRoom]);
 
-    // Loading OR session not yet hydrated
-    if (sessionLoading || session === null) {
+    // Loading OR session/event not yet hydrated
+    if (sessionLoading || eventLoading || session === null || !event) {
         return (
         <div className="min-h-screen bg-[#0B0B0B] flex items-center justify-center text-gray-400">
             <div className="text-center">
@@ -182,7 +198,7 @@ export function EventLivePage() {
             <div className="text-center text-gray-400 p-6">
             <p className="mb-4">No active stream for this event.</p>
             <button
-                onClick={() => navigate(`/creator/events/${eventId}`)}
+                onClick={() => navigate(`/studio/events/${eventId}/dashboard`)}
                 className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700"
             >
                 Go Back
@@ -204,7 +220,11 @@ export function EventLivePage() {
             <div className="mt-4 text-red-400 text-sm">
               <p>{joinError}</p>
               <button
-                onClick={handleJoin}
+                onClick={() => {
+                  hasRequestedTokenRef.current = false;
+                  setJoinError(null);
+                  void handleJoin();
+                }}
                 className="mt-2 px-4 py-2 bg-[#CD000E] text-white rounded-lg hover:bg-[#860005]"
               >
                 Retry
@@ -224,6 +244,7 @@ export function EventLivePage() {
         session={session}
         isBroadcaster={isBroadcaster}
         onEndStream={handleEndStream}
+        showViewerSidebar={!isBroadcaster}
       />
     </div>
   );

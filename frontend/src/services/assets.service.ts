@@ -1,6 +1,7 @@
 import { apiClient } from "./api";
 import type { PaginatedResponse, QueryParams } from "./types";
 import type { Asset, AssetType, AssetOwnerType } from "../../../packages/shared/types";
+import type { Event } from "@/types/event.types";
 
 export interface UploadAssetRequest {
   file: File;
@@ -74,6 +75,36 @@ export const assetsService = {
    */
   async delete(id: string): Promise<void> {
     await apiClient.delete(`/assets/${id}`);
+  },
+
+  /**
+   * Upload event thumbnail (entity-owned asset; metadata ties to event id)
+   */
+  async uploadEventThumbnail(file: File, eventId: string): Promise<Asset> {
+    const { data: ev } = await apiClient.get<Event>(`/events/${eventId}`);
+    return this.upload({
+      file,
+      type: "IMAGE" as AssetType,
+      ownerType: "ENTITY" as AssetOwnerType,
+      ownerId: ev.entityId,
+      isPublic: true,
+      metadata: { purpose: "event-thumbnail", eventId },
+    });
+  },
+
+  /**
+   * Upload event banner / hero image for custom branding
+   */
+  async uploadEventBanner(file: File, eventId: string): Promise<Asset> {
+    const { data: ev } = await apiClient.get<Event>(`/events/${eventId}`);
+    return this.upload({
+      file,
+      type: "IMAGE" as AssetType,
+      ownerType: "ENTITY" as AssetOwnerType,
+      ownerId: ev.entityId,
+      isPublic: true,
+      metadata: { purpose: "event-banner", eventId },
+    });
   },
 };
 

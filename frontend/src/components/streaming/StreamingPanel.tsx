@@ -394,8 +394,8 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event, disable
   // This ensures hook order is consistent on every render
   useEffect(() => {
     if (connected && room && canManageStream) {
-      console.log("[StreamingPanel] Connected, redirecting to live page");
-      navigate(`/events/${eventId}/live`, { replace: true });
+      console.log("[StreamingPanel] Connected, redirecting to studio creator live page");
+      navigate(`/studio/events/${eventId}/live`, { replace: true });
     }
   }, [connected, room, canManageStream, navigate, eventId]);
             
@@ -472,9 +472,9 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event, disable
       try {
         await onJoin({ publish: true, sessionOverride: activeSessionToUse });
         
-        // ✅ Redirect to live page after successful join
-        console.log("[onGoLive] Join successful, redirecting to live page");
-        navigate(`/events/${eventId}/live`, { replace: true });
+        // ✅ Creator dashboard → studio live surface (not /events/:id/live, which is the fan watch URL)
+        console.log("[onGoLive] Join successful, redirecting to studio creator live page");
+        navigate(`/studio/events/${eventId}/live`, { replace: true });
       } catch (joinError) {
         // ✅ Ensure joining state is cleared if joinStream throws
         console.error("[onGoLive] Join failed:", joinError);
@@ -717,7 +717,7 @@ export function StreamingPanel({ eventId, isEntity: isEntityProp, event, disable
   }
 
   // State 3: Connected → Redirect to live page
-  // After successful join, user should be redirected to /events/:eventId/live
+  // After successful join, creators are redirected to /studio/events/:eventId/live
   // This state should not normally be reached if redirect works correctly
   // ✅ Redirect useEffect is now at the top (before early returns) to ensure consistent hook order
   if (connected && room) {

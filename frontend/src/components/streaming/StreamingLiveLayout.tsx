@@ -13,6 +13,8 @@ type StreamingLiveLayoutProps = {
   session: StreamingSession;
   isBroadcaster: boolean;
   onEndStream?: () => void;
+  /** When false, hides the viewers / reactions rail (e.g. broadcaster full-width stage). Default true. */
+  showViewerSidebar?: boolean;
 };
 
 export function StreamingLiveLayout({
@@ -20,6 +22,7 @@ export function StreamingLiveLayout({
   session,
   isBroadcaster,
   onEndStream,
+  showViewerSidebar = true,
 }: StreamingLiveLayoutProps) {
   const [isPaused, setIsPaused] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
@@ -90,8 +93,8 @@ export function StreamingLiveLayout({
           />
         </div>
 
-        {/* SIDEBAR - Right Side (Viewers/Reactions) */}
-        <ViewerSidebar room={room} />
+        {/* Right rail: viewers / reactions (omit when full-width broadcast) */}
+        {showViewerSidebar ? <ViewerSidebar room={room} /> : null}
       </div>
 
       {/* Reaction Overlay - Floating emojis */}

@@ -5,13 +5,20 @@ import { AuthAliasController } from "./auth-alias.controller";
 import { AuthService } from "./auth.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
+import { OptionalSupabaseAuthGuard } from "../../common/guards/optional-supabase-auth.guard";
 import { DevOnlyGuard } from "../../common/guards/dev-only.guard";
 
 @Module({
   imports: [ConfigModule],
   // Register real controller first to ensure /api/auth/* routes are matched before alias routes
   controllers: [AuthController, AuthAliasController],
-  providers: [AuthService, PrismaService, SupabaseAuthGuard, DevOnlyGuard],
-  exports: [AuthService, SupabaseAuthGuard],
+  providers: [
+    AuthService,
+    PrismaService,
+    SupabaseAuthGuard,
+    OptionalSupabaseAuthGuard,
+    DevOnlyGuard,
+  ],
+  exports: [AuthService, SupabaseAuthGuard, OptionalSupabaseAuthGuard],
 })
 export class AuthModule {}

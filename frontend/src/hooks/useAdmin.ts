@@ -338,3 +338,30 @@ export function useBanApplication() {
   });
 }
 
+/**
+ * Admin stream sessions (LiveKit + DB, reconciled on each fetch)
+ */
+export function useAdminStreamSessions() {
+  return useQuery({
+    queryKey: ["admin", "stream-sessions"],
+    queryFn: () => adminService.getStreamSessionsMonitoring(),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useResolveStreamSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => adminService.resolveStreamSession(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "stream-sessions"] });
+    },
+  });
+}
+
+export function useAdminSystemAudit() {
+  return useQuery({
+    queryKey: ["admin", "system-audit"],
+    queryFn: () => adminService.runSystemAudit(),
+  });
+}

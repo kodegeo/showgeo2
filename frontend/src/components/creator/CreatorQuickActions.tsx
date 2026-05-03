@@ -1,13 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import {
-  Calendar,
-  ShoppingBag,
-  BarChart3,
-  Video,
-  FileText,
-  UploadCloud,
-  UserCog,
-} from "lucide-react";
+import { ShoppingBag, BarChart3, FileText, UploadCloud, UserCog } from "lucide-react";
 import { useModalContext } from "@/state/creator/modalContext";
 
 interface QuickAction {
@@ -26,13 +18,6 @@ export function CreatorQuickActions() {
 
   const quickActions: QuickAction[] = [
     {
-      label: "Create Event",
-      icon: <Calendar className="w-5 h-5" />,
-      type: "modal",
-      action: () => openModal("createEvent"),
-      description: "Schedule a new event",
-    },
-    {
       label: "Manage Store",
       icon: <ShoppingBag className="w-5 h-5" />,
       type: "link",
@@ -45,13 +30,6 @@ export function CreatorQuickActions() {
       type: "link",
       path: "/studio/analytics",
       description: "Track performance",
-    },
-    {
-      label: "Start Stream",
-      icon: <Video className="w-5 h-5" />,
-      type: "modal",
-      action: () => openModal("startStream"),
-      description: "Go live now",
     },
     {
       label: "Manage Posts",

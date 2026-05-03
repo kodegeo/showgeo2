@@ -1,5 +1,23 @@
 import { apiClient } from "./api";
 
+/** Thrown when token generation fails with a typed reason (e.g. CoC, access). */
+export const CODE_OF_CONDUCT_REQUIRED = "CODE_OF_CONDUCT_REQUIRED" as const;
+
+export type StreamingTokenErrorCode =
+  | typeof CODE_OF_CONDUCT_REQUIRED
+  | "ACCESS_DENIED"
+  | "INVALID_TICKET";
+
+export class StreamingTokenError extends Error {
+  readonly code: StreamingTokenErrorCode;
+
+  constructor(code: StreamingTokenErrorCode, message?: string) {
+    super(message ?? code);
+    this.name = "StreamingTokenError";
+    this.code = code;
+    Object.setPrototypeOf(this, StreamingTokenError.prototype);
+  }
+}
 
 export interface CreateSessionRequest {
   accessLevel?: "PUBLIC" | "REGISTERED" | "TICKETED";

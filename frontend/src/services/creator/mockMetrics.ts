@@ -27,6 +27,10 @@ export interface DashboardMetrics {
     engagementScore: number;
     totalStreams: number;
     totalPosts: number;
+    /** Mock stand-in until ticket sales API exists */
+    totalTicketsSold: number;
+    /** Mock stand-in until registrations API exists */
+    totalRegistrations: number;
   };
   events: {
     upcoming: number;
@@ -94,6 +98,8 @@ export function generateMockMetrics(
       engagementScore: Math.floor(75 + Math.random() * 20),
       totalStreams: Math.floor(baseEvents * 0.6),
       totalPosts: Math.floor(45 * multiplier),
+      totalTicketsSold: Math.floor(120 * multiplier + Math.random() * 40),
+      totalRegistrations: Math.floor(baseFollowers * 0.15 + Math.random() * 50),
     },
     events: {
       upcoming: Math.floor(baseEvents * 0.3),

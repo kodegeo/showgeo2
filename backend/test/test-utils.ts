@@ -152,17 +152,17 @@ export class TestUtils {
           return Promise.resolve(
             mockData.follows.find(
               (f) =>
-                (f.userId === where.userId_entityId?.userId && f.entityId === where.userId_entityId?.entityId) ||
-                f.id === where.id,
+                (f.userId === (where as any).userId_targetId_targetType?.userId && f.targetId === (where as any).userId_targetId_targetType?.targetId) ||
+                f.id === (where as any).id,
             ) || null,
           );
         }),
         findMany: jest.fn(({ where }) => {
-          if (where.entityId) {
-            return Promise.resolve(mockData.follows.filter((f) => f.entityId === where.entityId));
+          if ((where as any).targetId) {
+            return Promise.resolve(mockData.follows.filter((f) => f.targetId === (where as any).targetId));
           }
-          if (where.userId) {
-            return Promise.resolve(mockData.follows.filter((f) => f.userId === where.userId));
+          if ((where as any).userId) {
+            return Promise.resolve(mockData.follows.filter((f) => f.userId === (where as any).userId));
           }
           return Promise.resolve(mockData.follows);
         }),
@@ -173,7 +173,7 @@ export class TestUtils {
         }),
         delete: jest.fn(({ where }) => {
           const index = mockData.follows.findIndex(
-            (f) => f.userId === where.userId_entityId?.userId && f.entityId === where.userId_entityId?.entityId,
+            (f) => f.userId === (where as any).userId_targetId_targetType?.userId && f.targetId === (where as any).userId_targetId_targetType?.targetId,
           );
           if (index >= 0) {
             mockData.follows.splice(index, 1);
@@ -182,11 +182,11 @@ export class TestUtils {
           return Promise.resolve(null);
         }),
         count: jest.fn(({ where }) => {
-          if (where.entityId) {
-            return Promise.resolve(mockData.follows.filter((f) => f.entityId === where.entityId).length);
+          if ((where as any).targetId) {
+            return Promise.resolve(mockData.follows.filter((f) => f.targetId === (where as any).targetId).length);
           }
-          if (where.userId) {
-            return Promise.resolve(mockData.follows.filter((f) => f.userId === where.userId).length);
+          if ((where as any).userId) {
+            return Promise.resolve(mockData.follows.filter((f) => f.userId === (where as any).userId).length);
           }
           return Promise.resolve(mockData.follows.length);
         }),

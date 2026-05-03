@@ -10,6 +10,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -49,6 +50,31 @@ type User = any;
 @Controller("admin")
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  @Post("streams/cleanup")
+  async cleanup() {
+    return this.adminService.cleanupStaleStreams();
+  }
+
+  @Post("events/:eventId/streaming/finalize-handoff")
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles("ADMIN")
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "End all active streaming sessions for an event (Admin only)",
+    description:
+      "Tears down zombie sessions so creators, viewers, and coordinators can obtain fresh LiveKit tokens for the next run.",
+  })
+  @ApiParam({ name: "eventId", type: String })
+  @ApiResponse({ status: 200, description: "Sessions ended or none were active" })
+  async finalizeEventStreamingHandoff(
+    @Param("eventId", ParseUUIDPipe) eventId: string,
+    @Req() req?: Request & { user?: User },
+  ) {
+    assertFullUser(req?.user);
+    return this.adminService.finalizeEventStreamingHandoff(eventId, req.user.id);
+  }
 
   @Get("users")
   @UseGuards(SupabaseAuthGuard, RolesGuard)
@@ -392,6 +418,71 @@ export class AdminController {
   @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
   async getEntities() {
     return this.adminService.getEntities();
+  }
+
+  @Get("stream-sessions")
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles("ADMIN")
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Stream sessions after LiveKit reconciliation (Admin only)",
+    description: "Runs reconcile, returns sessions and staleCount.",
+  })
+  @ApiResponse({ status: 200, description: "sessions + staleCount" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
+  async getStreamSessions() {
+    return this.adminService.getStreamSessionsMonitoring();
+  }
+
+  @Post("stream-sessions/:id/resolve")
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles("ADMIN")
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Delete LiveKit room and end streaming session by id (Admin only)" })
+  @ApiParam({ name: "id", description: "streaming_sessions id" })
+  @ApiResponse({ status: 200, description: "Room deleted / session ended" })
+  @ApiResponse({ status: 400, description: "LiveKit not configured" })
+  @ApiResponse({ status: 404, description: "Session not found" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
+  async resolveStreamSession(
+    @Param("id", ParseUUIDPipe) sessionId: string,
+    @Req() req?: Request & { user?: User },
+  ) {
+    assertFullUser(req?.user);
+    return this.adminService.resolveStreamSession(sessionId, req.user.id);
+  }
+
+  @Post("streams/cleanup")
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles("ADMIN")
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "End stale active stream sessions (Admin only)",
+    description:
+      "For each active streaming_sessions row, ends the session when the LiveKit room is missing or reports zero participants.",
+  })
+  @ApiResponse({ status: 200, description: "checked and ended counts" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
+  async cleanupStaleStreams(@Req() req?: Request & { user?: User }) {
+    assertFullUser(req?.user);
+    return this.adminService.cleanupStaleStreams();
+  }
+
+  @Get("system-audit")
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles("ADMIN")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Run system audit (streaming, events, messaging) — Admin only" })
+  @ApiResponse({ status: 200, description: "Structured audit result" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Forbidden - Admin only" })
+  async getSystemAudit() {
+    return this.adminService.runSystemAudit();
   }
 
   @Patch("entities/:id/suspend")

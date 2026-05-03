@@ -552,7 +552,7 @@ model entities {
   app_users                             app_users             @relation(fields: [ownerId], references: [id])
   entity_applications                   entity_applications[]
   entity_roles                          entity_roles[]
-  events_events_entityIdToentities      events[]              @relation("events_entityIdToentities")
+  events                                 events[]              @relation("events_entityIdToentities")
   notifications                         notifications[]
   orders                                orders[]
   stores_stores_entityIdToentities      stores[]              @relation("stores_entityIdToentities")
@@ -566,20 +566,20 @@ model entities {
 }
 
 model entity_applications {
-  id         String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  entity_id  String
-  owner_id   String
-  status     entity_application_status @default(PENDING)
-  reason     String?
-  proof      Json?
-  created_at DateTime                  @default(now()) @db.Timestamptz(6)
-  updated_at DateTime                  @default(now()) @db.Timestamptz(6)
-  phone      String?
-  entities   entities                  @relation(fields: [entity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  app_users  app_users                 @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id        String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityId  String                    @map("entity_id")
+  ownerId   String                    @map("owner_id")
+  status    entity_application_status @default(PENDING)
+  reason    String?
+  proof     Json?
+  createdAt DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime                  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  phone     String?
+  entities  entities                  @relation(fields: [entityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  app_users app_users                 @relation(fields: [ownerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([entity_id])
-  @@index([owner_id])
+  @@index([entityId])
+  @@index([ownerId])
   @@index([status])
   @@index([phone], map: "idx_entity_applications_phone")
   @@schema("public")
@@ -653,7 +653,7 @@ model events {
   analytics_summaries                analytics_summaries[]
   chat_rooms                         chat_rooms[]
   event_roles                        event_roles[]
-  entities_events_entityIdToentities entities               @relation("events_entityIdToentities", fields: [entityId], references: [id])
+  entity                                entities              @relation("events_entityIdToentities", fields: [entityId], references: [id])
   app_users                          app_users?             @relation(fields: [eventCoordinatorId], references: [id])
   tours                              tours?                 @relation(fields: [tourId], references: [id])
   geofencing                         geofencing?
@@ -667,16 +667,16 @@ model events {
 }
 
 model follows {
-  id          String             @id
-  user_id     String
-  target_id   String
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime
-  target_type follow_target_type @default(ENTITY)
-  notify      Boolean?           @default(false)
+  id         String             @id
+  userId     String             @map("user_id")
+  targetId   String             @map("target_id")
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime
+  targetType  follow_target_type @default(ENTITY) @map("target_type")
+  notify     Boolean?           @default(false)
 
-  @@unique([user_id, target_id, target_type], map: "follows_unique")
-  @@unique([user_id, target_id], map: "follows_userId_entityId_key")
+  @@unique([userId, targetId, targetType], map: "follows_unique")
+  @@unique([userId, targetId], map: "follows_userId_entityId_key")
   @@schema("public")
 }
 
@@ -700,13 +700,13 @@ model geofencing {
 }
 
 model invites {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  inviter_user_id String    @db.Uuid
-  email           String
-  target_type     String
-  target_id       String
-  status          String    @default("PENDING")
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inviterUserId String    @map("inviter_user_id") @db.Uuid
+  email         String
+  targetType    String    @map("target_type")
+  targetId      String    @map("target_id")
+  status        String    @default("PENDING")
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@schema("public")
 }
@@ -887,13 +887,14 @@ model tickets {
   eventId     String
   orderId     String?
   type        TicketType
+  status      String        @default("ACTIVE")
   price       Float?        @default(0)
   currency    String        @default("USD")
   entryCode   String?       @unique
   createdAt   DateTime      @default(now())
   updatedAt   DateTime
   order_items order_items[]
-  events      events        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event       events        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   app_users   app_users     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("public")

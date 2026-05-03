@@ -1,5 +1,9 @@
 {
   "devDependencies": {
-    "form-data": "^4.0.5"
+    "form-data": "^4.0.5",
+    "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.3"
   }
 }

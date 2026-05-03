@@ -22,6 +22,7 @@ import { RolesGuard } from "../../common/guards";
 import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
 import { assertFullUser } from "../../common/guards/assert-full-user";
 import { Roles, CurrentUser, Public } from "../../common/decorators";
+import type { MulterFile } from "../../types/multer-file";
 
 type User = any;
 
@@ -69,7 +70,7 @@ export class EntitiesController {
   @ApiResponse({ status: 409, description: "Entity with this brand name already exists" })
   async creatorApply(
     @Body() applicationDto: CreatorApplicationDto,
-    @UploadedFiles() files: { proof?: Express.Multer.File[], businessDoc?: Express.Multer.File[], trademarkDoc?: Express.Multer.File[] } | undefined,
+    @UploadedFiles() files: { proof?: MulterFile[]; businessDoc?: MulterFile[]; trademarkDoc?: MulterFile[] } | undefined,
     @CurrentUser() user: User
   ) {
     assertFullUser(user);
@@ -103,6 +104,18 @@ export class EntitiesController {
   create(@Body() createEntityDto: CreateEntityDto, @CurrentUser() user: User) {
     assertFullUser(user);
     return this.entitiesService.createEntity(createEntityDto, user.id);
+  }
+
+  @Get("popular")
+  @Public()
+  @ApiOperation({ summary: "Get popular creators for discovery" })
+  @ApiResponse({ status: 200, description: "List of popular entities" })
+  getPopular() {
+    return this.entitiesService.findAll({
+      sort: "most_followed",
+      limit: 20,
+      page: 1,
+    });
   }
 
   @Get()

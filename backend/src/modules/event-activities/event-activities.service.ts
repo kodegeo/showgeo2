@@ -58,7 +58,7 @@ export class EventActivitiesService {
     const event = await (this.prisma as any).events.findUnique({
       where: { id: eventId },
       include: {
-        entities_events_entityIdToentities: true,
+        entity: true,
       },
     });
 
@@ -72,7 +72,7 @@ export class EventActivitiesService {
     }
 
     // Check if user is entity owner
-    if (event.entities_events_entityIdToentities?.ownerId === userId) {
+    if (event.entity?.ownerId === userId) {
       return;
     }
 
@@ -258,9 +258,9 @@ export class EventActivitiesService {
     }
 
     // 4. Validate phase matches event phase
-    if (activity.phase !== activity.events.phase) {
+    if (activity.phase !== activity.event.phase) {
       throw new BadRequestException(
-        `Activity phase ${activity.phase} does not match event phase ${activity.events.phase}`,
+        `Activity phase ${activity.phase} does not match event phase ${activity.event.phase}`,
       );
     }
 

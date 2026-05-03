@@ -60,11 +60,16 @@ export default function Navigation() {
           <div className="hidden md:flex items-center space-x-6 text-sm font-medium">
             <Link to="/events" className="text-white hover:text-[#CD000E] transition-colors">Events</Link>
             <Link to="/entities" className="text-white hover:text-[#CD000E] transition-colors">Creators</Link>
-            {showAuthenticated && (
-              <Link to="/dashboard" className="text-white hover:text-[#CD000E] transition-colors">Dashboard</Link>
+            {showAuthenticated && !userIsCreator && (
+              <Link to="/profile" className="text-white hover:text-[#CD000E] transition-colors">
+                Profile
+              </Link>
             )}
             {showAuthenticated && userIsCreator && (
-              <Link to="/studio/dashboard" className="text-white hover:text-[#CD000E] transition-colors">Creator Dashboard</Link>
+              <>
+                <Link to="/studio/profile" className="text-white hover:text-[#CD000E] transition-colors">Profile</Link>
+                <Link to="/studio/overview" className="text-white hover:text-[#CD000E] transition-colors">Overview</Link>
+              </>
             )}
           </div>
 
@@ -118,9 +123,16 @@ export default function Navigation() {
           <div className="flex flex-col space-y-3 px-6 py-4 text-white">
             <Link to="/events" onClick={() => setIsOpen(false)}>Events</Link>
             <Link to="/entities" onClick={() => setIsOpen(false)}>Creators</Link>
-            {showAuthenticated && <Link to="/dashboard" onClick={() => setIsOpen(false)}>Dashboard</Link>}
+            {showAuthenticated && !userIsCreator && (
+              <Link to="/profile" onClick={() => setIsOpen(false)}>
+                Profile
+              </Link>
+            )}
             {showAuthenticated && userIsCreator && (
-              <Link to="/studio/dashboard" onClick={() => setIsOpen(false)}>Creator Dashboard</Link>
+              <>
+                <Link to="/studio/profile" onClick={() => setIsOpen(false)}>Profile</Link>
+                <Link to="/studio/overview" onClick={() => setIsOpen(false)}>Overview</Link>
+              </>
             )}
             <hr className="border-gray-700" />
             {showAuthenticated ? (

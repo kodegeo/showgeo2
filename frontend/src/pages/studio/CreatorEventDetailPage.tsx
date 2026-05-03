@@ -1,13 +1,16 @@
 import { useParams, Link } from "react-router-dom";
 import { useEvent, useTransitionEventPhase, useEventAnalytics } from "@/hooks/useEvents";
 import { EventPhase, EventStatus } from "@/types/eventPhase";
-import { CreatorDashboardLayout } from "@/components/creator/CreatorDashboardLayout";
 import { getPhaseCapabilities } from "@/utils/eventPhaseCapabilities";
 import { StreamingPanel } from "@/components/streaming/StreamingPanel";
 import { AudiencePromotionSection } from "@/components/events/AudiencePromotionSection";
+import { EventPromotionTools } from "@/components/events/EventPromotionTools";
 import { PreLiveActivityTimeline } from "@/components/events/PreLiveActivityTimeline";
 import { PreLiveChecklist } from "@/components/events/PreLiveChecklist";
-
+import { InviteAudienceSection } from "@/components/events/InviteAudienceSection";
+import { EventLifecycleManager } from "@/lib/event-client";
+import { CreatorExperience } from "@/components/events/CreatorExperience";
+import { isLivePhase } from "@/utils/isLivePhase";
 
 export function CreatorEventDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,52 +21,39 @@ export function CreatorEventDetailPage() {
   // Check if event ID is missing
   if (!id) {
     return (
-      <CreatorDashboardLayout>
-        <div className="p-6 text-red-400">
-          <h2 className="text-lg font-semibold mb-2">Invalid Event ID</h2>
-          <p className="text-sm text-gray-400 mb-4">
-            The event ID is missing from the URL. Please navigate from the events list.
-          </p>
-          <Link
-            to="/creator/events"
-            className="text-sm text-[#CD000E] hover:text-[#860005]"
-          >
-            ← Back to events
-          </Link>
-        </div>
-      </CreatorDashboardLayout>
+      <div className="p-6 text-red-400">
+        <h2 className="text-lg font-semibold mb-2">Invalid Event ID</h2>
+        <p className="text-sm text-gray-400 mb-4">
+          The event ID is missing from the URL. Please navigate from the events list.
+        </p>
+        <Link to="/studio/events" className="text-sm text-[#CD000E] hover:text-[#860005]">
+          ← Back to events
+        </Link>
+      </div>
     );
   }
 
   if (isLoading) {
-    return (
-      <CreatorDashboardLayout>
-        <div className="p-6 text-white/60">Loading event…</div>
-      </CreatorDashboardLayout>
-    );
+    return <div className="p-6 text-white/60">Loading event…</div>;
   }
 
   if (error || !event) {
     return (
-      <CreatorDashboardLayout>
-        <div className="p-6 text-red-400">
-          <h2 className="text-lg font-semibold mb-2">Event Not Found</h2>
-          <p className="text-sm text-gray-400 mb-4">
-            {error instanceof Error ? error.message : "The event you're looking for doesn't exist or you don't have permission to view it."}
-          </p>
-          <Link
-            to="/creator/events"
-            className="text-sm text-[#CD000E] hover:text-[#860005]"
-          >
-            ← Back to events
-          </Link>
-        </div>
-      </CreatorDashboardLayout>
+      <div className="p-6 text-red-400">
+        <h2 className="text-lg font-semibold mb-2">Event Not Found</h2>
+        <p className="text-sm text-gray-400 mb-4">
+          {error instanceof Error
+            ? error.message
+            : "The event you're looking for doesn't exist or you don't have permission to view it."}
+        </p>
+        <Link to="/studio/events" className="text-sm text-[#CD000E] hover:text-[#860005]">
+          ← Back to events
+        </Link>
+      </div>
     );
   }
 
-  const hasTickets =
-    Array.isArray(event.ticketTypes) && event.ticketTypes.length > 0;
+  const hasTickets = Array.isArray(event.ticketTypes) && event.ticketTypes.length > 0;
 
   function label(value: string) {
     return value.replace(/_/g, " ").toLowerCase();
@@ -71,21 +61,18 @@ export function CreatorEventDetailPage() {
 
   // ✅ Use centralized phase capabilities
   const capabilities = getPhaseCapabilities(event.phase);
-  
+
   function canEnd(status: EventStatus) {
     return status === EventStatus.LIVE;
   }
 
   return (
-    <CreatorDashboardLayout>
+    <EventLifecycleManager eventId={id}>
       <div className="p-6 space-y-6 max-w-4xl">
         {/* Header */}
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-semibold text-white">{event.name}</h1>
-          <Link
-            to="/creator/events"
-            className="text-sm text-white/60 hover:text-white"
-          >
+          <Link to="/studio/events" className="text-sm text-white/60 hover:text-white">
             ← Back to events
           </Link>
         </div>
@@ -97,15 +84,38 @@ export function CreatorEventDetailPage() {
           </div>
         )}
 
+        {/* Broadcast + audience tools — surfaced early in LIVE phase so it is not buried below analytics */}
+        {isLivePhase(event.phase) && capabilities.streaming && (
+          <div className="space-y-6 border border-[#CD000E]/30 bg-[#0B0B0B]/40 rounded-xl p-5">
+            <div>
+              <h2 className="text-lg font-semibold text-white mb-1">Broadcast</h2>
+              <p className="text-sm text-white/50">
+                Connect your camera and publish to viewers. Until you start here, there is no
+                outgoing live video feed — the banner above only means the event is in its live
+                window.
+              </p>
+            </div>
+            <StreamingPanel
+              eventId={event.id}
+              event={{
+                status: event.status,
+                phase: event.phase,
+                startTime: event.startTime,
+              }}
+              isEntity={true}
+              disableAutoJoin={true}
+            />
+            {isLivePhase(event.phase) && <CreatorExperience eventId={event.id} joinRealtime />}
+          </div>
+        )}
+
         {/* Meta */}
         <div className="space-y-2 text-white/70">
           <div>
-            <span className="text-white/40">Status:</span>{" "}
-            {label(event.status)}
+            <span className="text-white/40">Status:</span> {label(event.status)}
           </div>
           <div>
-            <span className="text-white/40">Phase:</span>{" "}
-            {label(event.phase)}
+            <span className="text-white/40">Phase:</span> {label(event.phase)}
           </div>
           <div>
             <span className="text-white/40">Start:</span>{" "}
@@ -113,8 +123,7 @@ export function CreatorEventDetailPage() {
           </div>
           {event.location && (
             <div>
-              <span className="text-white/40">Location:</span>{" "}
-              {event.location}
+              <span className="text-white/40">Location:</span> {event.location}
             </div>
           )}
         </div>
@@ -122,12 +131,12 @@ export function CreatorEventDetailPage() {
         {/* Description */}
         {event.description && (
           <div className="pt-4 border-t border-white/10">
-            <h2 className="text-lg font-medium mb-2 text-white">
-              Description
-            </h2>
+            <h2 className="text-lg font-medium mb-2 text-white">Description</h2>
             <p className="text-white/70">{event.description}</p>
           </div>
         )}
+
+        <InviteAudienceSection eventId={event.id} />
 
         {/* ✅ Audience & Promotion - Gated by audience capability */}
         {capabilities.audience && (
@@ -139,15 +148,16 @@ export function CreatorEventDetailPage() {
           />
         )}
 
+        {/* Promote Event - Share links and embed */}
+        <div className="pt-4 border-t border-white/10">
+          <EventPromotionTools eventId={event.id} eventName={event.name} />
+        </div>
+
         {/* ✅ PRE_LIVE Activity Timeline - Only shown in PRE_LIVE phase */}
-        {event.phase === EventPhase.PRE_LIVE && (
-          <PreLiveActivityTimeline eventId={event.id} />
-        )}
+        {event.phase === EventPhase.PRE_LIVE && <PreLiveActivityTimeline eventId={event.id} />}
 
         {/* ✅ PRE_LIVE Checklist - Only shown in PRE_LIVE phase, above Start Event button */}
-        {event.phase === EventPhase.PRE_LIVE && (
-          <PreLiveChecklist event={event} />
-        )}
+        {event.phase === EventPhase.PRE_LIVE && <PreLiveChecklist event={event} />}
 
         {/* Controls - Gated by Phase Capabilities */}
         <div className="pt-6 border-t border-white/10 flex flex-wrap gap-3">
@@ -184,7 +194,7 @@ export function CreatorEventDetailPage() {
           {/* ✅ Edit Event - Only enabled when eventMetadata capability is true */}
           {capabilities.eventMetadata && (
             <Link
-              to={`/creator/events/${event.id}/edit`}
+              to={`/studio/events/${event.id}/edit`}
               className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-white font-semibold"
             >
               Edit Event
@@ -194,98 +204,103 @@ export function CreatorEventDetailPage() {
           {/* ✅ Tickets - Gated by ticketing capability */}
           {capabilities.ticketing && (
             <Link
-              to={`/creator/events/${event.id}/tickets`}
+              to={`/studio/events/${event.id}/manage`}
               className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-white font-semibold"
             >
-              Tickets
+              Manage event
             </Link>
           )}
+
+          {/* Invitations - for invite-only events */}
+          <Link
+            to={`/studio/events/${event.id}/manage?tab=audience`}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-white font-semibold"
+          >
+            Invitations
+          </Link>
         </div>
 
         {/* ✅ Analytics Section - Gated by analytics capability */}
         {capabilities.analytics && (
-        <div className="pt-6 border-t border-white/10">
-          <h2 className="text-lg font-semibold text-white mb-4">Analytics</h2>
-          {analyticsLoading ? (
-            <div className="text-white/60">Loading analytics...</div>
-          ) : analytics ? (
-            <div className="space-y-6">
-              {/* KPI Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
-                  <div className="text-sm text-gray-400 mb-1">Registrations</div>
-                  <div className="text-2xl font-bold text-white">{analytics.registrationsCount}</div>
-                </div>
-                <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
-                  <div className="text-sm text-gray-400 mb-1">Tickets Issued</div>
-                  <div className="text-2xl font-bold text-white">{analytics.ticketsIssued}</div>
-                </div>
-                <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
-                  <div className="text-sm text-gray-400 mb-1">Viewers Joined</div>
-                  <div className="text-2xl font-bold text-white">{analytics.viewersJoined}</div>
-                </div>
-                <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
-                  <div className="text-sm text-gray-400 mb-1">Join Rate</div>
-                  <div className="text-2xl font-bold text-white">{analytics.joinRate.toFixed(1)}%</div>
-                </div>
-              </div>
-
-              {/* Breakdowns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Viewer Breakdown */}
-                <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
-                  <h3 className="text-base font-semibold text-white mb-3">Viewer Breakdown</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-400">Guest Viewers</span>
-                      <span className="text-lg font-semibold text-white">{analytics.guestViewers}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-400">Logged-in Viewers</span>
-                      <span className="text-lg font-semibold text-white">{analytics.loggedInViewers}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Reminder Effectiveness */}
-                <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
-                  <h3 className="text-base font-semibold text-white mb-3">Reminder Effectiveness</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-400">10-Min Reminders</span>
-                      <span className="text-lg font-semibold text-white">{analytics.remindersSent10Min}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-400">30-Min Reminders</span>
-                      <span className="text-lg font-semibold text-white">{analytics.remindersSent30Min}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="text-white/60">No analytics data available</div>
-          )}
-        </div>
-        )}
-
-        {/* ✅ Streaming - Only rendered when streaming capability is enabled */}
-        {capabilities.streaming && (
           <div className="pt-6 border-t border-white/10">
-            <StreamingPanel
-              eventId={event.id}
-              event={{
-                status: event.status,
-                phase: event.phase,
-                startTime: event.startTime,
-              }}
-              isEntity={true}
-              disableAutoJoin={true}
-            />
+            <h2 className="text-lg font-semibold text-white mb-4">Analytics</h2>
+            {analyticsLoading ? (
+              <div className="text-white/60">Loading analytics...</div>
+            ) : analytics ? (
+              <div className="space-y-6">
+                {/* KPI Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
+                    <div className="text-sm text-gray-400 mb-1">Registrations</div>
+                    <div className="text-2xl font-bold text-white">
+                      {analytics.registrationsCount}
+                    </div>
+                  </div>
+                  <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
+                    <div className="text-sm text-gray-400 mb-1">Tickets Issued</div>
+                    <div className="text-2xl font-bold text-white">{analytics.ticketsIssued}</div>
+                  </div>
+                  <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
+                    <div className="text-sm text-gray-400 mb-1">Viewers Joined</div>
+                    <div className="text-2xl font-bold text-white">{analytics.viewersJoined}</div>
+                  </div>
+                  <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
+                    <div className="text-sm text-gray-400 mb-1">Join Rate</div>
+                    <div className="text-2xl font-bold text-white">
+                      {analytics.joinRate.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Breakdowns */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Viewer Breakdown */}
+                  <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
+                    <h3 className="text-base font-semibold text-white mb-3">Viewer Breakdown</h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-400">Guest Viewers</span>
+                        <span className="text-lg font-semibold text-white">
+                          {analytics.guestViewers}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-400">Logged-in Viewers</span>
+                        <span className="text-lg font-semibold text-white">
+                          {analytics.loggedInViewers}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reminder Effectiveness */}
+                  <div className="bg-[#0B0B0B]/90 border border-gray-800 rounded-lg p-4">
+                    <h3 className="text-base font-semibold text-white mb-3">
+                      Reminder Effectiveness
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-400">10-Min Reminders</span>
+                        <span className="text-lg font-semibold text-white">
+                          {analytics.remindersSent10Min}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-400">30-Min Reminders</span>
+                        <span className="text-lg font-semibold text-white">
+                          {analytics.remindersSent30Min}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-white/60">No analytics data available</div>
+            )}
           </div>
         )}
-
       </div>
-    </CreatorDashboardLayout>
+    </EventLifecycleManager>
   );
 }

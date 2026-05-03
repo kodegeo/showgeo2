@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
+import type { MulterFile } from '../../types/multer-file';
 
 @Injectable()
 export class UploadService {
   constructor(private supabaseService: SupabaseService) {}
 
-  async uploadAvatar(file: Express.Multer.File, userId: string) {
+  async uploadAvatar(file: MulterFile, userId: string) {
     const client = this.supabaseService.client;
 
     const path = `users/${userId}/avatar-${Date.now()}.${file.originalname.split('.').pop()}`;
@@ -23,7 +24,7 @@ export class UploadService {
     return publicUrl.publicUrl;
   }
 
-  async uploadBanner(file: Express.Multer.File, userId: string) {
+  async uploadBanner(file: MulterFile, userId: string) {
     const client = this.supabaseService.client;
 
     const path = `users/${userId}/banner-${Date.now()}.${file.originalname.split('.').pop()}`;

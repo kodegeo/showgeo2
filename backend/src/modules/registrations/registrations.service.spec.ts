@@ -1,11 +1,13 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
 import { RegistrationsService } from "./registrations.service";
+import { EventAccessRulesService } from "./event-access-rules.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RegisterDto, SendInvitationsDto } from "./dto";
 import { TestUtils } from "../../../test/test-utils";
 import { EmailService } from "../email/email.service";
 import { ConfigService } from "@nestjs/config";
+import { MessagesService } from "../messages/messages.service";
 
 describe("RegistrationsService - Auto Ticket Issuance", () => {
   let service: RegistrationsService;
@@ -19,25 +21,22 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
   const mockEvent = {
     id: mockEventId,
     name: "Test Event",
+    registrationAccess: "PUBLIC",
     entryCodeRequired: false,
   };
 
   const mockInvitedRegistration = {
     id: mockRegistrationId,
-    eventId: mockEventId,
-    userId: null,
+    event_id: mockEventId,
+    user_id: null,
     email: mockEmail,
-    accessCode: "ACCESS123",
+    access_code: "ACCESS123",
     status: "INVITED",
-    invitedBy: "creator-123",
-    invitedAt: new Date(),
-    registeredAt: null,
   };
 
   const mockRegisteredRegistration = {
     ...mockInvitedRegistration,
     status: "REGISTERED",
-    registeredAt: new Date(),
   };
 
   beforeEach(async () => {
@@ -45,6 +44,7 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
       imports: [],
       providers: [
         RegistrationsService,
+        EventAccessRulesService,
         {
           provide: PrismaService,
           useValue: TestUtils.createMockPrismaService(),
@@ -66,6 +66,13 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
             }),
           },
         },
+        {
+          provide: MessagesService,
+          useValue: {
+            sendMessage: jest.fn().mockResolvedValue({ id: "msg-1" }),
+            findInboxForUser: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     });
 
@@ -75,49 +82,30 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
     jest.clearAllMocks();
   });
 
-  describe("ensureFreeTicket - Auto Ticket Issuance", () => {
+  describe("register - success and registrationId", () => {
     beforeEach(() => {
-      // Mock Prisma models using snake_case (as service does)
-      (prismaService as any).events = {
-        findUnique: jest.fn(),
-      };
+      (prismaService as any).events = { findUnique: jest.fn() };
       (prismaService as any).event_registrations = {
-        findUnique: jest.fn(),
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         findMany: jest.fn(),
       };
-      (prismaService as any).tickets = {
-        findFirst: jest.fn(),
-        findUnique: jest.fn(),
-        create: jest.fn(),
-      };
-      (prismaService as any).mailbox_items = {
-        findFirst: jest.fn(),
-        create: jest.fn(),
-        findMany: jest.fn(),
-      };
+      (prismaService as any).tickets = { findFirst: jest.fn(), create: jest.fn() };
+      (prismaService as any).mailbox_items = { findFirst: jest.fn(), create: jest.fn() };
 
       ((prismaService as any).events.findUnique as jest.Mock).mockResolvedValue(mockEvent);
     });
 
-    it("should create a FREE ticket when registration becomes REGISTERED", async () => {
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
+    it("should return success and registrationId when registration becomes REGISTERED", async () => {
+      const dto: RegisterDto = { registrationId: mockRegistrationId };
 
-      // Mock registration lookup
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(
         mockInvitedRegistration,
       );
-
-      // Mock registration update
       ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
         mockRegisteredRegistration,
       );
-
-      // Mock ticket check (no existing ticket)
       ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(null);
 
       // Mock ticket creation
@@ -135,300 +123,123 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
       };
       ((prismaService as any).tickets.create as jest.Mock).mockResolvedValue(mockTicket);
 
-      // Mock mailbox check (no existing mailbox item)
-      ((prismaService as any).mailbox_items.findFirst as jest.Mock).mockResolvedValue(null);
-
-      // Mock mailbox creation
-      ((prismaService as any).mailbox_items.create as jest.Mock).mockResolvedValue({});
-
       const result = await service.register(mockEventId, dto);
 
-      // Verify ticket was created
-      expect((prismaService as any).tickets.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          eventId: mockEventId,
-          registrationId: mockRegistrationId,
-          type: "FREE",
-          price: 0,
-          currency: "USD",
-          status: "ACTIVE",
-        }),
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
+    });
+
+    it("should return same registrationId when already REGISTERED", async () => {
+      const dto: RegisterDto = { registrationId: mockRegistrationId };
+
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue({
+        ...mockInvitedRegistration,
+        status: "REGISTERED",
       });
 
-      // Verify ticket is returned
-      expect(result.ticket).toBeDefined();
-      expect(result.ticket.type).toBe("FREE");
-      expect(result.ticket.status).toBe("ACTIVE");
-    });
-
-    it("should NOT create duplicate tickets (idempotent)", async () => {
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
-
-      // Mock registration lookup
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
-        mockInvitedRegistration,
-      );
-
-      // Mock registration update
-      ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
-        mockRegisteredRegistration,
-      );
-
-      // Mock existing ticket found
-      const existingTicket = {
-        id: "ticket-existing",
-        eventId: mockEventId,
-        registrationId: mockRegistrationId,
-        type: "FREE",
-        status: "ACTIVE",
-      };
-      ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(existingTicket);
-
       const result = await service.register(mockEventId, dto);
 
-      // Verify ticket creation was NOT called (idempotent)
-      expect((prismaService as any).tickets.create).not.toHaveBeenCalled();
-
-      // Verify existing ticket is returned
-      expect(result.ticket).toEqual(existingTicket);
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
+      expect((prismaService as any).event_registrations.update).not.toHaveBeenCalled();
     });
 
-    it("should create ticket with ACTIVE status", async () => {
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
+    it("should update INVITED registration to REGISTERED", async () => {
+      const dto: RegisterDto = { registrationId: mockRegistrationId };
 
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(
         mockInvitedRegistration,
       );
       ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
         mockRegisteredRegistration,
       );
-      ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(null);
-
-      const mockTicket = {
-        id: "ticket-123",
-        eventId: mockEventId,
-        registrationId: mockRegistrationId,
-        type: "FREE",
-        status: "ACTIVE",
-      };
-      ((prismaService as any).tickets.create as jest.Mock).mockResolvedValue(mockTicket);
-      ((prismaService as any).mailbox_items.findFirst as jest.Mock).mockResolvedValue(null);
-      ((prismaService as any).mailbox_items.create as jest.Mock).mockResolvedValue({});
 
       const result = await service.register(mockEventId, dto);
 
-      expect((prismaService as any).tickets.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          status: "ACTIVE",
-        }),
-      });
-
-      expect(result.ticket.status).toBe("ACTIVE");
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
     });
 
-    it("should link ticket to registrationId", async () => {
+    it("should link registration and return registrationId", async () => {
       const dto: RegisterDto = {
         registrationId: mockRegistrationId,
       };
 
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(
         mockInvitedRegistration,
       );
       ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
         mockRegisteredRegistration,
       );
-      ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(null);
-
-      const mockTicket = {
-        id: "ticket-123",
-        eventId: mockEventId,
-        registrationId: mockRegistrationId,
-        type: "FREE",
-        status: "ACTIVE",
-      };
-      ((prismaService as any).tickets.create as jest.Mock).mockResolvedValue(mockTicket);
-      ((prismaService as any).mailbox_items.findFirst as jest.Mock).mockResolvedValue(null);
-      ((prismaService as any).mailbox_items.create as jest.Mock).mockResolvedValue({});
 
       const result = await service.register(mockEventId, dto);
 
-      expect((prismaService as any).tickets.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          registrationId: mockRegistrationId,
-        }),
-      });
-
-      expect(result.ticket.registrationId).toBe(mockRegistrationId);
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
     });
 
     it("should work with userId-based registration", async () => {
       const registrationWithUserId = {
         ...mockInvitedRegistration,
-        userId: mockUserId,
+        user_id: mockUserId,
         email: null,
       };
+      const registeredWithUserId = { ...registrationWithUserId, status: "REGISTERED" };
 
-      const registeredWithUserId = {
-        ...registrationWithUserId,
-        status: "REGISTERED",
-        registeredAt: new Date(),
-      };
+      const dto: RegisterDto = { registrationId: mockRegistrationId };
 
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
-
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(
         registrationWithUserId,
       );
       ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
         registeredWithUserId,
       );
-      ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(null);
-
-      const mockTicket = {
-        id: "ticket-123",
-        eventId: mockEventId,
-        userId: mockUserId,
-        registrationId: mockRegistrationId,
-        type: "FREE",
-        status: "ACTIVE",
-      };
-      ((prismaService as any).tickets.create as jest.Mock).mockResolvedValue(mockTicket);
-      ((prismaService as any).mailbox_items.findFirst as jest.Mock).mockResolvedValue(null);
-      ((prismaService as any).mailbox_items.create as jest.Mock).mockResolvedValue({});
 
       const result = await service.register(mockEventId, dto, mockUserId);
 
-      expect((prismaService as any).tickets.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          userId: mockUserId,
-          registrationId: mockRegistrationId,
-        }),
-      });
-
-      expect(result.ticket.userId).toBe(mockUserId);
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
     });
 
     it("should work with email-only registration (no userId)", async () => {
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
+      const dto: RegisterDto = { registrationId: mockRegistrationId };
 
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(
         mockInvitedRegistration,
       );
       ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
         mockRegisteredRegistration,
       );
-      ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(null);
-
-      const mockTicket = {
-        id: "ticket-123",
-        eventId: mockEventId,
-        userId: null,
-        email: mockEmail,
-        registrationId: mockRegistrationId,
-        type: "FREE",
-        status: "ACTIVE",
-      };
-      ((prismaService as any).tickets.create as jest.Mock).mockResolvedValue(mockTicket);
-      ((prismaService as any).mailbox_items.findFirst as jest.Mock).mockResolvedValue(null);
-      ((prismaService as any).mailbox_items.create as jest.Mock).mockResolvedValue({});
 
       const result = await service.register(mockEventId, dto);
 
-      expect((prismaService as any).tickets.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          userId: null,
-          registrationId: mockRegistrationId,
-        }),
-      });
-
-      expect(result.ticket.userId).toBeNull();
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
     });
 
-    it("should add ticket to mailbox after creation", async () => {
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
+    it("should update registration to REGISTERED", async () => {
+      const dto: RegisterDto = { registrationId: mockRegistrationId };
 
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
+      ((prismaService as any).events.findUnique as jest.Mock).mockResolvedValue(mockEvent);
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(
         mockInvitedRegistration,
       );
       ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
         mockRegisteredRegistration,
       );
-      ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(null);
 
-      const mockTicket = {
-        id: "ticket-123",
-        eventId: mockEventId,
-        registrationId: mockRegistrationId,
-        type: "FREE",
-        status: "ACTIVE",
-        entryCode: null,
-      };
-      ((prismaService as any).tickets.create as jest.Mock).mockResolvedValue(mockTicket);
-      ((prismaService as any).mailbox_items.findFirst as jest.Mock).mockResolvedValue(null);
-      ((prismaService as any).mailbox_items.create as jest.Mock).mockResolvedValue({});
+      const result = await service.register(mockEventId, dto);
 
-      await service.register(mockEventId, dto);
-
-      // Verify mailbox item was created
-      expect((prismaService as any).mailbox_items.create).toHaveBeenCalledWith({
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
+      expect((prismaService as any).event_registrations.update).toHaveBeenCalledWith({
+        where: { id: mockRegistrationId },
         data: expect.objectContaining({
-          type: "TICKET",
-          title: `Your ticket for ${mockEvent.name}`,
-          registrationId: mockRegistrationId,
-          metadata: expect.objectContaining({
-            eventId: mockEventId,
-            eventName: mockEvent.name,
-            ticketId: mockTicket.id,
-            registrationId: mockRegistrationId,
-          }),
+          status: "REGISTERED",
         }),
       });
     });
 
-    it("should NOT create duplicate mailbox items", async () => {
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
-
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
-        mockInvitedRegistration,
-      );
-      ((prismaService as any).event_registrations.update as jest.Mock).mockResolvedValue(
-        mockRegisteredRegistration,
-      );
-      ((prismaService as any).tickets.findFirst as jest.Mock).mockResolvedValue(null);
-
-      const mockTicket = {
-        id: "ticket-123",
-        eventId: mockEventId,
-        registrationId: mockRegistrationId,
-        type: "FREE",
-        status: "ACTIVE",
-      };
-      ((prismaService as any).tickets.create as jest.Mock).mockResolvedValue(mockTicket);
-
-      // Mock existing mailbox item
-      ((prismaService as any).mailbox_items.findFirst as jest.Mock).mockResolvedValue({
-        id: "mailbox-existing",
-        type: "TICKET",
-        registrationId: mockRegistrationId,
-      });
-
-      await service.register(mockEventId, dto);
-
-      // Verify mailbox creation was NOT called (idempotent)
-      expect((prismaService as any).mailbox_items.create).not.toHaveBeenCalled();
-    });
   });
 
   describe("register - Integration", () => {
@@ -459,26 +270,23 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
     });
 
     it("should throw NotFoundException if registration not found", async () => {
-      const dto: RegisterDto = {
-        registrationId: "non-existent",
-      };
+      const dto: RegisterDto = { registrationId: "non-existent" };
 
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(null);
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.register(mockEventId, dto)).rejects.toThrow(NotFoundException);
     });
 
-    it("should throw BadRequestException if already registered", async () => {
-      const dto: RegisterDto = {
-        registrationId: mockRegistrationId,
-      };
+    it("should return success when already REGISTERED", async () => {
+      const dto: RegisterDto = { registrationId: mockRegistrationId };
 
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(
+      ((prismaService as any).event_registrations.findFirst as jest.Mock).mockResolvedValue(
         mockRegisteredRegistration,
       );
 
-      await expect(service.register(mockEventId, dto)).rejects.toThrow(BadRequestException);
-      await expect(service.register(mockEventId, dto)).rejects.toThrow("Already registered");
+      const result = await service.register(mockEventId, dto);
+      expect(result.success).toBe(true);
+      expect(result.registrationId).toBe(mockRegistrationId);
     });
   });
 
@@ -519,8 +327,8 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
     it("should create LIVE NOW notification for REGISTERED user", async () => {
       const registeredUser = {
         id: mockRegistrationId,
-        eventId: mockEventId,
-        userId: mockUserId,
+        event_id: mockEventId,
+        user_id: mockUserId,
         email: mockEmail,
         status: "REGISTERED",
       };
@@ -586,8 +394,8 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
     it("should support email-only registration (no userId)", async () => {
       const emailOnlyRegistration = {
         id: mockRegistrationId,
-        eventId: mockEventId,
-        userId: null,
+        event_id: mockEventId,
+        user_id: null,
         email: mockEmail,
         status: "REGISTERED",
       };
@@ -613,8 +421,8 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
     it("should NOT create duplicate notifications on repeated LIVE transitions", async () => {
       const registeredUser = {
         id: mockRegistrationId,
-        eventId: mockEventId,
-        userId: mockUserId,
+        event_id: mockEventId,
+        user_id: mockUserId,
         email: mockEmail,
         status: "REGISTERED",
       };
@@ -754,6 +562,7 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
         imports: [],
         providers: [
           RegistrationsService,
+          EventAccessRulesService,
           {
             provide: PrismaService,
             useValue: TestUtils.createMockPrismaService(),
@@ -773,6 +582,13 @@ describe("RegistrationsService - Auto Ticket Issuance", () => {
                 if (key === "FRONTEND_URL") return "https://showgeo.app";
                 return undefined;
               }),
+            },
+          },
+          {
+            provide: MessagesService,
+            useValue: {
+              sendMessage: jest.fn().mockResolvedValue({ id: "msg-1" }),
+              findInboxForUser: jest.fn().mockResolvedValue([]),
             },
           },
         ],

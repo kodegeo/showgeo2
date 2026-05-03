@@ -8,9 +8,10 @@ import {
   } from '@nestjs/common';
   import { FileInterceptor } from '@nestjs/platform-express';
   import { SupabaseAuthGuard } from "../../common/guards/supabase-auth.guard";
-  import { UploadService } from './upload.service';
-  
-  @Controller('upload')
+import { UploadService } from './upload.service';
+import type { MulterFile } from '../../types/multer-file';
+
+@Controller('upload')
   export class UploadController {
     constructor(private uploadService: UploadService) {}
   
@@ -18,7 +19,7 @@ import {
     @Post('avatar')
     @UseInterceptors(FileInterceptor('file'))
     async uploadAvatar(
-      @UploadedFile() file: Express.Multer.File,
+      @UploadedFile() file: MulterFile,
       @Req() req
     ) {
       const userId = req.app_users.id;
@@ -30,7 +31,7 @@ import {
     @Post('banner')
     @UseInterceptors(FileInterceptor('file'))
     async uploadBanner(
-      @UploadedFile() file: Express.Multer.File,
+      @UploadedFile() file: MulterFile,
       @Req() req
     ) {
       const userId = req.app_users.id;

@@ -146,15 +146,12 @@ export function BroadcasterControls({
       
       // ✅ ONLY call setCameraEnabled - no React state updates
       await room.localParticipant.setCameraEnabled(newState);
-      
-      // ✅ Immediately update local state to reflect the change (for immediate UI feedback)
-      // This ensures the button shows yellow/starting state right away
-      setCamEnabled(newState);
-      if (!newState) {
-        // If disabling, also clear cameraReady
+
+      // Sync from LiveKit only (avoids green "Camera Live" while the stage still shows camera off)
+      setCamEnabled(!!room.localParticipant.isCameraEnabled);
+      if (!room.localParticipant.isCameraEnabled) {
         setCameraReady(false);
       }
-      // Note: cameraReady will be updated by the useEffect when track is published
     });
 
   const toggleScreen = () =>

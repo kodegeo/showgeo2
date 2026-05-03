@@ -7,14 +7,48 @@ import {
   ForbiddenException,
   Logger,
 } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
+import { EmailService } from "../email/email.service";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SupabaseService } from "../supabase/supabase.service";
 import { EntityStatus, entity_applications, UserRole, Prisma } from "@prisma/client";
 import { RoomServiceClient } from "livekit-server-sdk";
 import * as crypto from "crypto";
+import { StreamingService } from "../streaming/streaming.service";
 
 type User = any;
+
+export type SystemAuditIssueSeverity = "warning" | "info";
+
+export interface SystemAuditIssue {
+  code: string;
+  title: string;
+  detail?: string;
+  count?: number;
+  severity: SystemAuditIssueSeverity;
+  recommendation: string;
+}
+
+export interface SystemAuditSection {
+  name: string;
+  issues: SystemAuditIssue[];
+}
+
+export interface SystemAuditResult {
+  generatedAt: string;
+  summary: {
+    totalIssues: number;
+    streaming: number;
+    events: number;
+    messaging: number;
+  };
+  sections: {
+    streaming: SystemAuditSection;
+    events: SystemAuditSection;
+    messaging: SystemAuditSection;
+  };
+}
 
 export enum UserStatus {
   ACTIVE = "ACTIVE",
@@ -22,7 +56,7 @@ export enum UserStatus {
   BANNED = "BANNED",
 }
 
-type AuditTargetType = "USER" | "ENTITY" | "APPLICATION";
+type AuditTargetType = "USER" | "ENTITY" | "APPLICATION" | "EVENT";
 
 interface AuditLogData {
   adminId: string;
@@ -55,6 +89,8 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
+    private readonly streamingService: StreamingService,
   ) {
     // Initialize LiveKit RoomServiceClient for emergency termination
     const livekitUrl = this.configService.get<string>("LIVEKIT_URL");
@@ -837,7 +873,7 @@ export class AdminService {
       metadata: {
         entityName: entity.name,
         entityStatus: entity.status,
-        ownerId: entity.owner_id,
+        ownerId: entity.ownerId,
       },
     });
 
@@ -1037,19 +1073,19 @@ export class AdminService {
         where,
         select: {
           id: true,
-          reporter_user_id: true,
+          reporterUserId: true,
           reporter_role: true,
           message: true,
-          entity_id: true,
-          event_id: true,
+          entityId: true,
+          eventId: true,
           status: true,
           resolved_at: true,
           resolved_by: true,
           resolution_notes: true,
-          created_at: true,
+          createdAt: true,
         },
         orderBy: {
-          created_at: "desc",
+          createdAt: "desc",
         },
       });
 
@@ -1083,9 +1119,9 @@ export class AdminService {
 
           // Safely fetch entity (nullable)
           let entity: { id: string; name: string } | undefined;
-          if (report.entity_id) {
+          if (report.entityId) {
             const entityRecord = await (this.prisma as any).entities.findUnique({
-              where: { id: report.entity_id },
+              where: { id: report.entityId },
               select: { id: true, name: true },
             });
             if (entityRecord) {
@@ -1095,9 +1131,9 @@ export class AdminService {
 
           // Safely fetch event (nullable)
           let event: { id: string; name: string } | undefined;
-          if (report.event_id) {
+          if (report.eventId) {
             const eventRecord = await (this.prisma as any).events.findUnique({
-              where: { id: report.event_id },
+              where: { id: report.eventId },
               select: { id: true, name: true },
             });
             if (eventRecord) {
@@ -1110,7 +1146,7 @@ export class AdminService {
             id: String(report.id || ""),
             status: report.status || "OPEN",
             message: String(report.message || ""),
-            createdAt: report.created_at instanceof Date ? report.created_at.toISOString() : new Date().toISOString(),
+            createdAt: report.createdAt instanceof Date ? report.createdAt.toISOString() : new Date().toISOString(),
             reporter: reporter,
             resolvedBy: resolvedBy,
             entity: entity,
@@ -2001,7 +2037,7 @@ export class AdminService {
 
       // 2. Update related entity_applications to REJECTED
       await tx.entity_applications.updateMany({
-        where: { entity_id: entityId },
+        where: { entityId },
         data: { status: "REJECTED" },
       });
 
@@ -2035,7 +2071,7 @@ export class AdminService {
       metadata: {
         entityName: entity.name,
         entityStatus: entity.status,
-        ownerId: entity.owner_id,
+        ownerId: entity.ownerId,
       },
     });
 
@@ -2760,22 +2796,30 @@ export class AdminService {
     adminId: string,
     reason: string,
   ): Promise<{ application: any; enforcementAction: EnforcementAction }> {
-    const application = await (this.prisma as any).entity_applications.findUnique({
+    const appRow = await this.prisma.entity_applications.findUnique({
       where: { id: applicationId },
-      include: {
-        entities: true,
-        app_users: {
-          select: {
-            id: true,
-            email: true,
-          },
-        },
-      },
     });
 
-    if (!application) {
+    if (!appRow) {
       throw new NotFoundException(`Application ${applicationId} not found`);
     }
+
+    const [linkedEntity, ownerUser] = await Promise.all([
+      this.prisma.entities.findUnique({
+        where: { id: appRow.entityId },
+        select: { id: true, name: true, slug: true, status: true },
+      }),
+      this.prisma.app_users.findUnique({
+        where: { id: appRow.ownerId },
+        select: { id: true, email: true },
+      }),
+    ]);
+
+    const application = {
+      ...appRow,
+      entities: linkedEntity,
+      app_users: ownerUser,
+    };
 
     // If already REJECTED, return current state (idempotent)
     if (application.status === "REJECTED") {
@@ -2789,8 +2833,8 @@ export class AdminService {
         enforcementAction: {
           action: "REJECT_APPLICATION",
           applicationId,
-          entityId: application.entity_id,
-          userId: application.owner_id,
+          entityId: application.entityId,
+          userId: application.ownerId,
           adminId,
           reason,
           timestamp: new Date(),
@@ -2810,7 +2854,7 @@ export class AdminService {
 
       // 2. Update entity status to REJECTED
       await tx.entities.update({
-        where: { id: application.entity_id },
+        where: { id: application.entityId },
         data: { status: "REJECTED" },
       });
 
@@ -2820,8 +2864,8 @@ export class AdminService {
     const enforcementAction: EnforcementAction = {
       action: "REJECT_APPLICATION",
       applicationId,
-      entityId: application.entity_id,
-      userId: application.owner_id,
+      entityId: application.entityId,
+      userId: application.ownerId,
       adminId,
       reason,
       timestamp: new Date(),
@@ -2841,9 +2885,9 @@ export class AdminService {
       action: "REJECT_APPLICATION",
       reason,
       metadata: {
-        entityId: application.entity_id,
+        entityId: application.entityId,
         entityName: application.entities?.name,
-        ownerId: application.owner_id,
+        ownerId: application.ownerId,
         ownerEmail: application.app_users?.email,
         previousStatus: application.status,
         newStatus: "REJECTED",
@@ -2872,21 +2916,35 @@ export class AdminService {
     adminId: string,
     reason: string,
   ): Promise<{ application: any; enforcementAction: EnforcementAction }> {
-    const application = await (this.prisma as any).entity_applications.findUnique({
+    const appRow = await this.prisma.entity_applications.findUnique({
       where: { id: applicationId },
-      include: {
-        entities: true,
-        app_users: {
-          include: {
-            user_profiles: true,
-          },
-        },
-      },
     });
 
-    if (!application) {
+    if (!appRow) {
       throw new NotFoundException(`Application ${applicationId} not found`);
     }
+
+    const [linkedEntity, ownerUser, ownerProfile] = await Promise.all([
+      this.prisma.entities.findUnique({
+        where: { id: appRow.entityId },
+        select: { id: true, name: true, slug: true, status: true },
+      }),
+      this.prisma.app_users.findUnique({
+        where: { id: appRow.ownerId },
+        select: { id: true, email: true },
+      }),
+      this.prisma.user_profiles.findUnique({
+        where: { userId: appRow.ownerId },
+      }),
+    ]);
+
+    const application = {
+      ...appRow,
+      entities: linkedEntity,
+      app_users: ownerUser
+        ? { ...ownerUser, user_profiles: ownerProfile }
+        : null,
+    };
 
     // If already BANNED, return current state (idempotent)
     if (application.status === "BANNED") {
@@ -2900,8 +2958,8 @@ export class AdminService {
         enforcementAction: {
           action: "BAN_APPLICATION",
           applicationId,
-          entityId: application.entity_id,
-          userId: application.owner_id,
+          entityId: application.entityId,
+          userId: application.ownerId,
           adminId,
           reason,
           timestamp: new Date(),
@@ -2921,7 +2979,7 @@ export class AdminService {
 
       // 2. Update entity status to REJECTED
       await tx.entities.update({
-        where: { id: application.entity_id },
+        where: { id: application.entityId },
         data: { status: "REJECTED" },
       });
 
@@ -2944,14 +3002,14 @@ export class AdminService {
 
       if (application.app_users?.user_profiles) {
         await tx.user_profiles.update({
-          where: { user_id: application.owner_id },
+          where: { userId: application.ownerId },
           data: { preferences: updatedPreferences },
         });
       } else {
         await tx.user_profiles.create({
           data: {
             id: crypto.randomUUID(),
-            user_id: application.owner_id,
+            userId: application.ownerId,
             preferences: updatedPreferences,
           },
         });
@@ -2963,8 +3021,8 @@ export class AdminService {
     const enforcementAction: EnforcementAction = {
       action: "BAN_APPLICATION",
       applicationId,
-      entityId: application.entity_id,
-      userId: application.owner_id,
+      entityId: application.entityId,
+      userId: application.ownerId,
       adminId,
       reason,
       timestamp: new Date(),
@@ -2984,9 +3042,9 @@ export class AdminService {
       action: "BAN_APPLICATION",
       reason,
       metadata: {
-        entityId: application.entity_id,
+        entityId: application.entityId,
         entityName: application.entities?.name,
-        ownerId: application.owner_id,
+        ownerId: application.ownerId,
         ownerEmail: application.app_users?.email,
         previousStatus: application.status,
         newStatus: "BANNED",
@@ -3001,6 +3059,674 @@ export class AdminService {
       },
       enforcementAction,
     };
+  }
+
+  /**
+   * Align active streaming_sessions with LiveKit participant counts (metrics JSON).
+   */
+  async reconcileStreamSessions(): Promise<{ staleCount: number; lkRooms: any[] } | null> {
+    if (!this.roomService) {
+      return null;
+    }
+
+    const lkRooms = await this.roomService.listRooms();
+    const participantsByRoom = new Map<string, number>();
+    for (const r of lkRooms) {
+      const name = (r as { name?: string }).name;
+      if (name) {
+        participantsByRoom.set(name, Number((r as { numParticipants?: number | bigint }).numParticipants ?? 0));
+      }
+    }
+
+    const activeSessions = await (this.prisma as any).streaming_sessions.findMany({
+      where: { active: true },
+      select: { id: true, roomId: true, metrics: true },
+    });
+
+    const patches = activeSessions.map((s: { id: string; roomId: string; metrics: unknown }) => {
+      const n = participantsByRoom.get(s.roomId) ?? 0;
+      const presence = n > 0 ? "live" : "stale";
+      return {
+        id: s.id,
+        metrics: this.mergeReconcileMetrics(s.metrics, presence, n),
+      };
+    });
+
+    const staleCount = patches.filter((p: { metrics: Record<string, unknown> }) => {
+      return p.metrics.reconcilePresence === "stale";
+    }).length;
+
+    await Promise.all(
+      patches.map((p: { id: string; metrics: Record<string, unknown> }) =>
+        (this.prisma as any).streaming_sessions.update({
+          where: { id: p.id },
+          data: {
+            metrics: p.metrics as Prisma.InputJsonValue,
+            updatedAt: new Date(),
+          },
+        }),
+      ),
+    );
+
+    if (staleCount > 0) {
+      this.logger.warn(
+        `[STREAM-RECONCILE] ${staleCount} active session(s) stale (0 LiveKit participants)`,
+      );
+    }
+
+    return { staleCount, lkRooms };
+  }
+
+  private mergeReconcileMetrics(
+    existing: unknown,
+    presence: "live" | "stale",
+    participants: number,
+  ): Record<string, unknown> {
+    const base =
+      existing && typeof existing === "object" && !Array.isArray(existing)
+        ? { ...(existing as Record<string, unknown>) }
+        : {};
+    return {
+      ...base,
+      reconcilePresence: presence,
+      reconcileParticipants: participants,
+      reconciledAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * LiveKit + DB view for admin stream monitoring (runs reconciliation first).
+   */
+  async getStreamSessionsMonitoring(): Promise<{
+    livekitConfigured: boolean;
+    staleCount: number;
+    sessions: Array<{
+      roomName: string;
+      sessionId: string | null;
+      event: { id: string; name: string } | null;
+      creator: { id: string; name: string; slug: string } | null;
+      status: "live" | "stale" | "ended";
+      durationSeconds: number;
+      participantCount: number;
+      studioLivePath: string | null;
+      livekitRoomPresent: boolean;
+    }>;
+  }> {
+    const reconciled = await this.reconcileStreamSessions();
+    if (!reconciled) {
+      return { livekitConfigured: false, staleCount: 0, sessions: [] };
+    }
+
+    const { staleCount, lkRooms } = reconciled;
+    const lkRoomNames = lkRooms.map((r: { name?: string }) => r.name || "").filter(Boolean);
+    const lkNameSet = new Set(lkRoomNames);
+
+    const sessionInclude = {
+      event: {
+        select: {
+          id: true,
+          name: true,
+          entity: { select: { id: true, name: true, slug: true } },
+        },
+      },
+    };
+
+    const sessionsForRooms =
+      lkRoomNames.length === 0
+        ? []
+        : await (this.prisma as any).streaming_sessions.findMany({
+            where: { roomId: { in: lkRoomNames } },
+            include: sessionInclude,
+          });
+
+    const sessionByRoomId = new Map<string, (typeof sessionsForRooms)[number]>();
+    for (const s of sessionsForRooms) {
+      sessionByRoomId.set(s.roomId, s);
+    }
+
+    const activeAll = await (this.prisma as any).streaming_sessions.findMany({
+      where: { active: true },
+      include: sessionInclude,
+    });
+    const ghostActive = activeAll.filter((s: { roomId: string }) => !lkNameSet.has(s.roomId));
+
+    const rows: Array<{
+      roomName: string;
+      sessionId: string | null;
+      event: { id: string; name: string } | null;
+      creator: { id: string; name: string; slug: string } | null;
+      status: "live" | "stale" | "ended";
+      durationSeconds: number;
+      participantCount: number;
+      studioLivePath: string | null;
+      livekitRoomPresent: boolean;
+    }> = [];
+
+    const pushRow = (
+      roomName: string,
+      lkRoom: { name?: string; numParticipants?: number | bigint; creationTime?: bigint | number } | null,
+      session: any | null | undefined,
+    ) => {
+      const livekitRoomPresent = lkRoom != null;
+      const participantCount = lkRoom ? Number(lkRoom.numParticipants ?? 0) : 0;
+      const status = this.computeStreamMonitorStatus(session, livekitRoomPresent, participantCount);
+      const durationSeconds = this.computeStreamMonitorDurationSeconds(session, lkRoom, status);
+      const event = session?.event
+        ? { id: session.event.id as string, name: session.event.name as string }
+        : null;
+      const creator = session?.event?.entity
+        ? {
+            id: session.event.entity.id as string,
+            name: session.event.entity.name as string,
+            slug: session.event.entity.slug as string,
+          }
+        : null;
+      rows.push({
+        roomName,
+        sessionId: session?.id ?? null,
+        event,
+        creator,
+        status,
+        durationSeconds,
+        participantCount,
+        studioLivePath: event ? `/studio/events/${event.id}/live` : null,
+        livekitRoomPresent,
+      });
+    };
+
+    for (const lkRoom of lkRooms) {
+      const name = (lkRoom as { name?: string }).name;
+      if (!name) continue;
+      pushRow(name, lkRoom as any, sessionByRoomId.get(name));
+    }
+
+    for (const s of ghostActive) {
+      pushRow(s.roomId, null, s);
+    }
+
+    rows.sort((a, b) => {
+      const pri = { live: 0, stale: 1, ended: 2 };
+      const d = pri[a.status] - pri[b.status];
+      if (d !== 0) return d;
+      return b.durationSeconds - a.durationSeconds;
+    });
+
+    return { livekitConfigured: true, staleCount, sessions: rows };
+  }
+
+  private computeStreamMonitorStatus(
+    session: { active?: boolean } | null | undefined,
+    livekitRoomPresent: boolean,
+    participantCount: number,
+  ): "live" | "stale" | "ended" {
+    if (session && session.active === false) {
+      return "ended";
+    }
+    if (!livekitRoomPresent) {
+      return session?.active ? "stale" : "ended";
+    }
+    if (!session) {
+      return participantCount > 0 ? "live" : "stale";
+    }
+    if (!session.active) {
+      return "ended";
+    }
+    return participantCount > 0 ? "live" : "stale";
+  }
+
+  private streamMonitorStartMs(session: any, lkRoom: any | null): number {
+    if (session?.startTime) {
+      return new Date(session.startTime).getTime();
+    }
+    if (lkRoom?.creationTime !== undefined && lkRoom?.creationTime !== null) {
+      const sec =
+        typeof lkRoom.creationTime === "bigint"
+          ? Number(lkRoom.creationTime)
+          : Number(lkRoom.creationTime);
+      if (!Number.isNaN(sec)) {
+        return sec * 1000;
+      }
+    }
+    return Date.now();
+  }
+
+  private computeStreamMonitorDurationSeconds(
+    session: any,
+    lkRoom: any | null,
+    status: "live" | "stale" | "ended",
+  ): number {
+    const startMs = this.streamMonitorStartMs(session, lkRoom);
+    const endMs =
+      status === "ended" && session?.endTime
+        ? new Date(session.endTime).getTime()
+        : Date.now();
+    return Math.max(0, Math.floor((endMs - startMs) / 1000));
+  }
+
+  /**
+   * Admin resolve: delete LiveKit room and end session by streaming_sessions id.
+   */
+  async resolveStreamSession(sessionId: string, adminId: string): Promise<{
+    success: boolean;
+    sessionId: string;
+    roomName: string;
+    sessionEnded: boolean;
+  }> {
+    if (!this.roomService) {
+      throw new BadRequestException("LiveKit is not configured");
+    }
+
+    const session = await (this.prisma as any).streaming_sessions.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Streaming session ${sessionId} not found`);
+    }
+
+    const roomName = session.roomId as string;
+
+    try {
+      await this.roomService.deleteRoom(roomName);
+      this.logger.log(`[ADMIN] LiveKit room deleted: ${roomName} (session ${sessionId}) by admin ${adminId}`);
+    } catch (error) {
+      this.logger.warn(
+        `[ADMIN] deleteRoom failed for ${roomName}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    let sessionEnded = false;
+    if (session.active) {
+      await (this.prisma as any).streaming_sessions.update({
+        where: { id: sessionId },
+        data: { active: false, endTime: new Date() },
+      });
+      sessionEnded = true;
+    }
+
+    return { success: true, sessionId, roomName, sessionEnded };
+  }
+
+  /**
+   * Bulk cleanup: end active sessions when LiveKit has no room or zero participants.
+   */
+  async cleanupStaleStreams(): Promise<{ checked: number; ended: number }> {
+    return this.streamingService.cleanupStaleActiveSessions();
+  }
+
+  /**
+   * Reconciles LiveKit participant metrics into `streaming_sessions.metrics`, then runs
+   * {@link StreamingService.cleanupStaleActiveSessions} so abandoned rows (empty LiveKit room
+   * or zero participants) are ended in the DB. That unblocks {@link StreamingService.generateToken}
+   * from endlessly reusing a zombie "active" session when creators, viewers, or coordinators
+   * request a new join for the next run.
+   */
+  async reconcileAndCleanupStreamingSessions(): Promise<{
+    reconciled: { staleCount: number; lkRooms: unknown[] } | null;
+    cleanup: { checked: number; ended: number } | null;
+  }> {
+    let reconciled: { staleCount: number; lkRooms: unknown[] } | null = null;
+    try {
+      reconciled = await this.reconcileStreamSessions();
+    } catch (err) {
+      this.logger.warn(
+        `[STREAM-HANDOFF] reconcileStreamSessions failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    let cleanup: { checked: number; ended: number } | null = null;
+    try {
+      cleanup = await this.streamingService.cleanupStaleActiveSessions();
+      if (cleanup.ended > 0) {
+        this.logger.log(
+          `[STREAM-HANDOFF] cleanupStaleActiveSessions ended ${cleanup.ended} of ${cleanup.checked} active session(s)`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[STREAM-HANDOFF] cleanupStaleActiveSessions failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    return { reconciled, cleanup };
+  }
+
+  /**
+   * Force-end every still-active `streaming_sessions` row for an event (e.g. stuck after a crash
+   * or missed "End stream"). Uses the same DB + LiveKit teardown as webhooks via
+   * {@link StreamingService.endSessionForWebhookOrCleanup}, including moving LIVE → POST_LIVE when
+   * appropriate so a new broadcast session can be created cleanly for any role.
+   */
+  async finalizeEventStreamingHandoff(
+    eventId: string,
+    adminId: string,
+  ): Promise<{
+    eventId: string;
+    sessionIdsEnded: string[];
+    message: string;
+  }> {
+    const sessions = await (this.prisma as any).streaming_sessions.findMany({
+      where: { eventId, active: true },
+      select: { id: true },
+    });
+    const sessionIdsEnded: string[] = [];
+
+    for (const row of sessions as { id: string }[]) {
+      try {
+        await this.streamingService.endSessionForWebhookOrCleanup(row.id);
+        sessionIdsEnded.push(row.id);
+      } catch (err) {
+        this.logger.warn(
+          `[STREAM-HANDOFF] endSessionForWebhookOrCleanup failed for session ${row.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    if (sessionIdsEnded.length > 0) {
+      this.logger.log(
+        `[STREAM-HANDOFF] admin ${adminId} finalized ${sessionIdsEnded.length} streaming session(s) for event ${eventId}`,
+      );
+      await this.logAuditAction({
+        adminId,
+        targetType: "EVENT",
+        targetId: eventId,
+        action: "FINALIZE_STREAMING_HANDOFF",
+        reason: "End active streaming_sessions for event so a new session can start",
+        metadata: { sessionIdsEnded },
+      });
+    }
+
+    return {
+      eventId,
+      sessionIdsEnded,
+      message:
+        sessionIdsEnded.length === 0
+          ? "No active streaming sessions for this event."
+          : `Ended ${sessionIdsEnded.length} active session(s). New tokens may create a fresh session.`,
+    };
+  }
+
+  /**
+   * Background: metrics + automatic teardown of zombie sessions (30s).
+   * Without cleanup, DB rows can stay active with zero LiveKit participants and block clean handoff.
+   */
+  @Cron("*/30 * * * * *")
+  streamSessionsReconcileCron(): void {
+    void this.reconcileAndCleanupStreamingSessions().catch((err) =>
+      this.logger.warn(
+        `[STREAM-RECONCILE-CRON] ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+  }
+
+  /**
+   * Read-only system health checks (streaming, events, messaging).
+   * Safe to call from HTTP or cron; streaming section runs reconciliation first.
+   */
+  async runSystemAudit(): Promise<SystemAuditResult> {
+    const streamingIssues: SystemAuditIssue[] = [];
+    const eventsIssues: SystemAuditIssue[] = [];
+    const messagingIssues: SystemAuditIssue[] = [];
+
+    let reconciled: { staleCount: number; lkRooms: any[] } | null = null;
+    try {
+      reconciled = await this.reconcileStreamSessions();
+    } catch (err) {
+      this.logger.warn(
+        `[SYSTEM-AUDIT] reconcileStreamSessions failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      streamingIssues.push({
+        code: "STREAM_RECONCILE_FAILED",
+        title: "Could not reconcile streaming sessions with LiveKit",
+        severity: "info",
+        recommendation: "Verify LIVEKIT_* env vars and LiveKit project status; retry after connectivity is restored.",
+      });
+    }
+
+    if (!reconciled) {
+      streamingIssues.push({
+        code: "LIVEKIT_NOT_CONFIGURED",
+        title: "LiveKit is not configured on this API",
+        severity: "info",
+        recommendation:
+          "Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET for stream reconciliation and room management.",
+      });
+    } else {
+      if (reconciled.staleCount > 0) {
+        streamingIssues.push({
+          code: "STALE_ACTIVE_SESSIONS",
+          title: "Active DB sessions with zero LiveKit participants",
+          count: reconciled.staleCount,
+          severity: "warning",
+          recommendation:
+            "Open Admin → Streams to review; use Resolve to tear down abandoned rooms or investigate broadcaster disconnects.",
+        });
+      }
+      const lkNames = new Set(
+        reconciled.lkRooms.map((r: { name?: string }) => r.name || "").filter(Boolean),
+      );
+      const activeRows = await (this.prisma as any).streaming_sessions.findMany({
+        where: { active: true },
+        select: { roomId: true },
+      });
+      let ghostActive = 0;
+      for (const row of activeRows) {
+        if (!lkNames.has(row.roomId)) ghostActive++;
+      }
+      if (ghostActive > 0) {
+        streamingIssues.push({
+          code: "ACTIVE_SESSION_NO_LIVEKIT_ROOM",
+          title: "Active streaming_sessions rows with no matching LiveKit room",
+          count: ghostActive,
+          severity: "warning",
+          recommendation:
+            "Likely ghost sessions after crashes or API drift. Resolve from Streams or endSession; verify createSession vs token auto-create paths.",
+        });
+      }
+    }
+
+    const liveEvents = await (this.prisma as any).events.findMany({
+      where: { phase: "LIVE" },
+      select: { id: true },
+    });
+    const activeSessionEventIds = new Set(
+      (
+        await (this.prisma as any).streaming_sessions.findMany({
+          where: { active: true },
+          select: { eventId: true },
+        })
+      ).map((s: { eventId: string }) => s.eventId),
+    );
+    const liveWithoutStream = liveEvents.filter((e: { id: string }) => !activeSessionEventIds.has(e.id)).length;
+    if (liveWithoutStream > 0) {
+      eventsIssues.push({
+        code: "LIVE_EVENT_NO_ACTIVE_STREAM",
+        title: "Events in LIVE phase with no active streaming session",
+        count: liveWithoutStream,
+        severity: "warning",
+        recommendation:
+          "Confirm go-live flow: create streaming session or transition phase if stream was never started.",
+      });
+    }
+
+    let badTimes = 0;
+    try {
+      const badTimeRows = await this.prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*)::bigint AS c
+          FROM public.events
+          WHERE "endTime" IS NOT NULL
+            AND "endTime" < "startTime"
+        `,
+      );
+      badTimes = Number(badTimeRows[0]?.c ?? 0);
+    } catch (err) {
+      this.logger.warn(
+        `[SYSTEM-AUDIT] event time-range query failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    if (badTimes > 0) {
+      eventsIssues.push({
+        code: "EVENT_END_BEFORE_START",
+        title: "Events where endTime is before startTime",
+        count: badTimes,
+        severity: "warning",
+        recommendation: "Fix event schedules in studio or via admin tools to restore consistent timelines.",
+      });
+    }
+
+    let orphanEventMsgs = 0;
+    let orphanTicketMsgs = 0;
+    try {
+      const orphanEventMsgRows = await this.prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*)::bigint AS c
+          FROM public.messages m
+          WHERE m.event_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM public.events e WHERE e.id = m.event_id)
+        `,
+      );
+      orphanEventMsgs = Number(orphanEventMsgRows[0]?.c ?? 0);
+    } catch (err) {
+      this.logger.warn(
+        `[SYSTEM-AUDIT] messages/orphan-event query failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    if (orphanEventMsgs > 0) {
+      messagingIssues.push({
+        code: "MESSAGES_ORPHAN_EVENT",
+        title: "Messages referencing a missing event",
+        count: orphanEventMsgs,
+        severity: "warning",
+        recommendation:
+          "Investigate deletes vs message retention; consider nulling event_id for historical rows or restoring events.",
+      });
+    }
+
+    try {
+      const orphanTicketMsgRows = await this.prisma.$queryRaw<{ c: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*)::bigint AS c
+          FROM public.messages m
+          WHERE m.ticket_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM public.tickets t WHERE t.id = m.ticket_id)
+        `,
+      );
+      orphanTicketMsgs = Number(orphanTicketMsgRows[0]?.c ?? 0);
+    } catch (err) {
+      this.logger.warn(
+        `[SYSTEM-AUDIT] messages/orphan-ticket query failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    if (orphanTicketMsgs > 0) {
+      messagingIssues.push({
+        code: "MESSAGES_ORPHAN_TICKET",
+        title: "Messages referencing a missing ticket",
+        count: orphanTicketMsgs,
+        severity: "warning",
+        recommendation: "Align ticket lifecycle with messaging; clean up or migrate orphaned message rows.",
+      });
+    }
+
+    const countWarnings = (issues: SystemAuditIssue[]) =>
+      issues.filter((i) => i.severity === "warning").length;
+
+    const streaming = countWarnings(streamingIssues);
+    const events = countWarnings(eventsIssues);
+    const messaging = countWarnings(messagingIssues);
+    const totalIssues = streaming + events + messaging;
+
+    return {
+      generatedAt: new Date().toISOString(),
+      summary: {
+        totalIssues,
+        streaming,
+        events,
+        messaging,
+      },
+      sections: {
+        streaming: { name: "Streaming", issues: streamingIssues },
+        events: { name: "Events", issues: eventsIssues },
+        messaging: { name: "Messaging", issues: messagingIssues },
+      },
+    };
+  }
+
+  private buildSystemAuditEmailBody(audit: SystemAuditResult): string {
+    const lines: string[] = [
+      `Showgeo system audit (${audit.generatedAt})`,
+      `Total issues (warnings): ${audit.summary.totalIssues}`,
+      "",
+    ];
+    for (const key of ["streaming", "events", "messaging"] as const) {
+      const sec = audit.sections[key];
+      lines.push(`--- ${sec.name} ---`);
+      if (sec.issues.length === 0) {
+        lines.push("  (no issues)");
+      } else {
+        for (const i of sec.issues) {
+          const c = i.count != null ? ` [count=${i.count}]` : "";
+          lines.push(`  [${i.severity}] ${i.code}: ${i.title}${c}`);
+          lines.push(`    → ${i.recommendation}`);
+        }
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  systemAuditDailyEmail(): void {
+    void (async () => {
+      try {
+        const audit = await this.runSystemAudit();
+        if (audit.summary.totalIssues === 0) {
+          return;
+        }
+        const raw = this.configService.get<string>("SYSTEM_AUDIT_ALERT_EMAIL")?.trim();
+        if (!raw) {
+          this.logger.warn(
+            "[SYSTEM-AUDIT-CRON] Issues detected but SYSTEM_AUDIT_ALERT_EMAIL is unset; skipping email.",
+          );
+          return;
+        }
+        const recipients = raw
+          .split(/[,;\s]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const body = this.buildSystemAuditEmailBody(audit);
+        for (const to of recipients) {
+          await this.emailService.sendEmail({
+            to,
+            subject: `[Showgeo] System audit: ${audit.summary.totalIssues} warning(s)`,
+            text: body,
+          });
+        }
+        this.logger.log(
+          `[SYSTEM-AUDIT-CRON] Emailed ${recipients.length} recipient(s); total warnings=${audit.summary.totalIssues}`,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `[SYSTEM-AUDIT-CRON] ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    })();
   }
 
   /**

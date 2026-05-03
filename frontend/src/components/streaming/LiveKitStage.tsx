@@ -12,6 +12,40 @@ import type {
 import { ScreensaverPlayer } from "./ScreensaverPlayer";
 import { isDevelopment } from "@/utils/env";
 
+/**
+ * Prefer screen share, then a camera publication that already has a `track`.
+ * Using the first non-screen pub without a track caused preview to stay empty while
+ * BroadcasterControls showed "Camera Live" (another pub in the map had the real track).
+ */
+function selectPrimaryLocalVideoPublication(
+  allVideoPubs: LocalTrackPublication[],
+): { pub: LocalTrackPublication; source: "camera" | "screen" } | null {
+  const screenPub = allVideoPubs.find(
+    (pub) =>
+      pub.kind === Track.Kind.Video &&
+      ((pub as { source?: unknown }).source === "screen_share" ||
+        (pub as { source?: unknown }).source === Track.Source?.ScreenShare),
+  );
+  const nonScreen = allVideoPubs.filter((pub) => {
+    if (pub.kind !== Track.Kind.Video) return false;
+    const s = (pub as { source?: unknown }).source;
+    if (
+      s === "screen_share" ||
+      s === Track.Source?.ScreenShare ||
+      s === Track.Source?.ScreenShareAudio
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const cameraPub = nonScreen.find((p) => p.track) ?? nonScreen[0];
+  const videoPub = screenPub ?? cameraPub;
+  if (!videoPub) return null;
+  const isScreen =
+    !!screenPub && (videoPub.trackSid === screenPub.trackSid || videoPub === screenPub);
+  return { pub: videoPub, source: isScreen ? "screen" : "camera" };
+}
+
 type LiveKitStageProps = {
   room: Room;
   isPaused: boolean;
@@ -43,6 +77,41 @@ export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitS
   });
   // ✅ Track if camera has ever been enabled (to hide guidance after first use)
   const [cameraHasBeenEnabled, setCameraHasBeenEnabled] = useState(false);
+
+  // LiveKit mutates localParticipant (e.g. isCameraEnabled) without React state.
+  // BroadcasterControls polls + updates its own state, so the button can show "Camera Live"
+  // while this component never re-rendered. A light tick keeps overlays / cameraEnabled in sync.
+  const [lkUiTick, setLkUiTick] = useState(0);
+  const devPreviewWarnAt = useRef(0);
+  useEffect(() => {
+    if (!isBroadcaster || !room) return;
+    const id = window.setInterval(() => setLkUiTick((n) => n + 1), 400);
+    return () => window.clearInterval(id);
+  }, [isBroadcaster, room]);
+
+  // Reconcile React preview state with LiveKit on a timer. Publications can gain
+  // `track` without firing trackPublished in some cases; cameraReady then goes true
+  // while localVideo state never updated (listeners only run inside [room] effect).
+  useEffect(() => {
+    if (!isBroadcaster || !room?.localParticipant) return;
+    void lkUiTick;
+    const all = Array.from(
+      room.localParticipant.videoTrackPublications.values(),
+    ) as LocalTrackPublication[];
+    const picked = selectPrimaryLocalVideoPublication(all);
+    if (!picked?.pub?.track) return;
+    const { pub, source } = picked;
+    const localTrack = pub.track as LocalVideoTrack;
+    setLocalVideo((prev) => {
+      if (prev.trackSid === pub.trackSid && prev.track === localTrack) return prev;
+      return {
+        track: localTrack,
+        trackSid: pub.trackSid,
+        source,
+        isEnabled: true,
+      };
+    });
+  }, [room, isBroadcaster, lkUiTick]);
 
   // Get broadcaster's local video tracks (camera and screen share)
   // Note: isPaused only affects UI (screensaver), not track state
@@ -105,66 +174,27 @@ export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitS
         })),
       });
       
-      // ✅ CRITICAL FIX: Don't require pub.track in find() - publication might exist before track is available
-      // Check for screen share first (screen share has source property)
-      // Screen share source is typically "screen_share" or Track.Source.ScreenShare
-      const screenPub = allVideoPubs.find(
-        (pub) => pub.kind === Track.Kind.Video &&
-        ((pub as any).source === "screen_share" || 
-         (pub as any).source === Track.Source?.ScreenShare)
+      const picked = selectPrimaryLocalVideoPublication(
+        allVideoPubs as LocalTrackPublication[],
       );
-      
-      // ✅ FIX #1 & #4: Explicitly check for camera source with enhanced detection
-      // Then check for camera (not screen share)
-      // Don't filter by pub.track - publication exists even if track isn't ready yet
-      const cameraPub = allVideoPubs.find((pub) => {
-        const source = (pub as any).source;
-        const isVideo = pub.kind === Track.Kind.Video;
-        
-        // Log source for debugging
-        if (isVideo) {
-          console.log("[LiveKitStage] Checking publication for camera", {
-            trackSid: pub.trackSid,
-            source,
-            sourceType: typeof source,
-            isVideo,
-            hasTrack: !!pub.track,
-            isScreenShare: source === "screen_share" || source === Track.Source?.ScreenShare,
-          });
-        }
-        
-        return isVideo &&
-          (source === Track.Source?.Camera ||
-           source === "camera" ||
-           source === 1 || // Track.Source.Camera might be numeric
-           (source !== "screen_share" && 
-            source !== Track.Source?.ScreenShare &&
-            source !== Track.Source?.ScreenShareAudio &&
-            source !== undefined && // Accept undefined as potential camera
-            source !== null));
-      });
 
-      const videoPub = screenPub || cameraPub;
-
-      // ✅ CRITICAL FIX: Check if track exists, but also handle case where track might be null initially
-      // When setCameraEnabled(true) is called, the publication is created but track might not be available yet
-      // We need to wait for the track to become available
-      if (videoPub) {
+      if (picked) {
+        const videoPub = picked.pub;
         const trackSid = videoPub.trackSid;
-        const source = screenPub ? "screen" : "camera";
-        
-        // If track is available, use it immediately
+        const source = picked.source;
+
         if (videoPub.track) {
           const localTrack = videoPub.track as LocalVideoTrack;
           
           // Only update state if trackSid has changed (prevents unnecessary re-renders)
           setLocalVideo((prev) => {
-            // If trackSid is the same, don't update (same track, avoid detach/attach)
-            if (prev.trackSid === trackSid) {
+            // Same sid + same track object: skip to avoid detach/attach churn.
+            // If sid matches but track was missing and is now available, we must update.
+            if (prev.trackSid === trackSid && prev.track === localTrack) {
               console.log(`[LiveKitStage] Track ${trackSid} unchanged, skipping state update`);
               return prev;
             }
-            
+
             console.log(`[LiveKitStage] Local ${source} track set`, {
               source,
               isMuted: videoPub.isMuted,
@@ -208,21 +238,19 @@ export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitS
           pollingIntervals.push(pollInterval);
         }
       } else {
-        // No video publication at all - clear the track
         setLocalVideo((prev) => {
-          // Only update if we actually need to clear (avoid unnecessary re-renders)
           if (prev.track === null && prev.trackSid === null) return prev;
-          
+
           console.warn("[LiveKitStage] No video publication found, clearing", {
             videoTrackCount: allVideoPubs.length,
             previousTrackSid: prev.trackSid,
-            allPubs: allVideoPubs.map(p => ({
+            allPubs: allVideoPubs.map((p) => ({
               trackSid: p.trackSid,
               hasTrack: !!p.track,
               source: (p as any).source,
             })),
           });
-          
+
           return { track: null, trackSid: null, source: null, isEnabled: true };
         });
       }
@@ -425,7 +453,8 @@ export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitS
     );
     // Track is ready if it exists AND is not muted
     return !!cameraPub?.track && !cameraPub?.isMuted;
-  }, [room?.localParticipant, room?.localParticipant?.videoTrackPublications]);
+    // lkUiTick: publications map mutates in place; tick forces recompute after camera toggles.
+  }, [room?.localParticipant, lkUiTick]);
   
   // ✅ Track if camera has been enabled at least once (hide guidance after first use)
   useEffect(() => {
@@ -456,10 +485,10 @@ export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitS
     return cameraPub?.isMuted ?? false;
   }, [hasLocalVideo, localVideo.source, room, room?.localParticipant]);
 
-  // Dev diagnostics
+  // Dev diagnostics (throttled — lkUiTick fires every 400ms)
   useEffect(() => {
     if (!isDevelopment) return;
-    
+
     if (hasVideo) {
       console.log("[LiveKitStage] Primary video:", {
         isLocal: hasLocalVideo,
@@ -467,10 +496,29 @@ export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitS
         hasLocalCamera: !!localVideo.track,
         remoteCount: remoteVideoTracks.length,
       });
-    } else {
+    } else if (isBroadcaster && cameraEnabled && !hasLocalVideo) {
+      const now = Date.now();
+      if (now - devPreviewWarnAt.current > 5000) {
+        devPreviewWarnAt.current = now;
+        console.warn(
+          "[LiveKitStage] Camera on but no preview attach yet (sync runs on room events + timer).",
+          { cameraReady, hasLocalTrackInState: !!localVideo.track },
+        );
+      }
+    } else if (!isBroadcaster || !cameraEnabled) {
       console.warn("[LiveKitStage] No video tracks available while LIVE");
     }
-  }, [hasVideo, hasLocalVideo, localVideo.track, localVideo.source, primaryRemoteVideoTrack, remoteVideoTracks.length]);
+  }, [
+    hasVideo,
+    hasLocalVideo,
+    localVideo.track,
+    localVideo.source,
+    primaryRemoteVideoTrack,
+    remoteVideoTracks.length,
+    isBroadcaster,
+    cameraEnabled,
+    cameraReady,
+  ]);
 
   return (
     <div className="w-full h-full relative bg-gradient-to-br from-gray-950 via-gray-900 to-black flex items-center justify-center">
@@ -594,7 +642,20 @@ export function LiveKitStage({ room, isPaused, isBroadcaster = false }: LiveKitS
                   The video feed will appear here shortly
                 </p>
               </>
-            ) : null}
+            ) : (
+              <>
+                <h2 className="text-white text-2xl font-bold mb-3">Connecting preview…</h2>
+                <div className="mb-4">
+                  <div className="w-16 h-16 mx-auto border-4 border-gray-600 border-t-green-500 rounded-full animate-spin" />
+                </div>
+                <p className="text-gray-300 text-lg mb-2">
+                  Your camera is active; attaching video to this screen.
+                </p>
+                <p className="text-gray-500 text-sm">
+                  If this message stays up, check camera permissions, another tab using the camera, or the browser console.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           /* Viewer placeholder when no video available */

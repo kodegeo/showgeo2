@@ -29,11 +29,15 @@ export async function checkCodeOfConductConsent(
     select: { preferences: true },
   });
 
+  const cocMessage =
+    "You must accept the Code of Conduct before joining. Please review and accept the Code of Conduct in your profile settings.";
+
   // If no profile exists, consent is not accepted
   if (!profile || !profile.preferences) {
-    throw new ForbiddenException(
-      "You must accept the Code of Conduct before joining. Please review and accept the Code of Conduct in your profile settings.",
-    );
+    throw new ForbiddenException({
+      message: cocMessage,
+      code: "CODE_OF_CONDUCT_REQUIRED",
+    });
   }
 
   const preferences = profile.preferences as any;
@@ -41,9 +45,10 @@ export async function checkCodeOfConductConsent(
 
   // Check if consent exists and is accepted
   if (!consent || !consent.codeOfConductAccepted) {
-    throw new ForbiddenException(
-      "You must accept the Code of Conduct before joining. Please review and accept the Code of Conduct in your profile settings.",
-    );
+    throw new ForbiddenException({
+      message: cocMessage,
+      code: "CODE_OF_CONDUCT_REQUIRED",
+    });
   }
 
   return {

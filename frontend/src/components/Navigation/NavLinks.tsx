@@ -16,7 +16,7 @@ const links = [
 ];
 
 const authLinks = [
-  { name: "Dashboard", path: "/dashboard" },
+  { name: "Profile", path: "/profile" },
   { name: "My Tickets", path: "/tickets" },
 ];
 
@@ -47,6 +47,7 @@ const NavLinks: React.FC<NavLinksProps> = ({ isAuthenticated, onNavigate }) => {
       ))}
 
       {isAuthenticated &&
+        !userIsCreator &&
         authLinks.map((link) => (
           <Link
             key={link.path}
@@ -58,13 +59,29 @@ const NavLinks: React.FC<NavLinksProps> = ({ isAuthenticated, onNavigate }) => {
           </Link>
         ))}
       {isAuthenticated && userIsCreator && (
-        <Link
-          to="/studio/dashboard"
-          onClick={onNavigate}
-          className={`${isActive("/studio/dashboard")} transition-colors`}
-        >
-          Creator Dashboard
-        </Link>
+        <>
+          <Link
+            to="/studio/profile"
+            onClick={onNavigate}
+            className={`${isActive("/studio/profile")} transition-colors`}
+          >
+            Profile
+          </Link>
+          <Link
+            to="/studio/overview"
+            onClick={onNavigate}
+            className={`${isActive("/studio/overview")} transition-colors`}
+          >
+            Overview
+          </Link>
+          <Link
+            to="/tickets"
+            onClick={onNavigate}
+            className={`${isActive("/tickets")} transition-colors`}
+          >
+            My Tickets
+          </Link>
+        </>
       )}
     </div>
   );

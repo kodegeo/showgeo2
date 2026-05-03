@@ -1,6 +1,15 @@
 import { NavLink, useLocation } from "react-router-dom";
 import { useState } from "react";
-import { Menu, X, LayoutDashboard, Calendar, ShoppingBag, BarChart3, Settings } from "lucide-react";
+import {
+  Menu,
+  X,
+  LayoutDashboard,
+  Calendar,
+  UsersRound,
+  ShoppingBag,
+  BarChart3,
+  Settings,
+} from "lucide-react";
 
 interface SidebarItem {
   label: string;
@@ -11,8 +20,8 @@ interface SidebarItem {
 
 const sidebarItems: SidebarItem[] = [
   {
-    label: "Dashboard",
-    path: "/studio/dashboard",
+    label: "Overview",
+    path: "/studio/overview",
     icon: <LayoutDashboard className="w-5 h-5" />,
     section: "main",
   },
@@ -20,6 +29,12 @@ const sidebarItems: SidebarItem[] = [
     label: "Events",
     path: "/studio/events",
     icon: <Calendar className="w-5 h-5" />,
+    section: "main",
+  },
+  {
+    label: "Community",
+    path: "/studio/community",
+    icon: <UsersRound className="w-5 h-5" />,
     section: "main",
   },
   {
@@ -70,7 +85,7 @@ export function CreatorSidebar() {
           {/* Logo/Brand */}
           <div className="px-6 py-4 border-b border-gray-800">
             <h2 className="text-xl font-heading font-bold text-white uppercase tracking-tighter">
-              Creator Dashboard
+              Studio
             </h2>
           </div>
 

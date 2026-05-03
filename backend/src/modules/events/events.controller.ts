@@ -7,12 +7,26 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { Controller, Get, Post, Param, Req } from "@nestjs/common";
 
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from "@nestjs/swagger";
 import { EventsService } from "./events.service";
-import { CreateEventDto, UpdateEventDto, EventQueryDto, PhaseTransitionDto, EventAnalyticsDto } from "./dto";
+import { EventsDiscoveryService } from "./events-discovery.service";
+import { EscrowService } from "../escrow/escrow.service";
+import { ClipsService } from "../clips/clips.service";
+import { RegistrationsService } from "../registrations/registrations.service";
+import { AccessPassesService } from "../tickets/access-passes.service";
+import { SendInvitationsDto } from "../registrations/dto/send-invitations.dto";
+import { CreateClipDto } from "../clips/clips.dto";
+import { CreateEventDto, UpdateEventDto, EventQueryDto, PhaseTransitionDto, EventAnalyticsDto, RegisterForEventDto, ClaimInviteDto } from "./dto";
+import { InviteToEventDto, InviteFollowersDto } from "../tickets/dto/invite-to-event.dto";
+import { RegisterFreeDto, EventCheckoutDto } from "../tickets/dto/event-ticket-flow.dto";
+import { EventTicketLifecycleService } from "../tickets/event-ticket-lifecycle.service";
+import { OptionalSupabaseAuthGuard } from "../../common/guards/optional-supabase-auth.guard";
+import { CreateRevenueSplitDto } from "./dto/revenue-split.dto";
 import { UpsertEventRoleBodyDto } from "./dto/upsert-event-role.dto";
 import { AudienceActionDto } from "./dto/audience-action.dto";
 import { CreateReminderDto } from "./dto/create-reminder.dto";
@@ -34,14 +48,21 @@ type User = app_users;
 @ApiTags("events")
 @Controller("events")
 export class EventsController {
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    private readonly eventsService: EventsService,
+    private readonly eventsDiscoveryService: EventsDiscoveryService,
+    private readonly escrowService: EscrowService,
+    private readonly clipsService: ClipsService,
+    private readonly registrationsService: RegistrationsService,
+    private readonly accessPassesService: AccessPassesService,
+    private readonly eventTicketLifecycle: EventTicketLifecycleService,
+  ) {}
 
   // ------------------------------------------------------------
   // CREATE EVENT
   // ------------------------------------------------------------
   @Post()
-  @UseGuards(SupabaseAuthGuard, RolesGuard)
-  @Roles("ENTITY", "ADMIN")
+  @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a new event" })
   @ApiResponse({ status: 201, description: "Event created successfully" })
@@ -113,6 +134,397 @@ export class EventsController {
       endDate: query?.endDate,
       streamingAccessLevel: query?.streamingAccessLevel,
       location: query?.location,
+    });
+  }
+
+  @Get("followed")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get upcoming or live events from creators the current user follows" })
+  @ApiResponse({ status: 200, description: "List of events from followed entities" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  getFollowed(@CurrentUser() user: User) {
+    assertFullUser(user);
+    return this.eventsService.getFollowedEvents(user.id);
+  }
+
+  @Get("discovery")
+  @Public()
+  @ApiOperation({ summary: "Get discovery sections: live_now, trending, following, nearby" })
+  @ApiResponse({ status: 200, description: "Discovery sections with up to 20 events each" })
+  @ApiQuery({ name: "region", required: false, type: String, description: "Region code for nearby (e.g. US-CA)" })
+  async getDiscovery(
+    @Req() req: Request & { user?: { id: string } },
+    @Query("region") region?: string,
+  ) {
+    const userId = req.user?.id ?? null;
+    return this.eventsDiscoveryService.getDiscovery(userId, region);
+  }
+
+  @Get("my-events")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get current user's events with dashboard stats (tickets, revenue, escrow, clips)" })
+  @ApiResponse({ status: 200, description: "Events and recent clips for creator dashboard" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  getMyEvents(@CurrentUser() user: User) {
+    assertFullUser(user);
+    return this.eventsService.getMyEvents(user.id);
+  }
+
+  @Get("upcoming")
+  @Public()
+  @ApiOperation({ summary: "Get upcoming events for discovery" })
+  @ApiResponse({ status: 200, description: "List of upcoming events" })
+  getUpcoming() {
+    return this.eventsService.findAll({
+      sort: "upcoming",
+      startDate: new Date().toISOString(),
+      status: "SCHEDULED",
+      limit: 20,
+      page: 1,
+    });
+  }
+
+  @Get(":id/financial-summary")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get financial summary (escrow, revenue, splits) for event creator/collaborators" })
+  @ApiParam({ name: "id", type: String })
+  @ApiResponse({ status: 200, description: "Financial summary" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "Event not found" })
+  getFinancialSummary(@Param("id") eventId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
+    return this.escrowService.getFinancialSummary(eventId, user.id);
+  }
+
+  @Get(":id/revenue")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get event revenue dashboard (tickets, revenue, escrow, collaborators)" })
+  @ApiParam({ name: "id", type: String })
+  @ApiResponse({ status: 200, description: "Revenue dashboard data" })
+  @ApiResponse({ status: 403, description: "Forbidden" })
+  @ApiResponse({ status: 404, description: "Event not found" })
+  getEventRevenue(@Param("id") eventId: string, @CurrentUser() user: User) {
+    assertFullUser(user);
+    return this.escrowService.getEventRevenue(eventId, user.id);
+  }
+
+  @Post(":id/revenue-splits")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Create or update a revenue split. Creator only. Splits must total <= 100%." })
+  @ApiParam({ name: "id", type: String })
+  @ApiResponse({ status: 200, description: "Split created or updated" })
+  @ApiResponse({ status: 400, description: "Splits locked or total exceeds 100%" })
+  @ApiResponse({ status: 403, description: "Forbidden or collaborator not allowed" })
+  @ApiResponse({ status: 404, description: "Event not found" })
+  upsertRevenueSplit(
+    @Param("id") eventId: string,
+    @Body() dto: CreateRevenueSplitDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.escrowService.upsertRevenueSplit(
+      eventId,
+      dto.collaboratorId,
+      dto.sharePercent,
+      dto.role ?? null,
+      user.id,
+    );
+  }
+
+  @Post(":id/revenue-splits/:splitId/approve")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Approve a revenue split (collaborator only). When all approve, splits_locked becomes true; ticket sales can then begin." })
+  @ApiParam({ name: "id", type: String, description: "Event ID" })
+  @ApiParam({ name: "splitId", type: String, description: "Revenue split ID" })
+  @ApiResponse({ status: 200, description: "Approval result with splitsLocked" })
+  @ApiResponse({ status: 400, description: "Splits total exceeds 100%" })
+  @ApiResponse({ status: 403, description: "Only the collaborator for this split can approve" })
+  @ApiResponse({ status: 404, description: "Revenue split not found" })
+  approveRevenueSplit(
+    @Param("id") eventId: string,
+    @Param("splitId") splitId: string,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.escrowService.approveSplit(eventId, splitId, user.id);
+  }
+
+  @Get(":id/clips")
+  @Public()
+  @ApiOperation({ summary: "Get all clips for an event (newest first)" })
+  @ApiParam({ name: "id", type: String })
+  @ApiResponse({ status: 200, description: "List of clips" })
+  @ApiResponse({ status: 404, description: "Event not found" })
+  getEventClips(@Param("id") eventId: string) {
+    return this.clipsService.getClipsByEvent(eventId);
+  }
+
+  @Post(":id/clips")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Create a clip from an event (creator only)" })
+  @ApiParam({ name: "id", type: String })
+  @ApiResponse({ status: 201, description: "Clip created" })
+  @ApiResponse({ status: 403, description: "Only event creator can create clips" })
+  @ApiResponse({ status: 404, description: "Event not found" })
+  createEventClip(
+    @Param("id") eventId: string,
+    @Body() dto: CreateClipDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.clipsService.createClip(user.id, eventId, dto);
+  }
+
+  @Get(":id/stream")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get streaming session info for Event Studio (RTMP URL, stream key) — creator only" })
+  @ApiParam({ name: "id", type: String })
+  @ApiResponse({ status: 200, description: "Stream info" })
+  @ApiResponse({ status: 403, description: "Not the event creator" })
+  async getStream(
+    @Param("id") id: string,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    const ownerId = await this.eventsService.getEventEntityOwnerId(id);
+    if (!ownerId) throw new BadRequestException("Event not found");
+    if (ownerId !== user.id) {
+      throw new ForbiddenException("Only the event creator can access stream credentials");
+    }
+    return this.eventsService.getStreamForEvent(id);
+  }
+
+  @Post(":id/invitations")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Invite audience (followers or email list); creates registrations with unique access codes",
+  })
+  @ApiParam({ name: "id", type: String })
+  @ApiResponse({ status: 200, description: "Invitations created" })
+  async sendInvitations(
+    @Param("id") eventId: string,
+    @Body() dto: SendInvitationsDto,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException("Authentication required");
+    }
+    return this.registrationsService.sendInvitations(eventId, dto, userId);
+  }
+    
+  createEventInvitations(
+    @Param("id") eventId: string,
+    @Body() dto: SendInvitationsDto,
+    @Req() req: Request & { user?: { id?: string } },
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException("Authentication required");
+    }
+    return this.registrationsService.sendInvitations(eventId, dto, userId);
+  }
+
+  @Post(":id/register")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      "Register for an event with a public free ticket type (creates access pass)",
+  })
+  @ApiParam({ name: "id", type: String, description: "Event ID" })
+  @ApiResponse({
+    status: 201,
+    description: "Access pass created",
+    schema: {
+      type: "object",
+      properties: {
+        accessPassId: { type: "string", format: "uuid" },
+        ticketTypeId: { type: "string", format: "uuid" },
+        eventId: { type: "string", format: "uuid" },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: "Payment required or bad request" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Ticket not public or requires invite" })
+  @ApiResponse({ status: 404, description: "Ticket type not found" })
+  @ApiResponse({ status: 409, description: "Already registered for this event" })
+  registerForEvent(
+    @Param("id") eventId: string,
+    @Body() body: RegisterForEventDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.accessPassesService.registerPublicForEvent(eventId, user.id, body);
+  }
+
+  @Post(":id/register-free")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      "Register for free (public or invite) — issues ticket + access_pass as needed",
+  })
+  @ApiParam({ name: "id", type: String, description: "Event ID" })
+  registerFree(
+    @Param("id") eventId: string,
+    @Body() body: RegisterFreeDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.eventTicketLifecycle.registerFree(eventId, user.id, body);
+  }
+
+  @Post(":id/redeem")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: "Redeem an invite code or claim a free ticket tier" })
+  @ApiParam({ name: "id", type: String, description: "Event ID" })
+  @ApiResponse({ status: 201, description: "{ success, ticket, accessPassId }" })
+  @ApiResponse({ status: 403, description: "Invalid or used access code" })
+  @ApiResponse({ status: 404, description: "Event or ticket type not found" })
+  @ApiResponse({ status: 409, description: "Already have an active ticket for this event" })
+  redeemAccess(
+    @Param("id") eventId: string,
+    @Body() body: RegisterFreeDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.accessPassesService.redeemAccess(eventId, user.id, body);
+  }
+
+  @Post(":id/claim")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Claim an invitation — marks event_registration REGISTERED and issues a ticket" })
+  @ApiParam({ name: "id", type: String, description: "Event ID" })
+  @ApiResponse({ status: 200, description: "{ success: true }" })
+  @ApiResponse({ status: 400, description: "Invitation already used" })
+  @ApiResponse({ status: 404, description: "Invitation not found" })
+  @ApiResponse({ status: 409, description: "Already have an active ticket for this event" })
+  claimInvite(
+    @Param("id") eventId: string,
+    @Body() body: ClaimInviteDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.accessPassesService.claimInvite(eventId, user.id, body.accessCode);
+  }
+
+  @Get(":id/access-status")
+  @Public()
+  @UseGuards(OptionalSupabaseAuthGuard)
+  getAccessStatus(
+    @Param("id") eventId: string,
+    @Query("code") inviteCode: string | undefined,
+    @Req() req: Request & { user?: { id?: string } },
+  ) {
+    const userId = req.user?.id ?? null;
+  
+    return this.eventTicketLifecycle.getAccessStatus(
+      eventId,
+      userId,
+      {
+        inviteCode: inviteCode?.trim() || undefined,
+      },
+    );
+  }
+  @Post(":id/checkout")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      "Start paid checkout — creates order + order_item, Stripe Checkout session, returns checkoutUrl",
+  })
+  @ApiParam({ name: "id", type: String })
+  createEventCheckout(
+    @Param("id") eventId: string,
+    @Body() body: EventCheckoutDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.eventTicketLifecycle.createCheckout(eventId, user.id, body);
+  }
+
+  @Post(":id/orders/:orderId/confirm")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      "Simulate payment success (dev / staging only when Stripe unavailable). Production: set ALLOW_DEV_ORDER_CONFIRM=true or use Stripe webhook.",
+  })
+  confirmEventOrder(
+    @Param("id") eventId: string,
+    @Param("orderId") orderId: string,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.eventTicketLifecycle.confirmOrderPlaceholder(
+      eventId,
+      user.id,
+      orderId,
+    );
+  }
+
+  @Post(":id/invite")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      "Invite followers or email addresses — creates access_pass rows (status SENT)",
+  })
+  @ApiParam({ name: "id", type: String, description: "Event ID" })
+  @ApiResponse({ status: 201, description: "{ created: number }" })
+  @ApiResponse({ status: 403, description: "Not the event creator" })
+  @ApiResponse({ status: 404, description: "Event or ticket type not found" })
+  inviteToEvent(
+    @Param("id") eventId: string,
+    @Body() body: InviteToEventDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.accessPassesService.inviteToEvent(eventId, user.id, body);
+  }
+
+  @Post(":id/invite-followers")
+  @UseGuards(SupabaseAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary:
+      "Invite followers in one transactional flow (invitation + ticket + inbox message)",
+  })
+  @ApiParam({ name: "id", type: String, description: "Event ID" })
+  @ApiResponse({ status: 201, description: "{ created: number }" })
+  inviteFollowers(
+    @Param("id") eventId: string,
+    @Body() body: InviteFollowersDto,
+    @CurrentUser() user: User,
+  ) {
+    assertFullUser(user);
+    return this.accessPassesService.InviteFollowers({
+      eventId,
+      creatorUserId: user.id,
+      ticketTypeId: body.ticketTypeId,
+      followerIds: body.followerIds,
+      emails: body.emails,
     });
   }
 
@@ -237,6 +649,9 @@ export class EventsController {
     @CurrentUser() user: User,
   ) {
     assertFullUser(user);
+    console.log(
+      `[transitionPhase] userId=${user.id} eventId=${id} requestedPhase=${phaseTransitionDto.phase}`,
+    );
     return this.eventsService.transitionPhase(id, phaseTransitionDto, user.id);
   }
 

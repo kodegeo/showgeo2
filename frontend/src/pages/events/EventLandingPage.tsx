@@ -1,11 +1,12 @@
-import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { Calendar, MapPin, Heart, UserPlus, Bell } from "lucide-react";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Calendar, MapPin, Heart, UserPlus, Bell, Ticket } from "lucide-react";
+import axios from "axios";
+import { toast } from "sonner";
 import { eventsService } from "@/services/events.service";
 import { followService } from "@/services/follow.service";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 
 export function EventLandingPage() {
   const { id } = useParams<{ id: string }>();
@@ -57,6 +58,105 @@ export function EventLandingPage() {
   useEffect(() => {
     if (entityFollowing !== undefined) setFollowingCreator(entityFollowing);
   }, [entityFollowing]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const codeFromUrl = searchParams.get("code") ?? "";
+  const [inviteCodeField, setInviteCodeField] = useState(codeFromUrl);
+  const [submittedInviteCode, setSubmittedInviteCode] = useState(codeFromUrl);
+  const [ticketActionId, setTicketActionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setInviteCodeField(codeFromUrl);
+    setSubmittedInviteCode(codeFromUrl);
+  }, [codeFromUrl, id]);
+
+  const { data: accessStatus, isLoading: accessLoading } = useQuery({
+    queryKey: ["event-access-status", id, submittedInviteCode, user?.id ?? "anon"],
+    queryFn: () =>
+      eventsService.getAccessStatus(id!, {
+        inviteCode: submittedInviteCode.trim() || undefined,
+      }),
+    enabled: !!id && !!event?.ticketRequired,
+  });
+
+  useEffect(() => {
+    if (searchParams.get("payment") !== "success") return;
+    toast.success("Payment complete — refreshing your access.");
+    void queryClient.invalidateQueries({ queryKey: ["event-access-status", id] });
+    const next = new URLSearchParams(searchParams);
+    next.delete("payment");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, id, queryClient]);
+
+  const effectivePassId =
+    accessStatus?.claimedAccessPassId ?? accessStatus?.resolvedAccessPassIdFromCode ?? undefined;
+
+  const codeForRegistration =
+    submittedInviteCode.trim() || accessStatus?.accessCode?.trim() || undefined;
+
+  const goToLoginForTickets = () => {
+    const returnPath = `${window.location.pathname}${window.location.search}`;
+    sessionStorage.setItem("showgeo_return_to", returnPath);
+    navigate("/login");
+  };
+
+  const handleRegisterFree = async (ticketTypeId: string) => {
+    if (!id || !isLoggedIn) return;
+    setTicketActionId(ticketTypeId);
+    try {
+      await eventsService.registerFreeForEvent(id, {
+        ticketTypeId,
+        accessPassId: effectivePassId,
+        accessCode: codeForRegistration,
+      });
+      toast.success("You're registered — you can watch when the event is live.");
+      await queryClient.invalidateQueries({ queryKey: ["event-access-status", id] });
+      await queryClient.invalidateQueries({ queryKey: ["event", id] });
+    } catch (e: unknown) {
+      const msg = axios.isAxiosError(e)
+        ? (Array.isArray(e.response?.data?.message)
+            ? e.response?.data?.message[0]
+            : e.response?.data?.message) || e.message
+        : e instanceof Error
+          ? e.message
+          : "Could not complete registration.";
+      toast.error(String(msg));
+    } finally {
+      setTicketActionId(null);
+    }
+  };
+
+  const handleCheckout = async (ticketTypeId: string) => {
+    if (!id || !isLoggedIn) return;
+    setTicketActionId(ticketTypeId);
+    try {
+      const res = await eventsService.createEventTicketCheckout(id, {
+        ticketTypeId,
+        accessPassId: effectivePassId,
+        accessCode: codeForRegistration,
+      });
+      if (res.checkoutUrl) {
+        window.location.href = res.checkoutUrl;
+        return;
+      }
+      if (res.message) {
+        toast.message(String(res.message), { duration: 10_000 });
+      } else {
+        toast.error("Checkout is not available. Configure Stripe or use a free tier.");
+      }
+    } catch (e: unknown) {
+      const msg = axios.isAxiosError(e)
+        ? (Array.isArray(e.response?.data?.message)
+            ? e.response?.data?.message[0]
+            : e.response?.data?.message) || e.message
+        : e instanceof Error
+          ? e.message
+          : "Checkout failed.";
+      toast.error(String(msg));
+    } finally {
+      setTicketActionId(null);
+    }
+  };
 
   const handleCreatorClick = () => {
     if (creatorSlug) navigate(`/creators/${creatorSlug}`);
@@ -252,17 +352,126 @@ export function EventLandingPage() {
         </div>
 
         {event.ticketRequired && (
-          <div className="border border-gray-800 rounded-lg p-6">
-            <h2 className="text-lg font-semibold mb-2">Tickets</h2>
-            <p className="text-gray-400 text-sm mb-4">
-              This event requires a ticket. Purchase or validate your ticket to attend.
+          <div className="border border-gray-800 rounded-lg p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Ticket className="w-5 h-5 text-[#CD000E]" />
+              <h2 className="text-lg font-semibold">Tickets &amp; registration</h2>
+            </div>
+            <p className="text-gray-400 text-sm">
+              This event requires a ticket. Register below, or open the invitation in your inbox and use
+              the Register link (it may include an access code in the URL).
             </p>
-            <button
-              type="button"
-              className="px-4 py-2 rounded-lg bg-[#CD000E] text-white font-semibold hover:bg-[#860005] transition-colors"
-            >
-              Get tickets (placeholder)
-            </button>
+
+            {accessLoading ? (
+              <p className="text-gray-500 text-sm">Loading ticket options…</p>
+            ) : accessStatus?.hasAccess && accessStatus?.hasTicket ? (
+              <div className="rounded-lg bg-green-950/40 border border-green-800/50 p-4 space-y-3">
+                <p className="text-green-200 text-sm font-medium">You have an active ticket for this event.</p>
+                <Link
+                  to={
+                    accessStatus?.activeTicketId
+                      ? `/events/${id}/live?ticketId=${encodeURIComponent(accessStatus.activeTicketId)}`
+                      : `/events/${id}/live`
+                  }
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#CD000E] text-white font-semibold hover:bg-[#860005] transition-colors"
+                >
+                  Watch live
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label htmlFor="invite-code" className="text-xs text-gray-500 uppercase tracking-wide">
+                    Invite / access code (optional)
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      id="invite-code"
+                      type="text"
+                      value={inviteCodeField}
+                      onChange={(e) => setInviteCodeField(e.target.value)}
+                      placeholder="Paste code from your email"
+                      className="flex-1 min-w-[200px] bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#CD000E]/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSubmittedInviteCode(inviteCodeField.trim())}
+                      className="px-4 py-2 rounded-lg border border-gray-600 text-sm text-white hover:bg-white/5"
+                    >
+                      Apply code
+                    </button>
+                  </div>
+                  {accessStatus?.inviteCodeStatus === "valid" && (
+                    <p className="text-green-400 text-xs">Invite code applied.</p>
+                  )}
+                  {accessStatus?.inviteCodeStatus === "invalid" && (
+                    <p className="text-red-400 text-xs">That code is not valid for this event.</p>
+                  )}
+                  {accessStatus?.inviteCodeStatus === "used" && (
+                    <p className="text-amber-400 text-xs">This code was already used.</p>
+                  )}
+                </div>
+
+                {!isLoggedIn ? (
+                  <div className="rounded-lg bg-white/5 border border-gray-800 p-4 space-y-3">
+                    <p className="text-gray-300 text-sm">Sign in to claim or purchase a ticket.</p>
+                    <button
+                      type="button"
+                      onClick={goToLoginForTickets}
+                      className="px-4 py-2 rounded-lg bg-[#CD000E] text-white font-semibold hover:bg-[#860005] transition-colors"
+                    >
+                      Sign in to continue
+                    </button>
+                  </div>
+                ) : !accessStatus?.availableTicketTypes?.length ? (
+                  <p className="text-amber-400 text-sm">
+                    No ticket types are configured yet. Check back later or contact the host.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {accessStatus.availableTicketTypes.map((tt) => {
+                      const price = Number(tt.price ?? 0);
+                      const isFree = price <= 0;
+                      const needsInvite = !!tt.requires_invite;
+                      const hasPass = !!effectivePassId;
+                      const blocked = needsInvite && !hasPass && accessStatus.inviteCodeStatus !== "valid";
+                      const busy = ticketActionId === tt.id;
+                      return (
+                        <li
+                          key={tt.id}
+                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg bg-white/5 border border-gray-800 p-4"
+                        >
+                          <div>
+                            <p className="font-semibold text-white">{tt.name}</p>
+                            <p className="text-sm text-gray-400">
+                              {isFree
+                                ? "Free"
+                                : `${price.toFixed(2)} ${tt.currency || "USD"}`}
+                              {needsInvite ? " · Invite only" : ""}
+                            </p>
+                            {blocked ? (
+                              <p className="text-xs text-amber-400 mt-1">
+                                Use the access code from your invitation, or Apply code above.
+                              </p>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={busy || blocked}
+                            onClick={() =>
+                              isFree ? void handleRegisterFree(tt.id) : void handleCheckout(tt.id)
+                            }
+                            className="shrink-0 px-4 py-2 rounded-lg bg-[#CD000E] text-white text-sm font-semibold hover:bg-[#860005] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {busy ? "…" : isFree ? "Register free" : "Purchase"}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

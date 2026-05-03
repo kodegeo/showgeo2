@@ -108,6 +108,8 @@ export interface ProfileEvent {
   location?: string | null;
   thumbnail?: string | null;
   phase?: EventPhase;
+  /** Set when a broadcast was started at least once (even if DB status lags). */
+  lastLaunchedBy?: string | null;
   entity?: {
     id: string;
     name: string;

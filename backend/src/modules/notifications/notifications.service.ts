@@ -15,6 +15,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { NotificationType } from "@prisma/client";
 import { NotificationGateway } from "./notifications.gateway";
+import { randomUUID } from "crypto";
 
 @Injectable()
 export class NotificationsService {
@@ -106,22 +107,25 @@ export class NotificationsService {
       throw new NotFoundException("Entity not found");
     }
 
-    // Get all followers of the entity
+    // Get all followers of the entity (follows table: target_id = entityId, target_type = ENTITY)
     const followers = await this.p.follows.findMany({
-      where: { entityId },
-      select: { userId: true },
+      where: {
+        target_id: entityId,
+        target_type: "ENTITY",
+      },
+      select: { user_id: true },
     });
 
     if (!followers.length) {
       return { count: 0, notifications: [] };
     }
 
-    const userIds = followers.map((f) => f.userId);
+    const userIds = followers.map((f: { user_id: string }) => f.user_id).filter(Boolean);
 
-    // Create notifications for all followers
+    // Create notifications and mailbox items so followers see alerts in Inbox
     const notifications = await Promise.all(
-      userIds.map((userId) =>
-        this.p.notifications.create({
+      userIds.map(async (userId) => {
+        const notification = await this.p.notifications.create({
           data: {
             userId,
             entityId,
@@ -140,8 +144,29 @@ export class NotificationsService {
               },
             },
           },
-        }),
-      ),
+        });
+        // Inbox: creator follower alerts appear in mailbox
+        const title =
+          (metadataJson as Record<string, unknown>)?.type === "event_scheduled"
+            ? "New event"
+            : (metadataJson as Record<string, unknown>)?.type === "streaming_session_started"
+              ? "Live now"
+              : (metadataJson as Record<string, unknown>)?.type === "tour_launched"
+                ? "New tour"
+                : "Update from creator";
+        await this.p.mailbox_items.create({
+          data: {
+            id: randomUUID(),
+            userId,
+            type: "NOTIFICATION",
+            title,
+            message,
+            metadata: metadataJson,
+            isRead: false,
+          },
+        });
+        return notification;
+      }),
     );
 
     // Emit real-time notifications via WebSocket to all followers
@@ -375,6 +400,55 @@ export class NotificationsService {
         phase,
         eventName,
         type: "phase_update",
+      } as Record<string, unknown>,
+    });
+  }
+
+  /**
+   * Notify followers when creator schedules a new event.
+   * Hook point: call after event create (e.g. in events.service.create when status is SCHEDULED).
+   */
+  async notifyEventScheduled(
+    eventId: string,
+    entityId: string,
+    eventName: string,
+    startTime?: Date,
+  ) {
+    const msg = startTime
+      ? `📅 New event: ${eventName} — ${startTime.toLocaleDateString()}`
+      : `📅 New event: ${eventName}`;
+    await this.broadcastToFollowers({
+      entityId,
+      type: NotificationType.EVENT_CREATED,
+      message: msg,
+      metadata: {
+        eventId,
+        eventName,
+        startTime: startTime?.toISOString(),
+        type: "event_scheduled",
+      } as Record<string, unknown>,
+    });
+  }
+
+  /**
+   * Notify followers when creator launches a tour.
+   * Hook point: call after tour create or when tour is published (e.g. in tours.service.create/update).
+   */
+  async notifyTourLaunched(
+    entityId: string,
+    tourName: string,
+    tourId: string,
+    tourSlug?: string,
+  ) {
+    await this.broadcastToFollowers({
+      entityId,
+      type: NotificationType.FOLLOWED_ENTITY_UPDATE,
+      message: `🎫 ${tourName} — new tour announced`,
+      metadata: {
+        tourId,
+        tourName,
+        tourSlug,
+        type: "tour_launched",
       } as Record<string, unknown>,
     });
   }

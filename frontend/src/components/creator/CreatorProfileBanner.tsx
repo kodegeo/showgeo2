@@ -1,3 +1,4 @@
+import { useLocation } from "react-router-dom";
 import { useEntityContext } from "@/hooks/useEntityContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useFollowers, useFollowing } from "@/hooks/useFollow";
@@ -12,8 +13,10 @@ export function CreatorProfileBanner({
   onEditClick,
   onShareClick,
 }: CreatorProfileBannerProps) {
+  const location = useLocation();
   const { currentEntity } = useEntityContext();
   const { user } = useAuth();
+  const isStudioShell = location.pathname.startsWith("/studio");
   const { data: followersData } = useFollowers(currentEntity?.id || "", 1, 1);
   const { data: followingData } = useFollowing(user?.id || "", 1, 1);
 
@@ -75,9 +78,16 @@ export function CreatorProfileBanner({
             </div>
 
             <div className="pb-2">
-              <h1 className="text-2xl md:text-3xl font-heading font-bold text-white mb-1 uppercase tracking-tighter">
-                {currentEntity.name}
-              </h1>
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl md:text-3xl font-heading font-bold text-white uppercase tracking-tighter">
+                  {currentEntity.name}
+                </h1>
+                {isStudioShell && (
+                  <span className="rounded-full border border-[#CD000E]/50 bg-[#CD000E]/20 px-3 py-1 font-heading text-xs font-semibold uppercase tracking-wider text-[#CD000E]">
+                    Creator
+                  </span>
+                )}
+              </div>
               {currentEntity.bio && (
                 <p className="text-[#9A9A9A] font-body text-sm max-w-2xl line-clamp-2">
                   {currentEntity.bio}

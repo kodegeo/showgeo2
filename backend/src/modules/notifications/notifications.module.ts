@@ -9,7 +9,7 @@ import { FollowModule } from "../follow/follow.module";   // ← REQUIRED IMPORT
 @Module({
   imports: [
     AuthModule,
-    FollowModule,   // ← THIS FIXES THE ERROR
+    FollowModule,
   ],
   providers: [
     NotificationsService,
@@ -17,5 +17,6 @@ import { FollowModule } from "../follow/follow.module";   // ← REQUIRED IMPORT
     PrismaService,
   ],
   controllers: [NotificationsController],
+  exports: [NotificationsService, NotificationGateway],
 })
 export class NotificationsModule {}

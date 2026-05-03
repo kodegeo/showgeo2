@@ -20,3 +20,11 @@ export class PrismaService
     await this.$disconnect();
   }
 }
+
+/**
+ * Some editors resolve `PrismaClient` / `PrismaService` without generated model delegates
+ * until `npx prisma generate` runs and the TS server restarts. At runtime this is always a full client.
+ */
+export function asPrismaDb(client: PrismaService): any {
+  return client;
+}

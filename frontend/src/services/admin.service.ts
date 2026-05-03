@@ -133,6 +133,55 @@ export interface AdminReport {
   resolutionNotes?: string;
 }
 
+export interface AdminStreamSessionRow {
+  roomName: string;
+  sessionId: string | null;
+  event: { id: string; name: string } | null;
+  creator: { id: string; name: string; slug: string } | null;
+  status: "live" | "stale" | "ended";
+  durationSeconds: number;
+  participantCount: number;
+  studioLivePath: string | null;
+  livekitRoomPresent: boolean;
+}
+
+export interface AdminStreamSessionsResponse {
+  livekitConfigured: boolean;
+  staleCount: number;
+  sessions: AdminStreamSessionRow[];
+}
+
+export type SystemAuditIssueSeverity = "warning" | "info";
+
+export interface SystemAuditIssue {
+  code: string;
+  title: string;
+  detail?: string;
+  count?: number;
+  severity: SystemAuditIssueSeverity;
+  recommendation: string;
+}
+
+export interface SystemAuditSection {
+  name: string;
+  issues: SystemAuditIssue[];
+}
+
+export interface SystemAuditResult {
+  generatedAt: string;
+  summary: {
+    totalIssues: number;
+    streaming: number;
+    events: number;
+    messaging: number;
+  };
+  sections: {
+    streaming: SystemAuditSection;
+    events: SystemAuditSection;
+    messaging: SystemAuditSection;
+  };
+}
+
 export const adminService = {
   /**
    * Suspend a user
@@ -359,6 +408,33 @@ export const adminService = {
       limit: number;
       totalPages: number;
     }>("/admin/audit-logs", { params });
+    return response.data;
+  },
+
+  /**
+   * Stream sessions after LiveKit reconciliation (admin)
+   * GET /api/admin/stream-sessions
+   */
+  getStreamSessionsMonitoring: async (): Promise<AdminStreamSessionsResponse> => {
+    const response = await apiClient.get<AdminStreamSessionsResponse>("/admin/stream-sessions");
+    return response.data;
+  },
+
+  /**
+   * Resolve a stream session (delete LiveKit room, end DB session)
+   * POST /api/admin/stream-sessions/:id/resolve
+   */
+  resolveStreamSession: async (sessionId: string) => {
+    const response = await apiClient.post(`/admin/stream-sessions/${sessionId}/resolve`);
+    return response.data;
+  },
+
+  /**
+   * System audit (streaming, events, messaging)
+   * GET /api/admin/system-audit
+   */
+  runSystemAudit: async (): Promise<SystemAuditResult> => {
+    const response = await apiClient.get<SystemAuditResult>("/admin/system-audit");
     return response.data;
   },
 };

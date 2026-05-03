@@ -34,7 +34,7 @@ export class ModerationService {
     const event = await (this.prisma as any).events.findUnique({
       where: { id: eventId },
       include: {
-        entities_events_entityIdToentities: {
+        entity: {
           select: { ownerId: true },
         },
       },
@@ -136,7 +136,7 @@ export class ModerationService {
     const event = await (this.prisma as any).events.findUnique({
       where: { id: eventId },
       include: {
-        entities_events_entityIdToentities: {
+        entity: {
           select: { ownerId: true },
         },
       },
@@ -212,7 +212,7 @@ export class ModerationService {
       include: {
         event: {
           include: {
-            entities_events_entityIdToentities: {
+            entity: {
               select: { ownerId: true },
             },
           },
@@ -263,7 +263,7 @@ export class ModerationService {
     }
 
     // Check if user is entity owner
-    if (event.entities_events_entityIdToentities?.ownerId === userId) {
+    if (event.entity?.ownerId === userId) {
       return;
     }
 
@@ -343,8 +343,8 @@ export class ModerationService {
     }
 
     // Add entity owner if exists
-    if (event.entities_events_entityIdToentities?.ownerId) {
-      const ownerId = event.entities_events_entityIdToentities.ownerId;
+    if (event.entity?.ownerId) {
+      const ownerId = event.entity.ownerId;
       // Avoid duplicate if coordinator is also owner
       if (!recipients.includes(ownerId)) {
         recipients.push(ownerId);

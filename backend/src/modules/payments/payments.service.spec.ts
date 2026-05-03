@@ -2,6 +2,8 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { BadRequestException, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PaymentsService } from "./payments.service";
+import { EscrowService } from "../escrow/escrow.service";
+import { EventTicketLifecycleService } from "../tickets/event-ticket-lifecycle.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateCheckoutDto, CreateRefundDto } from "./dto";
 import { OrderType, OrderStatus, PaymentMethod, UserRole } from "@prisma/client";
@@ -57,6 +59,14 @@ describe("PaymentsService", () => {
             }),
           },
         },
+        {
+          provide: EscrowService,
+          useValue: { createLedgerEntry: jest.fn() },
+        },
+        {
+          provide: EventTicketLifecycleService,
+          useValue: { finalizePaidOrder: jest.fn() },
+        },
       ],
     });
 
@@ -65,6 +75,25 @@ describe("PaymentsService", () => {
     configService = module.get<ConfigService>(ConfigService);
 
     (prismaService as any).reset();
+    // Prisma client uses `events` / `orders` / `payments`; mock uses `event` for events
+    (prismaService as any).events = (prismaService as any).event;
+    (prismaService as any).orders = {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
+      count: jest.fn(),
+    };
+    (prismaService as any).payments = {
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      upsert: jest.fn(),
+    };
+    (prismaService as any).tickets = {
+      findFirst: jest.fn().mockResolvedValue(null),
+    };
   });
 
   afterEach(() => {
@@ -142,10 +171,12 @@ describe("PaymentsService", () => {
     });
 
     it("should throw BadRequestException if Stripe not configured", async () => {
-      // Create service without Stripe
-      const serviceWithoutStripe = new PaymentsService(prismaService, {
-        get: () => undefined,
-      } as unknown as ConfigService);
+      const serviceWithoutStripe = new PaymentsService(
+        prismaService,
+        { get: () => undefined } as unknown as ConfigService,
+        { createLedgerEntry: jest.fn() } as unknown as EscrowService,
+        { finalizePaidOrder: jest.fn() } as unknown as EventTicketLifecycleService,
+      );
 
       const createDto: CreateCheckoutDto = {
         type: OrderType.TICKET,
@@ -404,12 +435,17 @@ describe("PaymentsService", () => {
     });
 
     it("should throw BadRequestException if webhook secret not configured", async () => {
-      const serviceWithoutSecret = new PaymentsService(prismaService, {
-        get: (key: string) => {
-          if (key === "STRIPE_SECRET_KEY") return "sk_test";
-          return undefined;
-        },
-      } as ConfigService);
+      const serviceWithoutSecret = new PaymentsService(
+        prismaService,
+        {
+          get: (key: string) => {
+            if (key === "STRIPE_SECRET_KEY") return "sk_test";
+            return undefined;
+          },
+        } as ConfigService,
+        { createLedgerEntry: jest.fn() } as unknown as EscrowService,
+        { finalizePaidOrder: jest.fn() } as unknown as EventTicketLifecycleService,
+      );
 
       const payload = Buffer.from("test");
       const signature = "test-signature";

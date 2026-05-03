@@ -8,9 +8,9 @@
 import { useState } from "react";
 import { Modal } from "@/components/creator/Modal";
 import { useModalContext } from "@/state/creator/modalContext";
-import { useUpdateUserProfile } from "@/hooks/useUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/creator/useToast";
+import { usersService } from "@/services/users.service";
 
 const CODE_OF_CONDUCT_TEXT = `
 CODE OF CONDUCT
@@ -50,7 +50,6 @@ By accepting this Code of Conduct, you acknowledge that you have read, understoo
 
 export function CodeOfConductModal() {
   const { currentModal, closeModal, modalData } = useModalContext();
-  const updateProfile = useUpdateUserProfile();
   const { user, refetchUser } = useAuth();
   const { toast } = useToast();
 
@@ -68,24 +67,7 @@ export function CodeOfConductModal() {
     setIsSubmitting(true);
 
     try {
-      // Merge with existing preferences
-      const existingPrefs = (user.profile?.preferences as Record<string, unknown>) || {};
-      const updatedPreferences = {
-        ...existingPrefs,
-        consent: {
-          codeOfConductAccepted: true,
-          acceptedAt: new Date().toISOString(),
-        },
-      };
-
-      await updateProfile.mutateAsync({
-        id: user.id,
-        data: {
-          preferences: updatedPreferences,
-        },
-      });
-
-      // Refetch user to get updated profile
+      await usersService.acceptCodeOfConduct();
       await refetchUser();
 
       toast({

@@ -36,6 +36,8 @@ export type { User, UserProfile } from "./user.types";
   export * from "./follow.types";
   export * from "./geofencing.types";
   export * from "./asset.types";
-  
 
-  
+  // =========================
+  // Realtime
+  // =========================
+  export * from "./realtime.types";

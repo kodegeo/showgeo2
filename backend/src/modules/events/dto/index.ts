@@ -8,4 +8,5 @@ export * from "./create-reminder.dto";
 export * from "./create-blast.dto";
 export * from "./upsert-event-role.dto";
 export * from "./event-access.dto";
+export * from "./register-for-event.dto";
 

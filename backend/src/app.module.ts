@@ -22,8 +22,16 @@ import { EventActivitiesModule } from "./modules/event-activities/event-activiti
 import { ModerationModule } from "./modules/moderation/moderation.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { AdminReportsModule } from "./modules/admin-reports/admin-reports.module";
+import { ToursModule } from "./modules/tours/tours.module";
+import { ChatModule } from "./modules/chat/chat.module";
+import { ClipsModule } from "./modules/clips/clips.module";
+import { FanInteractionModule } from "./modules/fan-interaction/fan-interaction.module";
+import { EngagementEngineModule } from "./modules/engagement-engine/engagement-engine.module";
+import { TicketsModule } from "./modules/tickets/tickets.module";
+import { LocationModule } from "./modules/location/location.module";
 import { HealthModule } from "./health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from "nestjs-pino";
 
@@ -67,7 +75,15 @@ import { LoggerModule } from "nestjs-pino";
     ModerationModule,
     AdminModule,
     AdminReportsModule,
+    ToursModule,
+    ChatModule,
+    TicketsModule,
+    LocationModule,
+    ClipsModule,
+    FanInteractionModule,
+    EngagementEngineModule,
     HealthModule,
+    RealtimeModule,
   ],
   controllers: [AppController],
   providers: [

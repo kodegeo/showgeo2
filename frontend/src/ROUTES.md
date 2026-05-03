@@ -15,7 +15,10 @@
 
 | Path | Component | Description |
 |------|-----------|-------------|
-| `/studio/dashboard` | CreatorDashboardPage | Creator dashboard |
+| `/studio/overview` | CreatorOverviewPage | Studio home (metrics + events snapshot) |
+| `/studio/dashboard` | *(redirect)* | Redirects to `/studio/overview` (legacy bookmarks) |
+| `/studio` | *(redirect)* | Index redirects to `/studio/overview` |
+| `/studio/community` | CreatorCommunityPage | Internal community / audience view |
 | `/studio/events` | CreatorEventsPage | Creator events list |
 | `/studio/events/new` | CreateEventPage | New event |
 | `/studio/events/:id` | CreatorEventDetailPage | Event detail |

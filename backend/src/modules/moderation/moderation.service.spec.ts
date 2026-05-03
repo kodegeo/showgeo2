@@ -34,7 +34,7 @@ describe("ModerationService", () => {
     phase: EventPhase.LIVE,
     entityId: mockEntityId,
     eventCoordinatorId: mockCoordinatorId,
-    entities_events_entityIdToentities: {
+    entity: {
       ownerId: mockOwnerId,
     },
   };

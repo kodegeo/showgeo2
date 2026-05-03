@@ -20,6 +20,8 @@ import { GenerateTokenDto, StreamRole } from "./dto/generate-token.dto";
 import { EventPhase } from "@prisma/client";
 import { TicketStatus } from "../../shared/types/ticket.types";
 import { AccessToken } from "livekit-server-sdk";
+import { LocationService } from "../location/location.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 // Mock LiveKit AccessToken
 jest.mock("livekit-server-sdk", () => ({
@@ -45,6 +47,7 @@ describe("StreamingService - VIEWER Authorization", () => {
     id: mockEventId,
     name: "Test Event",
     phase: EventPhase.LIVE,
+    entityId: "entity-123",
     ticketRequired: true,
     geoRestricted: false,
     geoRegions: [],
@@ -115,6 +118,31 @@ describe("StreamingService - VIEWER Authorization", () => {
             entities: {
               findUnique: jest.fn(),
             },
+            event_roles: {
+              findFirst: jest.fn().mockResolvedValue(null),
+            },
+            user_profiles: {
+              findUnique: jest.fn().mockResolvedValue({
+                preferences: {
+                  consent: {
+                    codeOfConductAccepted: true,
+                    acceptedAt: new Date().toISOString(),
+                  },
+                },
+              }),
+            },
+          },
+        },
+        {
+          provide: LocationService,
+          useValue: {
+            getLocationFromIp: jest.fn().mockReturnValue(null),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            notifyStreamingSessionStarted: jest.fn(),
           },
         },
         {
@@ -146,23 +174,34 @@ describe("StreamingService - VIEWER Authorization", () => {
       // Setup common mocks for all VIEWER tests
       (prismaService.streaming_sessions.findFirst as jest.Mock).mockResolvedValue(mockActiveSession);
       (prismaService.events.findUnique as jest.Mock).mockResolvedValue(mockLiveEvent);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue({
+        id: "entity-123",
+        name: "Test Entity",
+        status: "ACTIVE",
+      });
     });
 
-    it("should throw ForbiddenException when VIEWER has no ticketId or accessCode", async () => {
+    it("should throw ForbiddenException when VIEWER has no valid ticket for user or credentials", async () => {
       const dto: GenerateTokenDto = {
         eventId: mockEventId,
         streamRole: StreamRole.VIEWER,
         // No ticketId or accessCode
       };
 
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(ForbiddenException);
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(
-        "Valid ticket required for viewer access",
-      );
+      (prismaService.tickets.findFirst as jest.Mock).mockResolvedValue(null);
 
-      // Verify ticket queries were not called
+      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(ForbiddenException);
+      await expect(service.generateToken(dto, mockUser)).rejects.toThrow("No valid ticket");
+
       expect(prismaService.tickets.findUnique).not.toHaveBeenCalled();
-      expect(prismaService.tickets.findFirst).not.toHaveBeenCalled();
+      expect(prismaService.tickets.findFirst).toHaveBeenCalledWith({
+        where: {
+          userId: mockUser.id,
+          eventId: mockEventId,
+          status: "ACTIVE",
+        },
+        include: { registrations: true },
+      });
     });
 
     it("should throw ForbiddenException when VIEWER has inactive ticket (USED status)", async () => {
@@ -236,9 +275,7 @@ describe("StreamingService - VIEWER Authorization", () => {
       (prismaService.tickets.findUnique as jest.Mock).mockResolvedValue(null);
 
       await expect(service.generateToken(dto, mockUser)).rejects.toThrow(ForbiddenException);
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(
-        "Invalid ticket or access code",
-      );
+      await expect(service.generateToken(dto, mockUser)).rejects.toThrow("No valid ticket");
     });
 
     it("should throw ForbiddenException when accessCode does not match any ticket", async () => {
@@ -251,21 +288,12 @@ describe("StreamingService - VIEWER Authorization", () => {
       (prismaService.tickets.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.generateToken(dto, mockUser)).rejects.toThrow(ForbiddenException);
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(
-        "Invalid ticket or access code",
-      );
+      await expect(service.generateToken(dto, mockUser)).rejects.toThrow("No valid ticket");
 
       expect(prismaService.tickets.findFirst).toHaveBeenCalledWith({
         where: {
-          OR: [
-            { entryCode: "invalid-code" },
-            {
-              registrations: {
-                accessCode: "invalid-code",
-              },
-            },
-          ],
           eventId: mockEventId,
+          entryCode: "invalid-code",
         },
         include: {
           registrations: true,
@@ -335,6 +363,7 @@ describe("StreamingService - VIEWER Authorization", () => {
         id: "entity-123",
         name: "Test Entity",
         slug: "test-entity",
+        status: "ACTIVE",
       });
 
       const result = await service.generateToken(dto, mockUser);
@@ -343,15 +372,8 @@ describe("StreamingService - VIEWER Authorization", () => {
       expect(result.token).toBe("mock-jwt-token");
       expect(prismaService.tickets.findFirst).toHaveBeenCalledWith({
         where: {
-          OR: [
-            { entryCode: "valid-access-code" },
-            {
-              registrations: {
-                accessCode: "valid-access-code",
-              },
-            },
-          ],
           eventId: mockEventId,
+          entryCode: "valid-access-code",
         },
         include: {
           registrations: true,
@@ -399,13 +421,13 @@ describe("StreamingService - VIEWER Authorization", () => {
       await expect(service.generateToken(dto, mockUser)).rejects.toThrow("Event is not live");
     });
 
-    it("should throw ForbiddenException when ticket registration is not REGISTERED", async () => {
+    it("should generate token when ticket is ACTIVE even if linked registration is not REGISTERED", async () => {
       const ticketWithRegistration = {
         ...mockActiveTicket,
         registrationId: "registration-123",
         registrations: {
           id: "registration-123",
-          status: "INVITED", // Not REGISTERED
+          status: "INVITED",
         },
       };
 
@@ -416,19 +438,11 @@ describe("StreamingService - VIEWER Authorization", () => {
       };
 
       (prismaService.tickets.findUnique as jest.Mock).mockResolvedValue(ticketWithRegistration);
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue({
-        id: "registration-123",
-        status: "INVITED",
-      });
 
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(ForbiddenException);
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(
-        "Ticket registration is not active",
-      );
+      const result = await service.generateToken(dto, mockUser);
 
-      expect((prismaService as any).event_registrations.findUnique).toHaveBeenCalledWith({
-        where: { id: "registration-123" },
-      });
+      expect(result).toHaveProperty("token");
+      expect((prismaService as any).event_registrations.findUnique).not.toHaveBeenCalled();
     });
 
     it("should successfully generate token when ticket has REGISTERED registration", async () => {
@@ -448,18 +462,12 @@ describe("StreamingService - VIEWER Authorization", () => {
       };
 
       (prismaService.tickets.findUnique as jest.Mock).mockResolvedValue(ticketWithRegistration);
-      ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue({
-        id: "registration-123",
-        status: "REGISTERED",
-      });
 
       const result = await service.generateToken(dto, mockUser);
 
       expect(result).toHaveProperty("token");
       expect(result.token).toBe("mock-jwt-token");
-      expect((prismaService as any).event_registrations.findUnique).toHaveBeenCalledWith({
-        where: { id: "registration-123" },
-      });
+      expect((prismaService as any).event_registrations.findUnique).not.toHaveBeenCalled();
     });
   });
 
@@ -473,6 +481,7 @@ describe("StreamingService - VIEWER Authorization", () => {
         id: "entity-123",
         name: "Test Entity",
         slug: "test-entity",
+        status: "ACTIVE",
       });
       ((prismaService as any).event_registrations.findUnique as jest.Mock).mockResolvedValue(null);
     });
@@ -626,8 +635,11 @@ describe("StreamingService - VIEWER Authorization", () => {
       expect(result).toHaveProperty("token");
       expect(result.token).toBe("mock-jwt-token");
 
-      // Verify ticket was NOT updated (already claimed by this user, no redemption needed)
-      expect(prismaService.tickets.update).not.toHaveBeenCalled();
+      // joinedAt tracking (not redemption) may update the ticket once
+      expect(prismaService.tickets.update).toHaveBeenCalledWith({
+        where: { id: claimedTicket.id },
+        data: { joinedAt: expect.any(Date) },
+      });
     });
 
     it("should block other users from using a ticket claimed by someone else", async () => {
@@ -676,6 +688,7 @@ describe("StreamingService - VIEWER Authorization", () => {
         id: "entity-123",
         name: "Test Entity",
         slug: "test-entity",
+        status: "ACTIVE",
       });
 
       const dto: GenerateTokenDto = {
@@ -703,6 +716,7 @@ describe("StreamingService - VIEWER Authorization", () => {
         id: "entity-123",
         name: "Test Entity",
         slug: "test-entity",
+        status: "ACTIVE",
       });
 
       // Second attempt should fail - ticket is USED (status check will catch it)
@@ -717,6 +731,11 @@ describe("StreamingService - VIEWER Authorization", () => {
     beforeEach(() => {
       (prismaService.streaming_sessions.findFirst as jest.Mock).mockResolvedValue(mockActiveSession);
       (prismaService.events.findUnique as jest.Mock).mockResolvedValue(mockLiveEvent);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue({
+        id: "entity-123",
+        name: "Test Entity",
+        status: "ACTIVE",
+      });
     });
 
     it("should successfully generate token for BROADCASTER without ticket", async () => {
@@ -767,13 +786,24 @@ describe("StreamingService - VIEWER Authorization", () => {
       const result = await service.generateToken(dto, mockUser);
 
       expect(result).toHaveProperty("token");
-      // BROADCASTER can get tokens regardless of phase
+      // BROADCASTER can get tokens in PRE_LIVE and LIVE (not POST_LIVE)
     });
   });
 
   describe("Error handling", () => {
-    it("should throw NotFoundException when session is not found", async () => {
+    it("should auto-create session when none exists for LIVE viewer with valid ticket", async () => {
       (prismaService.streaming_sessions.findFirst as jest.Mock).mockResolvedValue(null);
+      (prismaService.streaming_sessions.create as jest.Mock).mockResolvedValue({
+        ...mockActiveSession,
+        id: "new-session-id",
+      });
+      (prismaService.events.findUnique as jest.Mock).mockResolvedValue(mockLiveEvent);
+      (prismaService.tickets.findUnique as jest.Mock).mockResolvedValue(mockActiveTicket);
+      (prismaService.entities.findUnique as jest.Mock).mockResolvedValue({
+        id: "entity-123",
+        name: "Test Entity",
+        status: "ACTIVE",
+      });
 
       const dto: GenerateTokenDto = {
         eventId: mockEventId,
@@ -781,10 +811,9 @@ describe("StreamingService - VIEWER Authorization", () => {
         ticketId: mockActiveTicket.id,
       };
 
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(NotFoundException);
-      await expect(service.generateToken(dto, mockUser)).rejects.toThrow(
-        "No active streaming session found",
-      );
+      const result = await service.generateToken(dto, mockUser);
+      expect(result).toHaveProperty("token");
+      expect(prismaService.streaming_sessions.create).toHaveBeenCalled();
     });
 
     it("should throw NotFoundException when event is not found", async () => {
@@ -846,7 +875,7 @@ describe("StreamingService - VIEWER Authorization", () => {
     });
 
     describe("PRE_LIVE phase", () => {
-      it("should throw ForbiddenException for PRE_LIVE event", async () => {
+      it("should allow BROADCASTER token for PRE_LIVE and auto-create session", async () => {
         const preLiveEvent = {
           id: mockEventId,
           name: "Test Event",
@@ -862,13 +891,17 @@ describe("StreamingService - VIEWER Authorization", () => {
           streamRole: StreamRole.BROADCASTER,
         };
 
-        await expect(service.generateToken(dto, mockCreatorUser)).rejects.toThrow(ForbiddenException);
-        await expect(service.generateToken(dto, mockCreatorUser)).rejects.toThrow(
-          "Event is not live yet",
-        );
+        const result = await service.generateToken(dto, mockCreatorUser);
 
-        // Verify no session was created
-        expect(prismaService.streaming_sessions.create).not.toHaveBeenCalled();
+        expect(result).toHaveProperty("token");
+        expect(result.token).toBe("mock-jwt-token");
+        expect(prismaService.streaming_sessions.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            eventId: mockEventId,
+            entityId: mockEntityId,
+            active: true,
+          }),
+        });
       });
     });
 
@@ -998,28 +1031,6 @@ describe("StreamingService - VIEWER Authorization", () => {
     });
 
     describe("Session creation enforcement", () => {
-      it("should NOT create session for PRE_LIVE event", async () => {
-        const preLiveEvent = {
-          id: mockEventId,
-          name: "Test Event",
-          phase: EventPhase.PRE_LIVE,
-          entityId: mockEntityId,
-          geoRestricted: false,
-        };
-
-        (prismaService.events.findUnique as jest.Mock).mockResolvedValue(preLiveEvent);
-
-        const dto: GenerateTokenDto = {
-          eventId: mockEventId,
-          streamRole: StreamRole.BROADCASTER,
-        };
-
-        await expect(service.generateToken(dto, mockCreatorUser)).rejects.toThrow(ForbiddenException);
-
-        // Verify no session was created
-        expect(prismaService.streaming_sessions.create).not.toHaveBeenCalled();
-      });
-
       it("should NOT create session for POST_LIVE event", async () => {
         const postLiveEvent = {
           id: mockEventId,
@@ -1040,35 +1051,6 @@ describe("StreamingService - VIEWER Authorization", () => {
 
         // Verify no session was created
         expect(prismaService.streaming_sessions.create).not.toHaveBeenCalled();
-      });
-
-      it("should ONLY create session for LIVE event", async () => {
-        const liveEvent = {
-          id: mockEventId,
-          name: "Test Event",
-          phase: EventPhase.LIVE,
-          entityId: mockEntityId,
-          geoRestricted: false,
-        };
-
-        (prismaService.events.findUnique as jest.Mock).mockResolvedValue(liveEvent);
-
-        const dto: GenerateTokenDto = {
-          eventId: mockEventId,
-          streamRole: StreamRole.BROADCASTER,
-        };
-
-        await service.generateToken(dto, mockCreatorUser);
-
-        // Verify session was created ONLY for LIVE phase
-        expect(prismaService.streaming_sessions.create).toHaveBeenCalledTimes(1);
-        expect(prismaService.streaming_sessions.create).toHaveBeenCalledWith({
-          data: expect.objectContaining({
-            eventId: mockEventId,
-            entityId: mockEntityId,
-            active: true,
-          }),
-        });
       });
     });
   });

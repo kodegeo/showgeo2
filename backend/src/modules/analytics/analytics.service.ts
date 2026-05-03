@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
-import { EntityMetricsDto, EventPerformanceDto, UserEngagementDto, PlatformOverviewDto, RecommendationsResponseDto, RecommendationDto } from "./dto";
+import { EntityMetricsDto, EventPerformanceDto, EventAnalyticsDto, UserEngagementDto, PlatformOverviewDto, RecommendationsResponseDto, RecommendationDto } from "./dto";
 import { AnalyticsSummaryType, Prisma } from "@prisma/client";
 
 @Injectable()
@@ -25,6 +25,10 @@ export class AnalyticsService {
       throw new NotFoundException("Entity not found");
     }
 
+    const entityEventIds = await (this.prisma as any).events
+      .findMany({ where: { entityId }, select: { id: true } })
+      .then((rows: { id: string }[]) => rows.map((r) => r.id));
+
     // Aggregate metrics from multiple modules
     const [
       eventsCount,
@@ -35,70 +39,85 @@ export class AnalyticsService {
       notificationsSent,
       ticketsSold,
       ticketRevenue,
+      totalRegistrations,
+      topEventsRaw,
+      ordersForRevenue,
     ] = await Promise.all([
-      // Events count
-      (this.prisma as any).events.count({
-        where: { entityId },
-      }),
-
-      // Active followers
+      (this.prisma as any).events.count({ where: { entityId } }),
       (this.prisma as any).follows.count({
-        where: { entityId },
+        where: { target_id: entityId, target_type: "ENTITY" },
       }),
-
-      // Store sales (products sold - we'll need to add Order model later, for now count products)
       (this.prisma as any).products.count({
         where: {
-          stores: {
-            entityId,
-            status: "ACTIVE",
-          },
+          stores: { entityId, status: "ACTIVE" },
           isAvailable: true,
         },
       }),
-
-      // Store revenue (sum of product prices - placeholder, needs Order model)
-      (this.prisma as any).products.aggregate({
-        where: {
-          stores: {
-            entityId,
-            status: "ACTIVE",
+      (this.prisma as any).products
+        .aggregate({
+          where: {
+            stores: { entityId, status: "ACTIVE" },
+            isAvailable: true,
           },
-          isAvailable: true,
-        },
-        _sum: {
-          price: true,
-        },
-      }).then((result) => Number(result._sum.price || 0)),
-
-      // Average viewers from streaming sessions
-      (this.prisma as any).streaming_sessions.aggregate({
-        where: {
-          entityId,
-          active: false, // Completed sessions
-        },
-        _avg: {
-          viewers: true,
-        },
-      }).then((result) => Math.round(result._avg.viewers || 0)),
-
-      // Notifications sent
-      (this.prisma as any).notifications.count({
-        where: { entityId },
-      }),
-
-      // Tickets sold
+          _sum: { price: true },
+        })
+        .then((r: { _sum: { price: number | null } }) => Number(r._sum?.price ?? 0)),
+      (this.prisma as any).streaming_sessions
+        .aggregate({
+          where: { entityId, active: false },
+          _avg: { viewers: true },
+        })
+        .then((r: { _avg: { viewers: number | null } }) => Math.round(r._avg?.viewers ?? 0)),
+      (this.prisma as any).notifications.count({ where: { entityId } }),
       (this.prisma as any).tickets.count({
-        where: {
-          events: {
-            entityId,
-          },
-        },
+        where: { events: { entityId } },
       }),
-
-      // Ticket revenue (needs Order model, placeholder)
-      0, // TODO: Calculate from ticket purchases
+      entityEventIds.length > 0
+        ? (this.prisma as any).order_items
+            .aggregate({
+              where: { orders: { eventId: { in: entityEventIds } } },
+              _sum: { totalPrice: true },
+            })
+            .then((r: { _sum: { totalPrice: unknown } }) => Number(r._sum?.totalPrice ?? 0))
+        : 0,
+      entityEventIds.length > 0
+        ? (this.prisma as any).event_registrations.count({
+            where: { eventId: { in: entityEventIds }, status: "REGISTERED" },
+          })
+        : 0,
+      (this.prisma as any).events.findMany({
+        where: { entityId },
+        select: {
+          id: true,
+          name: true,
+          _count: { select: { tickets: true } },
+        },
+        take: 20,
+      }).then((rows: Array<{ id: string; name: string; _count: { tickets: number } }>) =>
+        rows.sort((a, b) => (b._count?.tickets ?? 0) - (a._count?.tickets ?? 0)).slice(0, 5),
+      ),
+      entityEventIds.length > 0
+        ? (this.prisma as any).orders.findMany({
+            where: { eventId: { in: entityEventIds } },
+            select: { eventId: true, order_items: { select: { totalPrice: true } } },
+          })
+        : [],
     ]);
+
+    const revenueByEventId = new Map<string, number>();
+    for (const o of ordersForRevenue as Array<{ eventId: string | null; order_items: Array<{ totalPrice: unknown }> }>) {
+      if (!o.eventId) continue;
+      const sum = (o.order_items || []).reduce((s: number, i) => s + Number(i.totalPrice ?? 0), 0);
+      revenueByEventId.set(o.eventId, (revenueByEventId.get(o.eventId) ?? 0) + sum);
+    }
+    const topPerformingEvents = (topEventsRaw as Array<{ id: string; name: string; _count: { tickets: number } }>).map(
+      (e) => ({
+        eventId: e.id,
+        name: e.name,
+        ticketSales: e._count?.tickets ?? 0,
+        revenue: revenueByEventId.get(e.id) ?? 0,
+      }),
+    );
 
     // Calculate engagement score (weighted formula)
     const engagementScore = this.calculateEngagementScore({
@@ -123,6 +142,7 @@ export class AnalyticsService {
         notificationsSent,
         ticketsSold,
         ticketRevenue,
+        totalRegistrations,
       },
       engagementScore,
     });
@@ -137,25 +157,72 @@ export class AnalyticsService {
       engagementScore,
       totalTicketsSold: ticketsSold,
       totalTicketRevenue: ticketRevenue,
+      totalRegistrations,
+      topPerformingEvents,
+    };
+  }
+
+  async getEventAnalytics(eventId: string): Promise<EventAnalyticsDto> {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      select: { id: true },
+    });
+    if (!event) {
+      throw new NotFoundException("Event not found");
+    }
+
+    // Attendance: event_registrations (REGISTERED) is canonical; tickets are derived access artifacts
+    // order_items has no relation to orders in Prisma client; filter by orderId from orders for this event
+    const orderIds = await this.prisma.orders.findMany({
+      where: { eventId },
+      select: { id: true },
+    }).then((rows) => rows.map((r) => r.id));
+
+    const [attendanceCount, ticketCount, revenueResult, sessions] = await Promise.all([
+      (this.prisma as any).event_registrations.count({
+        where: { eventId, status: "REGISTERED" },
+      }),
+      this.prisma.tickets.count({ where: { eventId } }),
+      orderIds.length > 0
+        ? this.prisma.order_items.aggregate({
+            where: { orderId: { in: orderIds } },
+            _sum: { totalPrice: true },
+          })
+        : Promise.resolve({ _sum: { totalPrice: null } }),
+      this.prisma.streaming_sessions.findMany({
+        where: { eventId },
+        select: { viewers: true },
+      }),
+    ]);
+
+    const revenue = Number(revenueResult._sum.totalPrice ?? 0);
+    const viewers = sessions.length > 0 ? Math.max(...sessions.map((s) => s.viewers)) : 0;
+
+    return {
+      ticketSales: ticketCount,
+      revenue,
+      registrations: attendanceCount,
+      viewers,
     };
   }
 
   async getEventPerformance(eventId: string): Promise<EventPerformanceDto> {
-    // Validate event exists
-    const event = await (this.prisma as any).events.findUnique({
-      where: { id: eventId },
-      include: {
-        streaming_sessions: true,
-        tickets: true,
-      },
-    });
+    // Validate event exists; events has no streaming_sessions relation in Prisma client, fetch separately
+    const [event, sessions] = await Promise.all([
+      (this.prisma as any).events.findUnique({
+        where: { id: eventId },
+        include: { tickets: true },
+      }),
+      this.prisma.streaming_sessions.findMany({
+        where: { eventId },
+      }),
+    ]);
 
     if (!event) {
       throw new NotFoundException("Event not found");
     }
 
     // Get streaming metrics
-    const sessions = event.streaming_sessions || [];
     const activeSession = sessions.find((s) => s.active);
 
     const totalViewers = sessions.reduce((sum, s) => sum + s.viewers, 0);
@@ -243,9 +310,9 @@ export class AnalyticsService {
       // Products purchased (placeholder - needs Order model)
       0, // TODO: Count from orders
 
-      // Entities followed
+      // Entities followed (follows: user_id = userId, target_type = ENTITY)
       (this.prisma as any).follows.count({
-        where: { userId },
+        where: { user_id: userId, target_type: "ENTITY" },
       }),
 
       // Total spent (placeholder - needs Order model)
@@ -254,7 +321,7 @@ export class AnalyticsService {
 
     // Get favorite categories (from followed entities)
     const followedEntities = await (this.prisma as any).follows.findMany({
-      where: { userId },
+      where: { user_id: userId, target_type: "ENTITY" },
       include: {
         entities: {
           select: {
@@ -449,7 +516,7 @@ export class AnalyticsService {
         status: { in: ["SCHEDULED", "LIVE"] },
       },
       include: {
-        entities_events_entityIdToentities: {
+        entity: {
           select: {
             name: true,
             slug: true,
@@ -464,12 +531,12 @@ export class AnalyticsService {
 
     const recommendedEvents = events.map((event) => ({
       entityId: event.entityId,
-      entityName: event.entities_events_entityIdToentities?.name || "Unknown",
-      entitySlug: event.entities_events_entityIdToentities?.slug || "",
-      entityType: event.entities_events_entityIdToentities?.type || "ENTITY",
+      entityName: event.entity?.name || "Unknown",
+      entitySlug: event.entity?.slug || "",
+      entityType: event.entity?.type || "ENTITY",
       score: 0.8, // Base score for upcoming events
-      reasons: [`Upcoming event: ${event.name}`, `From ${event.entities_events_entityIdToentities?.name || "Unknown"}`],
-      thumbnail: event.thumbnail || event.entities_events_entityIdToentities?.thumbnail || undefined,
+      reasons: [`Upcoming event: ${event.name}`, `From ${event.entity?.name || "Unknown"}`],
+      thumbnail: event.thumbnail || event.entity?.thumbnail || undefined,
     }));
 
     return {
@@ -751,7 +818,7 @@ export class AnalyticsService {
   private async getUserInteractionVector(userId: string): Promise<number[]> {
     // Build interaction vector: [follows_count, events_attended, streams_watched, products_purchased, notifications_received]
     const [follows, events, streams, purchases, notifications] = await Promise.all([
-      (this.prisma as any).follows.count({ where: { userId } }),
+      (this.prisma as any).follows.count({ where: { user_id: userId, target_type: "ENTITY" } }),
       (this.prisma as any).tickets.count({ where: { userId } }),
       (this.prisma as any).streaming_sessions.count({
         where: {
@@ -780,7 +847,7 @@ export class AnalyticsService {
   private async getEntityInteractionVector(entityId: string): Promise<number[]> {
     // Build entity interaction vector: [followers, events, products, avg_viewers, notifications_sent]
     const [followers, events, products, avgViewers, notifications] = await Promise.all([
-      (this.prisma as any).follows.count({ where: { entityId } }),
+      (this.prisma as any).follows.count({ where: { target_id: entityId, target_type: "ENTITY" } }),
       (this.prisma as any).events.count({ where: { entityId } }),
       (this.prisma as any).products.count({
         where: {
@@ -847,7 +914,7 @@ export class AnalyticsService {
     const entity = await (this.prisma as any).entities.findUnique({
       where: { id: entityId },
       include: {
-        roles: {
+        entity_roles: {
           where: {
             userId,
           },
@@ -865,7 +932,7 @@ export class AnalyticsService {
     }
 
     // Check if user is a manager with ADMIN or MANAGER role
-    const entityRole = entity.roles.find((role) => role.userId === userId);
+    const entityRole = (entity.entity_roles || []).find((r: { userId: string; role: string }) => r.userId === userId);
     if (entityRole && (entityRole.role === "ADMIN" || entityRole.role === "MANAGER")) {
       return;
     }

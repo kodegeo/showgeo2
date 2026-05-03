@@ -21,6 +21,8 @@ import {
   Prisma,
 } from "@prisma/client";
 
+
+
 // Use Prisma's generated type for assets model
 type Asset = Prisma.assetsGetPayload<{}>;
 import {
@@ -101,14 +103,30 @@ export class AssetsService {
       // Validate file
       this.validateFile(file, uploadDto.type);
 
-      // Validate ownership/permissions
-      await this.validateOwnership(uploadDto.ownerType, uploadDto.ownerId, userId, userRole);
-
-      // Generate unique file path
+      let effectiveOwnerType = uploadDto.ownerType;
+      let effectiveOwnerId = uploadDto.ownerId;
+      let filePath: string;
       const fileExtension = path.extname(file.originalname).toLowerCase();
-      const fileName = `${randomUUID()}${fileExtension}`;
-      const folderPath = this.generateFolderPath(uploadDto.ownerType, uploadDto.ownerId);
-      const filePath = `${folderPath}/${fileName}`;
+
+      if (uploadDto.eventId) {
+        // Event-scoped upload (e.g. event thumbnail): path events/{eventId}/thumbnail.{ext}
+        const event = await this.validateEventAccess(uploadDto.eventId, userId, userRole);
+        effectiveOwnerType = AssetOwnerType.ENTITY;
+        effectiveOwnerId = event.entityId;
+        const baseName = "thumbnail";
+        filePath = `events/${uploadDto.eventId}/${baseName}${fileExtension || ".png"}`;
+      } else {
+        if (uploadDto.ownerId == null || uploadDto.ownerType == null) {
+          throw new BadRequestException("ownerId and ownerType are required when eventId is not set");
+        }
+        // Validate ownership/permissions for non-event uploads
+        await this.validateOwnership(uploadDto.ownerType, uploadDto.ownerId, userId, userRole);
+        effectiveOwnerType = uploadDto.ownerType;
+        effectiveOwnerId = uploadDto.ownerId;
+        const fileName = `${randomUUID()}${fileExtension}`;
+        const folderPath = this.generateFolderPath(uploadDto.ownerType, uploadDto.ownerId);
+        filePath = `${folderPath}/${fileName}`;
+      }
 
       this.logger.debug(`Generated file path: ${filePath}`);
 
@@ -133,19 +151,20 @@ export class AssetsService {
       };
 
       AssetUploadDebug.prismaInsert({
-        ownerId: uploadDto.ownerId,
-        ownerType: uploadDto.ownerType,
+        ownerId: effectiveOwnerId,
+        ownerType: effectiveOwnerType,
         path: filePath,
         metadata: finalMetadata,
       });
             
-      // Atomic DB write
+      // Atomic DB write (createdAt has @default(now()); updatedAt is required)
+      const now = new Date();
       const asset = await this.prisma.$transaction(async (tx) => {
         const createdAsset = await (tx as any).assets.create({
           data: {
             id: randomUUID(),
-            ownerId: uploadDto.ownerId,
-            ownerType: uploadDto.ownerType,
+            ownerId: effectiveOwnerId,
+            ownerType: effectiveOwnerType,
             url: publicUrl,
             path: filePath,
             type: uploadDto.type,
@@ -157,6 +176,7 @@ export class AssetsService {
             metadata: JSON.parse(JSON.stringify(finalMetadata)) as Prisma.InputJsonValue,
             isPublic: uploadDto.isPublic ?? false,
             storageProvider: provider,
+            updatedAt: now,
           },
         });
 
@@ -628,6 +648,32 @@ export class AssetsService {
         );
       }
     }
+  }
+
+  /**
+   * Validate that the user can upload assets for the event (coordinator or entity manager).
+   * Returns the event so caller can use event.entityId for asset ownership.
+   */
+  private async validateEventAccess(
+    eventId: string,
+    userId: string,
+    userRole: UserRole,
+  ): Promise<{ id: string; entityId: string; eventCoordinatorId: string | null }> {
+    const event = await this.prisma.events.findUnique({
+      where: { id: eventId },
+      select: { id: true, entityId: true, eventCoordinatorId: true },
+    });
+    if (!event) {
+      throw new NotFoundException("Event not found");
+    }
+    if (userRole === UserRole.ADMIN) {
+      return event;
+    }
+    if (event.eventCoordinatorId === userId) {
+      return event;
+    }
+    await this.validateOwnership(AssetOwnerType.ENTITY, event.entityId, userId, userRole);
+    return event;
   }
 
   /**

@@ -53,4 +53,10 @@ export class GenerateTokenDto {
   @IsOptional()
   @IsString()
   accessCode?: string;
+
+  /** Set by controller from request (client IP for geofencing). Not from body. */
+  @ApiPropertyOptional({ description: "Client IP, set by controller for location check" })
+  @IsOptional()
+  @IsString()
+  clientIp?: string;
 }

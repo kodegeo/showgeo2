@@ -25,12 +25,15 @@ import { User } from "../../shared/types/user.types";
 import { randomUUID } from "crypto";
 import { GenerateTokenDto, StreamRole } from "./dto/generate-token.dto";
 import { AccessLevel } from "./dto/create-session.dto";
+import { LocationService } from "../location/location.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 type UserAuth = {
   id: string;
   email?: string;
 };
 
+const GEO_LEVEL_GLOBAL = new Set<string>(["INTERNATIONAL", "GLOBAL"]);
 
 @Injectable()
 export class StreamingService {
@@ -42,6 +45,8 @@ export class StreamingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly locationService: LocationService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.livekitApiKey = this.configService.get<string>("LIVEKIT_API_KEY") || "";
     this.livekitApiSecret =
@@ -168,7 +173,7 @@ export class StreamingService {
         code: "ACTIVE_SESSION_EXISTS",
         message: "Event already has an active streaming session",
       });
-          }
+    }
 
     // 4) Create LiveKit room (optional if LiveKit not configured)
     // Room name is deterministic: event-${eventId} (lowercase, no variation)
@@ -193,12 +198,12 @@ export class StreamingService {
       }
     }
 
-    // 5) Create streaming session record (Prisma 7: use relation connect)
+    // 5) Create streaming session record (use direct foreign key fields)
     const session = await this.prisma.streaming_sessions.create({
       data: {
         id: randomUUID(),
-        events: { connect: { id: eventId } },
-        entities: { connect: { id: event.entityId } },
+        eventId: eventId,
+        entityId: event.entityId,
         roomId,
         sessionKey,
         accessLevel: accessLevel || AccessLevel.PUBLIC,
@@ -233,6 +238,15 @@ export class StreamingService {
         slug: true,
       },
     });
+
+    // Creator follower alert: notify followers when stream goes live
+    if (event.entityId) {
+      this.notificationsService
+        .notifyStreamingSessionStarted(eventId, event.entityId)
+        .catch((err) =>
+          console.warn("[StreamingService.createSession] notifyStreamingSessionStarted failed", err),
+        );
+    }
 
     return {
       ...session,
@@ -270,16 +284,71 @@ export class StreamingService {
       throw new NotFoundException("Event not found");
     }
 
-    // 2) Enforce event phase gate - only LIVE events can generate tokens
-    const eventPhase = String(event.phase);
-    if (eventPhase !== "LIVE") {
-      console.error("[generateToken] BLOCKED: Event is not LIVE", {
-        eventId,
-        eventPhase,
-        userId: user.id,
-        streamRole,
-      });
-      throw new ForbiddenException("Event is not live yet");
+    // 2) Event phase — role-specific (normalize Prisma/JSON casing)
+    const eventPhase = String(event.phase ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/-/g, "_");
+    const canJoinAsPublisher =
+      eventPhase === "PRE_LIVE" || eventPhase === "LIVE";
+
+    if (streamRole === StreamRole.VIEWER) {
+      if (eventPhase !== "LIVE") {
+        console.error("[generateToken] BLOCKED: Viewers only when LIVE", {
+          eventId,
+          eventPhase,
+          userId: user.id,
+          streamRole,
+        });
+        throw new ForbiddenException({
+          message: "Event is not live",
+          code: "NOT_LIVE",
+        });
+      }
+    } else if (streamRole === StreamRole.BROADCASTER) {
+      if (!canJoinAsPublisher) {
+        console.error("[generateToken] BLOCKED: Broadcaster not allowed for phase", {
+          eventId,
+          eventPhase,
+          userId: user.id,
+          streamRole,
+        });
+        throw new ForbiddenException({
+          message: "Event is not live yet",
+          code: "NOT_LIVE",
+        });
+      }
+    } else {
+      throw new BadRequestException(`Invalid streamRole: ${streamRole}`);
+    }
+
+    // 2b) Geofencing by streamingAccessLevel (LOCAL / REGIONAL / NATIONAL / GLOBAL)
+    const level = event.streamingAccessLevel as string | null | undefined;
+    if (level && !GEO_LEVEL_GLOBAL.has(level.toUpperCase())) {
+      const userLocation = this.locationService.getLocationFromIp(dto.clientIp);
+      if (!userLocation) {
+        throw new ForbiddenException("This event is not available in your location.");
+      }
+      const allowedRegions = (event.geoRegions ?? []).map((r: string) => String(r).toLowerCase().trim()).filter(Boolean);
+      const uLevel = level.toUpperCase();
+      let allowed = false;
+      if (uLevel === "LOCAL") {
+        allowed = allowedRegions.length === 0 || allowedRegions.some((r) => r === (userLocation.city || "").toLowerCase());
+      } else if (uLevel === "REGIONAL") {
+        allowed = allowedRegions.length === 0 || allowedRegions.some((r) => r === (userLocation.region || "").toLowerCase());
+      } else if (uLevel === "NATIONAL") {
+        allowed = allowedRegions.length === 0 || allowedRegions.some((r) => r === (userLocation.country || "").toLowerCase());
+      }
+      if (!allowed) {
+        console.error("[generateToken] BLOCKED: Geofencing level", {
+          eventId,
+          level,
+          userLocation,
+          allowedRegions,
+          userId: user.id,
+        });
+        throw new ForbiddenException("This event is not available in your location.");
+      }
     }
 
     // 3) Active session is source of truth - enforce max one ACTIVE session per event
@@ -324,8 +393,8 @@ export class StreamingService {
         session = await this.prisma.streaming_sessions.create({
           data: {
             id: randomUUID(),
-            events: { connect: { id: event.id } },
-            entities: { connect: { id: event.entityId } },
+            eventId: event.id,
+            entityId: event.entityId,
             roomId,
             sessionKey,
             accessLevel: AccessLevel.PUBLIC,
@@ -384,7 +453,62 @@ export class StreamingService {
     }
   
     // 4) Role-based authorization - split by streamRole
-    // Note: eventPhase is already validated as "LIVE" above, but we keep the variable for consistency
+
+    const eventRole = await (this.prisma as any).event_roles.findFirst({
+      where: {
+        eventId,
+        userId: user.id,
+      },
+    });
+
+    const issueCreatorPublisherJwt = async (accessReason: string) => {
+      if (!canJoinAsPublisher) {
+        console.error("[generateToken] BLOCKED: Creator bypass — invalid phase", {
+          eventId,
+          eventPhase,
+          userId: user.id,
+          accessReason,
+        });
+        throw new ForbiddenException({
+          message: "Event is not live yet",
+          code: "NOT_LIVE",
+        });
+      }
+      console.log("[generateToken] Creator access granted", {
+        userId: user.id,
+        eventId,
+        accessReason,
+      });
+
+      const roomName = `event-${eventId.toLowerCase()}`;
+      const participantIdentity = identity || user.id;
+
+      const at = new AccessToken(this.livekitApiKey, this.livekitApiSecret, {
+        identity: participantIdentity,
+      });
+
+      at.addGrant({
+        room: roomName,
+        roomJoin: true,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      });
+
+      return { token: await at.toJwt() };
+    };
+
+    if (eventRole && ["OWNER", "COORDINATOR"].includes(eventRole.accessRole)) {
+      return issueCreatorPublisherJwt(`event_roles.${eventRole.accessRole}`);
+    }
+
+    const entityRow = await (this.prisma as any).entities.findUnique({
+      where: { id: event.entityId },
+      select: { ownerId: true },
+    });
+    if (entityRow?.ownerId === user.id || event.eventCoordinatorId === user.id) {
+      return issueCreatorPublisherJwt("entity_owner_or_event_coordinator");
+    }
 
     // Declare ticket in function scope so it's accessible after the if/else blocks
     let ticket: any = null;
@@ -396,11 +520,7 @@ export class StreamingService {
     } else if (streamRole === StreamRole.VIEWER) {
       // ⚠️ STRICT RULE: ALL VIEWER access requires a valid ticket (FREE, GIFTED, or PAID)
       // There is NO public or anonymous viewer access. Every viewer must have a valid ticket.
-      
-      // Phase enforcement: viewers only when LIVE
-      if (eventPhase !== "LIVE") {
-        throw new ForbiddenException("Event is not live");
-      }
+      // Phase: viewers only when LIVE (enforced above).
 
       // Code of Conduct consent check (required for authenticated users joining LIVE events)
       if (user.id) {
@@ -408,14 +528,7 @@ export class StreamingService {
         await checkCodeOfConductConsent(this.prisma, user.id);
       }
 
-      // ⚠️ MANDATORY: Ticket ID or access code is REQUIRED for ALL viewers
-      // No exceptions - this applies regardless of event.ticketRequired setting
-      if (!dto.ticketId && !dto.accessCode) {
-        throw new ForbiddenException("Valid ticket required for viewer access. Please provide a ticket ID or access code.");
-      }
-
-      // Validate ticket - must exist, be ACTIVE, and match the event
-
+      // VIEWER access: ticket row is the only authority (entryCode or user's ACTIVE ticket for event).
       if (dto.ticketId) {
         ticket = await (this.prisma as any).tickets.findUnique({
           where: { id: dto.ticketId },
@@ -423,19 +536,22 @@ export class StreamingService {
             registrations: true,
           },
         });
-      } else if (dto.accessCode) {
-        // Check both ticket.entryCode and registration.accessCode
+      } else if (dto.accessCode?.trim()) {
         ticket = await (this.prisma as any).tickets.findFirst({
           where: {
-            OR: [
-              { entryCode: dto.accessCode },
-              {
-                registrations: {
-                  accessCode: dto.accessCode,
-                },
-              },
-            ],
             eventId,
+            entryCode: dto.accessCode.trim(),
+          },
+          include: {
+            registrations: true,
+          },
+        });
+      } else if (user?.id?.trim()) {
+        ticket = await (this.prisma as any).tickets.findFirst({
+          where: {
+            userId: user.id,
+            eventId,
+            status: "ACTIVE",
           },
           include: {
             registrations: true,
@@ -443,30 +559,24 @@ export class StreamingService {
         });
       }
 
-      // Ticket must exist
       if (!ticket) {
-        throw new ForbiddenException("Invalid ticket or access code. No ticket found with the provided credentials.");
+        throw new ForbiddenException("No valid ticket");
       }
 
       // Ticket must be for the correct event
       if (ticket.eventId !== eventId) {
-        throw new ForbiddenException("Ticket is for a different event");
+        throw new ForbiddenException({
+          message: "Ticket is for a different event",
+          code: "ACCESS_DENIED",
+        });
       }
 
       // Ticket must be ACTIVE (FREE, GIFTED, and PAID tickets all require ACTIVE status)
       if (ticket.status !== "ACTIVE") {
-        throw new ForbiddenException(`Ticket is ${ticket.status.toLowerCase()}. Only active tickets are valid for streaming access.`);
-      }
-
-      // If ticket is linked to a registration, verify registration is REGISTERED
-      if (ticket.registrationId) {
-        const registration = await (this.prisma as any).event_registrations.findUnique({
-          where: { id: ticket.registrationId },
+        throw new ForbiddenException({
+          message: `Ticket is ${ticket.status.toLowerCase()}. Only active tickets are valid for streaming access.`,
+          code: "ACCESS_DENIED",
         });
-
-        if (!registration || registration.status !== "REGISTERED") {
-          throw new ForbiddenException("Ticket registration is not active. Please complete your registration.");
-        }
       }
 
       // ✅ Ticket validation complete
@@ -520,10 +630,10 @@ export class StreamingService {
       // Case 2: Logged-in viewer redemption (via ticketId, not accessCode)
       // If user is authenticated and ticket.userId is NULL, bind ticket to user and invalidate access code
       else if (user?.id && user.id.trim() !== "" && dto.ticketId && !ticket.userId) {
-        await (this.prisma as any).tickets.update({
+        await this.prisma.tickets.update({
           where: { id: ticket.id },
           data: {
-            app_users: { connect: { id: user.id } },
+            userId: user.id,
             entryCode: null, // Invalidate access code
             // Ticket remains ACTIVE - same user can re-enter later
           },
@@ -673,6 +783,7 @@ export class StreamingService {
         data: {
           active: false,
           endTime: new Date(),
+          updatedAt: new Date(),
         },
       },
     );
@@ -707,6 +818,134 @@ export class StreamingService {
       },
       entity,
     };
+  }
+
+  /**
+   * Webhook / system cleanup: end session without user permission checks.
+   * Idempotent. DB uses active=false + endTime (logical "ENDED"); LiveKit deleteRoom errors are swallowed.
+   */
+  async endSessionForWebhookOrCleanup(sessionId: string): Promise<void> {
+    const session = await (this.prisma as any).streaming_sessions.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session?.active) {
+      return;
+    }
+
+    if (this.roomService) {
+      try {
+        await this.roomService.deleteRoom(session.roomId);
+      } catch {
+        /* room may already be gone */
+      }
+    }
+
+    await (this.prisma as any).streaming_sessions.update({
+      where: { id: sessionId },
+      data: {
+        active: false,
+        endTime: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    const eventIdForSession =
+      (session as { event_id?: string; eventId?: string }).event_id ??
+      (session as { event_id?: string; eventId?: string }).eventId;
+    if (!eventIdForSession) {
+      return;
+    }
+
+    const event = await (this.prisma as any).events.findUnique({
+      where: { id: eventIdForSession },
+    });
+    if (event) {
+      const phase = String(event.phase ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/-/g, "_");
+      if (phase === "LIVE") {
+        await (this.prisma as any).events.update({
+          where: { id: eventIdForSession },
+          data: {
+            phase: "POST_LIVE" as EventPhase,
+            status: "COMPLETED" as EventStatus,
+          },
+        });
+      }
+    }
+  }
+
+  /** LiveKit room name is stored as streaming_sessions.roomId */
+  async handleRoomEnded(roomName: string | undefined | null): Promise<void> {
+    if (!roomName || typeof roomName !== "string") {
+      return;
+    }
+    const session = await (this.prisma as any).streaming_sessions.findFirst({
+      where: { roomId: roomName, active: true },
+    });
+    if (!session) {
+      return;
+    }
+    await this.endSessionForWebhookOrCleanup(session.id);
+  }
+
+  async handleParticipantLeft(roomName: string | undefined | null): Promise<void> {
+    if (!roomName || typeof roomName !== "string" || !this.roomService) {
+      return;
+    }
+    try {
+      const participants = await this.roomService.listParticipants(roomName);
+      const n = participants?.length ?? 0;
+      if (n === 0) {
+        await this.handleRoomEnded(roomName);
+      }
+    } catch {
+      try {
+        const rooms = await this.roomService.listRooms([roomName]);
+        if (!rooms?.length) {
+          await this.handleRoomEnded(roomName);
+        }
+      } catch {
+        /* ignore — transient LiveKit errors should not force session end */
+      }
+    }
+  }
+
+  /**
+   * Admin bulk cleanup: active sessions whose LiveKit room is missing or has zero participants.
+   */
+  async cleanupStaleActiveSessions(): Promise<{ checked: number; ended: number }> {
+    const active = await (this.prisma as any).streaming_sessions.findMany({
+      where: { active: true },
+      select: { id: true, roomId: true },
+    });
+    if (!this.roomService || active.length === 0) {
+      return { checked: active.length, ended: 0 };
+    }
+
+    let ended = 0;
+    for (const row of active) {
+      let shouldEnd = false;
+      try {
+        const rooms = await this.roomService.listRooms([row.roomId]);
+        if (!rooms?.length) {
+          shouldEnd = true;
+        } else {
+          const n = Number((rooms[0] as { numParticipants?: number | bigint }).numParticipants ?? 0);
+          if (n === 0) {
+            shouldEnd = true;
+          }
+        }
+      } catch {
+        shouldEnd = true;
+      }
+      if (shouldEnd) {
+        await this.endSessionForWebhookOrCleanup(row.id);
+        ended++;
+      }
+    }
+    return { checked: active.length, ended };
   }
 
   // -------------------------------------------------------------------
@@ -1070,8 +1309,9 @@ export class StreamingService {
       return;
     }
 
-    throw new ForbiddenException(
-      "You do not have permission to manage streaming sessions for this event",
-    );
+    throw new ForbiddenException({
+      message: "You do not have permission to manage streaming sessions for this event",
+      code: "ACCESS_DENIED",
+    });
   }
 }

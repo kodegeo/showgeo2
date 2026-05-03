@@ -3,9 +3,13 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
+import { EscrowService } from "../escrow/escrow.service";
+import { EventTicketLifecycleService } from "../tickets/event-ticket-lifecycle.service";
 import {
   CreateCheckoutDto,
   CreateRefundDto,
@@ -16,10 +20,10 @@ import {
   OrderType,
   PaymentMethod,
   UserRole,
-  TicketType,
   Prisma,
 } from "@prisma/client";
 import Stripe from "stripe";
+import { randomUUID } from "crypto";
 
 @Injectable()
 export class PaymentsService {
@@ -28,6 +32,9 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly escrowService: EscrowService,
+    @Inject(forwardRef(() => EventTicketLifecycleService))
+    private readonly eventTicketLifecycle: EventTicketLifecycleService,
   ) {
     const stripeSecretKey = this.configService.get<string>("STRIPE_SECRET_KEY");
 
@@ -81,7 +88,10 @@ export class PaymentsService {
     if (type === OrderType.TICKET && eventId) {
       const event = await (this.prisma as any).events.findUnique({
         where: { id: eventId },
-        select: { entityId: true },
+        select: {
+          entityId: true,
+          event_revenue_splits: { select: { id: true } },
+        },
       });
 
       if (!event) {
@@ -173,6 +183,109 @@ export class PaymentsService {
   }
 
   /**
+   * Create a Stripe Checkout Session for an existing event ticket order (orders + order_items already persisted).
+   * Updates `orders.stripeSessionId`. Used by POST /events/:eventId/checkout.
+   */
+  async createStripeCheckoutSessionForEventOrder(
+    orderId: string,
+    userId: string,
+    options?: { successUrl?: string; cancelUrl?: string },
+  ): Promise<{ checkoutUrl: string; sessionId: string }> {
+    if (!this.stripe) {
+      throw new BadRequestException("Stripe is not configured");
+    }
+
+    const order = await this.prisma.orders.findUnique({
+      where: { id: orderId },
+    });
+    if (!order) {
+      throw new NotFoundException("Order not found");
+    }
+    if (order.userId !== userId) {
+      throw new ForbiddenException("You do not have access to this order");
+    }
+    if (order.type !== OrderType.TICKET || !order.eventId) {
+      throw new BadRequestException("Invalid order type for event checkout");
+    }
+    if (order.status !== OrderStatus.PENDING) {
+      throw new BadRequestException("Order is not pending checkout");
+    }
+
+    const items = await this.prisma.order_items.findMany({
+      where: { orderId },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!items.length) {
+      throw new BadRequestException("Order has no line items");
+    }
+
+    if (order.stripeSessionId) {
+      try {
+        const existing = await this.stripe.checkout.sessions.retrieve(
+          order.stripeSessionId,
+        );
+        if (existing.status === "open" && existing.url) {
+          return {
+            checkoutUrl: existing.url,
+            sessionId: existing.id,
+          };
+        }
+      } catch {
+        // expired or invalid — create a new session below
+      }
+    }
+
+    const frontendUrl =
+      this.configService.get<string>("FRONTEND_URL") ||
+      "http://localhost:5173";
+    const eventId = order.eventId;
+
+    const lineItems = items.map((item) => ({
+      price_data: {
+        currency: (order.currency || "USD").toLowerCase(),
+        product_data: {
+          name: item.name,
+          description: item.description || undefined,
+        },
+        unit_amount: Math.round(Number(item.unitPrice) * 100),
+      },
+      quantity: item.quantity ?? 1,
+    }));
+
+    const session = await this.stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: lineItems,
+      mode: "payment",
+      success_url:
+        options?.successUrl ||
+        `${frontendUrl}/events/${eventId}?payment=success`,
+      cancel_url:
+        options?.cancelUrl ||
+        `${frontendUrl}/events/${eventId}?payment=cancel`,
+      client_reference_id: orderId,
+      metadata: {
+        orderId,
+        userId,
+        type: OrderType.TICKET,
+        eventId,
+      },
+    });
+
+    await this.prisma.orders.update({
+      where: { id: orderId },
+      data: {
+        stripeSessionId: session.id,
+        updatedAt: new Date(),
+      },
+    });
+
+    return {
+      checkoutUrl: session.url || "",
+      sessionId: session.id,
+    };
+  }
+
+  /**
    * Handle Stripe webhook events
    */
   async handleWebhook(payload: Buffer, signature: string): Promise<void> {
@@ -234,7 +347,7 @@ export class PaymentsService {
   }
 
   /**
-   * Handle checkout.session.completed
+   * Handle checkout.session.completed (idempotent for webhook retries)
    */
   private async handleCheckoutCompleted(
     session: Stripe.Checkout.Session,
@@ -247,9 +360,8 @@ export class PaymentsService {
       return;
     }
 
-    const order = await (this.prisma as any).orders.findUnique({
+    const order = await this.prisma.orders.findUnique({
       where: { id: orderId },
-      include: { items: true },
     });
 
     if (!order) {
@@ -257,58 +369,74 @@ export class PaymentsService {
       return;
     }
 
-    // Update order status and attach payment intent
-    await (this.prisma as any).orders.update({
-      where: { id: orderId },
-      data: {
-        status: OrderStatus.COMPLETED,
-        stripePaymentIntentId: session.payment_intent as string,
-      },
+    const alreadyIssued = await this.prisma.tickets.findFirst({
+      where: { orderId },
     });
+    if (alreadyIssued) {
+      return;
+    }
 
-    // Create payment record
-    if (session.payment_intent) {
-      await (this.prisma as any).payments.create({
+    const paymentIntentId =
+      typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : session.payment_intent?.id ?? null;
+
+    if (order.status !== OrderStatus.COMPLETED) {
+      await this.prisma.orders.update({
+        where: { id: orderId },
         data: {
-          orderId,
-          amount: order.totalAmount,
-          currency: order.currency,
-          status: "succeeded",
-          paymentMethod: PaymentMethod.STRIPE,
-          stripePaymentId: session.payment_intent as string,
-          metadata: {
-            sessionId: session.id,
-            customerEmail: session.customer_email,
-          } as Prisma.InputJsonValue,
+          status: OrderStatus.COMPLETED,
+          ...(paymentIntentId
+            ? { stripePaymentIntentId: paymentIntentId }
+            : {}),
+          updatedAt: new Date(),
+        },
+      });
+    } else if (paymentIntentId) {
+      await this.prisma.orders.update({
+        where: { id: orderId },
+        data: {
+          stripePaymentIntentId: paymentIntentId,
+          updatedAt: new Date(),
         },
       });
     }
 
-    // If order is for tickets, create or link tickets
-    if (order.type === OrderType.TICKET && order.eventId) {
-      for (const item of order.items) {
-        if (item.ticketId) {
-          // Ticket already exists; link to order
-          await (this.prisma as any).tickets.update({
-            where: { id: item.ticketId },
-            data: { orderId },
+    if (paymentIntentId) {
+      const existingPayment = await this.prisma.payments.findFirst({
+        where: { orderId, status: "succeeded" },
+      });
+      if (!existingPayment) {
+        try {
+          await this.prisma.payments.create({
+            data: {
+              id: randomUUID(),
+              orderId,
+              amount: order.totalAmount,
+              currency: order.currency,
+              status: "succeeded",
+              paymentMethod: PaymentMethod.STRIPE,
+              stripePaymentId: paymentIntentId,
+              updatedAt: new Date(),
+              metadata: {
+                sessionId: session.id,
+                customerEmail: session.customer_email,
+              } as Prisma.InputJsonValue,
+            },
           });
-        } else {
-          // Create new tickets (one per quantity)
-          for (let i = 0; i < item.quantity; i++) {
-            await (this.prisma as any).tickets.create({
-              data: {
-                userId: order.userId,
-                eventId: order.eventId,
-                orderId,
-                type: TicketType.PAID,
-                price: item.unitPrice ? Number(item.unitPrice) : null,
-                currency: order.currency || "USD",
-              },
-            });
+        } catch (err: unknown) {
+          const code = (err as { code?: string })?.code;
+          if (code !== "P2002") {
+            throw err;
           }
         }
       }
+    }
+
+    if (order.type === OrderType.TICKET && order.eventId) {
+      await this.eventTicketLifecycle.finalizePaidOrder(orderId, {
+        stripePaymentIntentId: paymentIntentId ?? undefined,
+      });
     }
   }
 

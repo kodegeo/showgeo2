@@ -17,7 +17,7 @@ import { UserRole } from "../../../packages/shared/types";
  * - Uses replace navigation to avoid cluttering browser history
  * - Redirects based on app_users.role from /auth/me:
  *   - ADMIN → /admin/dashboard
- *   - ENTITY → /studio/dashboard
+ *   - ENTITY → /studio/overview
  *   - USER → /profile
  * 
  * This ensures:
@@ -60,7 +60,7 @@ export function AuthRedirect() {
         redirectPath = "/admin/dashboard";
         break;
       case UserRole.ENTITY:
-        redirectPath = "/studio/dashboard";
+        redirectPath = "/studio/overview";
         break;
       case UserRole.USER:
       case UserRole.MANAGER:

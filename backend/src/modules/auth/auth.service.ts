@@ -71,57 +71,23 @@ export class AuthService {
 
     try {
       // Try to find existing app user tied to this Supabase auth user
-      let dbUser = await (this.prisma as any).app_users.findUnique({
+      // app_users has no user_profiles or entity_roles relation in schema; fetch scalar fields only
+      let dbUser = await this.prisma.app_users.findUnique({
         where: { authUserId: authUser.id },
-        include: {
-          user_profiles: true,
-          entity_roles: {
-            include: {
-              entities: {
-                select: {
-                  id: true,
-                  name: true,
-                  slug: true,
-                  type: true,
-                  thumbnail: true,
-                  isVerified: true,
-                  createdAt: true,
-                },
-              },
-            },
-          },
-        },
       });
 
       // If none exists, create one on the fly (auto-provisioning)
       if (!dbUser) {
         try {
-          dbUser = await (this.prisma as any).app_users.create({
+          const now = new Date();
+          dbUser = await this.prisma.app_users.create({
             data: {
-              id: authUser.id, // Use authUserId as primary key
+              id: authUser.id,
               authUserId: authUser.id,
               email: authUser.email ?? "",
               role: UserRole.USER,
-              password: null, // No password stored for Supabase-auth users
-              isEntity: false,
-            },
-            include: {
-              user_profiles: true,
-              entity_roles: {
-                include: {
-                  entities: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                      type: true,
-                      thumbnail: true,
-                      isVerified: true,
-                      createdAt: true,
-                    },
-                  },
-                },
-              },
+              password: null,
+              updatedAt: now,
             },
           });
         } catch (createError) {
@@ -135,7 +101,6 @@ export class AuthService {
             authUserId: authUser.id,
             email: authUser.email ?? "",
             role: UserRole.USER,
-            isEntity: false,
             user_profiles: null,
             entity_roles: [],
           };
@@ -154,7 +119,12 @@ export class AuthService {
         throw new ForbiddenException(statusMessage);
       }
 
-      return dbUser;
+      // Normalize shape for callers that expect user_profiles and entity_roles (not on app_users in schema)
+      return {
+        ...dbUser,
+        user_profiles: (dbUser as any).user_profiles ?? null,
+        entity_roles: (dbUser as any).entity_roles ?? [],
+      };
     } catch (prismaError) {
       // Re-throw ForbiddenException for disabled users
       if (prismaError instanceof ForbiddenException) {
@@ -198,19 +168,15 @@ export class AuthService {
    * Includes profile and entity roles.
    */
   async validateUser(userId: string): Promise<User | null> {
-    const user = await (this.prisma as any).app_users.findUnique({
+    const user = await this.prisma.app_users.findUnique({
       where: { id: userId },
-      include: {
-        user_profiles: true,
-        entity_roles: {
-          include: {
-            entities: true,
-          },
-        },
-      },
     });
-
-    return user;
+    if (!user) return null;
+    return {
+      ...user,
+      user_profiles: null,
+      entity_roles: [],
+    };
   }
 
   /**
@@ -258,22 +224,18 @@ export class AuthService {
     try {
       // 1️⃣ Check existing user by authUserId (idempotent check)
       this.logger.debug(`[REGISTER_APP_USER] Checking for existing user by authUserId: ${authUserId}`);
-      const existingUser = await (this.prisma as any).app_users.findUnique({
+      const existingUser = await this.prisma.app_users.findUnique({
         where: { authUserId },
-        include: {
-          user_profiles: true,
-          entity_roles: {
-            include: {
-              entities: true,
-            },
-          },
-        },
       });
     
       // If user exists, return it (idempotent behavior)
       if (existingUser) {
         this.logger.log(`[REGISTER_APP_USER] User already exists (idempotent): ${authUserId}`);
-        const { password: _, ...userWithoutPassword } = existingUser;
+        const { password: _, ...userWithoutPassword } = {
+          ...existingUser,
+          user_profiles: null,
+          entity_roles: [],
+        };
         return userWithoutPassword;
       }
     
@@ -291,17 +253,18 @@ export class AuthService {
       // 3️⃣ Atomic transaction: Create app user + profile (if names provided)
       this.logger.debug(`[REGISTER_APP_USER] Creating user in transaction: authUserId=${authUserId}, email=${email}`);
       
-      const user = await (this.prisma as any).$transaction(async (tx: any) => {
+      const now = new Date();
+      const user = await this.prisma.$transaction(async (tx) => {
         // Create app user
         this.logger.debug(`[REGISTER_APP_USER] Creating app_users record: id=${authUserId}, authUserId=${authUserId}, email=${email}`);
         const newUser = await tx.app_users.create({
           data: {
-            id: authUserId, // Use authUserId as primary key
+            id: authUserId,
             authUserId,
             email,
             role: UserRole.USER,
-            password: null, // No password stored for Supabase-auth users
-            // Note: isEntity is not in schema - removed to prevent errors
+            password: null,
+            updatedAt: now,
           },
         });
         
@@ -310,13 +273,15 @@ export class AuthService {
         // Create profile ONLY if names provided (within same transaction)
         if (firstName || lastName) {
           const profileId = randomUUID();
+          const profileNow = new Date();
           this.logger.debug(`[REGISTER_APP_USER] Creating user_profiles record: id=${profileId}, userId=${newUser.id}`);
           await tx.user_profiles.create({
             data: {
-              id: profileId, // user_profiles.id is required (no default)
-              userId: newUser.id, // user_profiles.userId references app_users.id
+              id: profileId,
+              userId: newUser.id,
               firstName: firstName || null,
               lastName: lastName || null,
+              updatedAt: profileNow,
             },
           });
           this.logger.debug(`[REGISTER_APP_USER] Created user_profiles record: ${profileId}`);
@@ -327,18 +292,10 @@ export class AuthService {
     
       this.logger.log(`[REGISTER_APP_USER] Successfully created user: ${user.id}`);
     
-      // 4️⃣ Fetch and return complete user with relations
-      this.logger.debug(`[REGISTER_APP_USER] Fetching complete user with relations: ${user.id}`);
-      const completeUser = await (this.prisma as any).app_users.findUnique({
+      // 4️⃣ Fetch and return complete user
+      this.logger.debug(`[REGISTER_APP_USER] Fetching user: ${user.id}`);
+      const completeUser = await this.prisma.app_users.findUnique({
         where: { id: user.id },
-        include: {
-          user_profiles: true,
-          entity_roles: {
-            include: {
-              entities: true,
-            },
-          },
-        },
       });
     
       if (!completeUser) {
@@ -346,7 +303,11 @@ export class AuthService {
         throw new InternalServerErrorException("User created but could not be retrieved");
       }
     
-      const { password: _, ...userWithoutPassword } = completeUser;
+      const { password: _, ...userWithoutPassword } = {
+        ...completeUser,
+        user_profiles: null,
+        entity_roles: [],
+      };
       this.logger.log(`[REGISTER_APP_USER] Registration complete: ${user.id}`);
       return userWithoutPassword;
       
@@ -477,43 +438,42 @@ export class AuthService {
     const authUserId = authData.user.id;
 
     // Create app_users record with id = authUserId
-    const user = await (this.prisma as any).app_users.create({
+    const now = new Date();
+    const user = await this.prisma.app_users.create({
       data: {
-        id: authUserId, // Use authUserId as primary key
+        id: authUserId,
         email,
         authUserId,
         role,
-        password: null, // No password stored for Supabase-auth users
-        isEntity: false,
+        password: null,
+        updatedAt: now,
       },
     });
 
     // Create profile if names provided
     if (firstName || lastName) {
-      await (this.prisma as any).user_profiles.create({
+      const now = new Date();
+      await this.prisma.user_profiles.create({
         data: {
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           userId: user.id,
-          firstName,
-          lastName,
+          firstName: firstName ?? null,
+          lastName: lastName ?? null,
+          updatedAt: now,
         },
       });
     }
 
-    // Fetch complete user with relations
-    const completeUser = await (this.prisma as any).app_users.findUnique({
+    // Fetch and return user (app_users has no user_profiles/entity_roles relation in schema)
+    const completeUser = await this.prisma.app_users.findUnique({
       where: { id: user.id },
-      include: {
-        user_profiles: true,
-        entity_roles: {
-          include: {
-            entities: true,
-          },
-        },
-      },
     });
 
-    const { password: _, ...userWithoutPassword } = completeUser;
+    const { password: _, ...userWithoutPassword } = {
+      ...(completeUser ?? user),
+      user_profiles: null,
+      entity_roles: [],
+    };
     return userWithoutPassword;
   }
 }

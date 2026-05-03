@@ -31,7 +31,7 @@ describe("EventActivitiesService", () => {
     phase: EventPhase.POST_LIVE,
     eventCoordinatorId: mockUserId,
     entityId: "entity-123",
-    entities_events_entityIdToentities: {
+    entity: {
       ownerId: mockUserId,
     },
   };

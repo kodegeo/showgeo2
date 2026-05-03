@@ -471,7 +471,7 @@ export class MeetGreetService implements OnModuleDestroy {
     const event = await (this.prisma as any).events.findUnique({
       where: { id: eventId },
       include: {
-        entities_events_entityIdToentities: {
+        entity: {
           select: {
             id: true,
             ownerId: true,
@@ -490,7 +490,7 @@ export class MeetGreetService implements OnModuleDestroy {
     }
 
     // Check if user is entity owner
-    if (event.entities_events_entityIdToentities?.ownerId === userId) {
+    if (event.entity?.ownerId === userId) {
       return;
     }
 

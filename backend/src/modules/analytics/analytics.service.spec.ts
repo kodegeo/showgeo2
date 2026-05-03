@@ -192,7 +192,7 @@ describe("AnalyticsService", () => {
       const entity = await TestUtils.createTestEntity({ id: entityId, ownerId: userId });
       (prismaService.entities.findUnique as jest.Mock).mockResolvedValue({
         ...entity,
-        roles: [],
+        entity_roles: [],
       });
 
       await expect(service.validateEntityAccess(entityId, userId)).resolves.not.toThrow();
@@ -211,7 +211,7 @@ describe("AnalyticsService", () => {
       const entity = await TestUtils.createTestEntity({ id: entityId, ownerId: "other-user" });
       (prismaService.entities.findUnique as jest.Mock).mockResolvedValue({
         ...entity,
-        roles: [],
+        entity_roles: [],
       });
 
       await expect(service.validateEntityAccess(entityId, userId)).rejects.toThrow(ForbiddenException);

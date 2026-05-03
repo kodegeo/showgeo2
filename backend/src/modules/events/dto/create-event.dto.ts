@@ -1,17 +1,17 @@
-import { IsString, IsOptional, IsIn, IsBoolean, IsDateString, IsArray, IsObject, IsUUID, Min, ValidateNested } from "class-validator";
+import { IsString, IsOptional, IsIn, IsBoolean, IsDateString, IsArray, IsObject, IsUUID, IsNumber, IsInt, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { RuntimeEnums, EventType, EventPhase, EventStatus, GeofencingAccessLevel, TicketType } from "../../../common/runtime-enums";
+import { RuntimeEnums, EventType, EventPhase, EventStatus, GeofencingAccessLevel } from "../../../common/runtime-enums";
 
 export class TicketTypeDto {
-  @ApiProperty({ enum: RuntimeEnums.TicketType })
-  @IsIn(RuntimeEnums.TicketType)
-  type: TicketType;
+  @ApiProperty()
+  @IsString()
+  name: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiProperty()
+  @IsNumber()
   @Min(0)
-  price?: number;
+  price: number;
 
   @ApiPropertyOptional({ default: "USD" })
   @IsOptional()
@@ -19,8 +19,18 @@ export class TicketTypeDto {
   currency?: string;
 
   @ApiProperty()
+  @IsInt()
   @Min(0)
-  availability: number;
+  quantity: number;
+
+  @ApiProperty({ enum: ["GENERAL", "VIP"] })
+  @IsIn(["GENERAL", "VIP"])
+  accessLevel: "GENERAL" | "VIP";
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  requiresInvite?: boolean;
 }
 
 export class CreateEventDto {
@@ -57,6 +67,13 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   thumbnail?: string;
+
+  /** For quick event creation: single ticket price. Backend builds default ticketTypes from this. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  ticketPrice?: number;
 
   // ❌ DO NOT REQUIRE - These are set by backend defaults
   @ApiPropertyOptional({ enum: RuntimeEnums.EventType, default: "LIVE" })
@@ -126,6 +143,12 @@ export class CreateEventDto {
   @IsOptional()
   @IsBoolean()
   ticketRequired?: boolean;
+
+  /** Registration access: OPEN = anyone can register (free events); INVITE_ONLY = must have invitation (default) */
+  @ApiPropertyOptional({ enum: ["OPEN", "INVITE_ONLY"] })
+  @IsOptional()
+  @IsIn(["OPEN", "INVITE_ONLY"])
+  registrationAccess?: "OPEN" | "INVITE_ONLY";
 
   @ApiPropertyOptional({ type: [TicketTypeDto] })
   @IsOptional()

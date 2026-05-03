@@ -20,7 +20,7 @@ interface Event {
   startTime: string;
   location?: string | null;
   isVirtual?: boolean;
-  entities_events_entityIdToentities?: EventEntity | null;
+  entity?: EventEntity | null;
   _count?: {
     tickets?: number;
   };
@@ -135,9 +135,14 @@ export function EventsPage() {
       <Navigation />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white mb-6">
-          Events
-        </h1>
+        <header className="mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">
+            Events
+          </h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            Upcoming and live events (scheduled start in the future, or happening now).
+          </p>
+        </header>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
@@ -218,9 +223,9 @@ export function EventsPage() {
                     <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                       {formatStartTime(event.startTime)}
                     </p>
-                    {event.entities_events_entityIdToentities && (
+                    {event.entity && (
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-500 truncate">
-                        {event.entities_events_entityIdToentities.name}
+                        {event.entity.name}
                       </p>
                     )}
                     <div className="mt-3 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">

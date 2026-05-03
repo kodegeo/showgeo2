@@ -13,6 +13,7 @@ interface Creator {
   thumbnail?: string | null;
   isVerified?: boolean;
   _count?: {
+    events?: number;
     events_events_entityIdToentities?: number;
     follows?: number;
   };
@@ -228,7 +229,10 @@ export function CreatorsPage() {
                     <div className="mt-3 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5" />
-                        {creator._count?.events_events_entityIdToentities ?? 0} events
+                        {creator._count?.events ??
+                          creator._count?.events_events_entityIdToentities ??
+                          0}{" "}
+                        events
                       </span>
                       <span className="flex items-center gap-1">
                         <Users className="w-3.5 h-3.5" />

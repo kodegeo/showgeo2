@@ -23,6 +23,7 @@ import {
   ApiConsumes,
 } from "@nestjs/swagger";
 
+import type { MulterFile } from "@/types/multer-file";
 import { AssetsService } from "./assets.service";
 import {
   UploadAssetDto,
@@ -37,7 +38,7 @@ import { Roles, CurrentUser, Public } from "../../common/decorators";
 
 import { app_users as PrismaUser, UserRole as PrismaUserRole } from "@prisma/client";
 
-import type { Express } from "express-serve-static-core";
+import type { Express } from "express";
 import { AssetUploadDebug } from "../../debug/asset-upload-debug";
 
 type CurrentUserShape = Pick<PrismaUser, "id" | "role"> & {
@@ -90,7 +91,7 @@ export class AssetsController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 403, description: "Forbidden - insufficient permissions" })
   async upload(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
     @Body() uploadDto: UploadAssetDto,
     @CurrentUser() user: CurrentUserShape,
   ) {
@@ -176,7 +177,7 @@ export class AssetsController {
   @ApiConsumes("multipart/form-data")
   @ApiOperation({ summary: "Upload creator media (entity only)" })
   async uploadCreatorMedia(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: MulterFile,
     @Body() uploadDto: UploadCreatorMediaDto,
     @CurrentUser() user: CurrentUserShape,
   ) {
@@ -196,7 +197,7 @@ export class AssetsController {
   @ApiBearerAuth()
   @ApiConsumes("multipart/form-data")
   async bulkUploadCreatorMedia(
-    @UploadedFiles() files: { files?: Express.Multer.File[] },
+    @UploadedFiles() files: { files?: MulterFile[] },
     @Body("entityId") entityId: string,
     @Body("items") itemsString: string,
     @Body("isPublic") isPublic?: boolean,

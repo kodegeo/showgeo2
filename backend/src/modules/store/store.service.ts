@@ -13,6 +13,7 @@ import {
   UpdateProductDto,
   StoreQueryDto,
 } from "./dto";
+import { randomUUID } from "crypto";
 import {
   stores as Store,
   StoreStatus,
@@ -25,24 +26,19 @@ import {
 export class StoreService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Helper: map Prisma store shape → frontend shape (Option C)
-  private mapStoreToResponse(store: any) {
+  // Helper: map store + optional fetched relations → frontend shape (stores has no relations in schema)
+  private mapStoreToResponse(store: any, opts?: { entity?: any; event?: any; tour?: any; collaborators?: any[] }) {
     if (!store) return store;
-
-    const {
-      entities_stores_entityIdToentities,
-      events,
-      tours_stores_tourIdTotours,
-      entities_StoreCollaborators,
-      ...rest
-    } = store;
-
+    const { entityId, eventId, tourId, collaborators: collabIds, ...rest } = store;
     return {
       ...rest,
-      entity: entities_stores_entityIdToentities || null,
-      event: events || null,
-      tour: tours_stores_tourIdTotours || null,
-      collaborators: entities_StoreCollaborators || [],
+      entityId,
+      eventId,
+      tourId,
+      entity: opts?.entity ?? null,
+      event: opts?.event ?? null,
+      tour: opts?.tour ?? null,
+      collaborators: opts?.collaborators ?? [],
     };
   }
 
@@ -65,27 +61,21 @@ export class StoreService {
       throw new ConflictException("Store with this slug already exists");
     }
 
-    // Validate entity exists
-    const entity = await (this.prisma as any).entities.findUnique({
+    const ownerEntity = await this.prisma.entities.findUnique({
       where: { id: entityId },
     });
-
-    if (!entity) {
+    if (!ownerEntity) {
       throw new NotFoundException("Entity not found");
     }
 
-    // Validate event exists if provided
     if (eventId) {
-      const event = await (this.prisma as any).events.findUnique({
+      const event = await this.prisma.events.findUnique({
         where: { id: eventId },
       });
-
       if (!event) {
         throw new NotFoundException("Event not found");
       }
-
-      // Verify event belongs to entity
-      if (event.entityId !== entityId) {
+      if (event.entityId !== ownerEntity.id) {
         throw new ForbiddenException("Event does not belong to this entity");
       }
     }
@@ -106,72 +96,33 @@ export class StoreService {
       }
     }
 
-    // Prepare collaborators relation update (Entity IDs)
-    const collaboratorsUpdate = collaborators
-      ? {
-          connect: collaborators.map((id) => ({ id })),
-        }
-      : undefined;
-
-    // Create store
-    const store = await (this.prisma as any).stores.create({
+    const store = await this.prisma.stores.create({
       data: {
-        ...storeData,
+        id: randomUUID(),
         name,
         slug,
         entityId,
-        eventId,
-        tourId,
-        ...(collaboratorsUpdate && {
-          entities_StoreCollaborators: collaboratorsUpdate,
-        }),
-      },
-      include: {
-        entities_stores_entityIdToentities: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            type: true,
-            isVerified: true,
-            ownerId: true,
-          },
-        },
-        events: {
-          select: {
-            id: true,
-            name: true,
-            thumbnail: true,
-            startTime: true,
-          },
-        },
-        tours_stores_tourIdTotours: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            startDate: true,
-          },
-        },
-        entities_StoreCollaborators: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-          },
-        },
-        _count: {
-          select: {
-            products: true,
-          },
-        },
+        eventId: eventId ?? null,
+        tourId: tourId ?? null,
+        collaborators: collaborators ?? [],
+        tags: (storeData as any).tags ?? [],
+        updatedAt: new Date(),
+        ...(typeof (storeData as any).description !== "undefined" && { description: (storeData as any).description }),
+        ...(typeof (storeData as any).bannerImage !== "undefined" && { bannerImage: (storeData as any).bannerImage }),
+        ...(typeof (storeData as any).logoUrl !== "undefined" && { logoUrl: (storeData as any).logoUrl }),
+        ...(typeof (storeData as any).currency !== "undefined" && { currency: (storeData as any).currency }),
+        ...(typeof (storeData as any).status !== "undefined" && { status: (storeData as any).status }),
+        ...(typeof (storeData as any).visibility !== "undefined" && { visibility: (storeData as any).visibility }),
       },
     });
 
-    return this.mapStoreToResponse(store);
+    const [entityRel, event, tour, collabEntities] = await Promise.all([
+      this.prisma.entities.findUnique({ where: { id: entityId }, select: { id: true, name: true, slug: true, thumbnail: true, type: true, isVerified: true, ownerId: true } }),
+      eventId ? this.prisma.events.findUnique({ where: { id: eventId }, select: { id: true, name: true, thumbnail: true, startTime: true } }) : null,
+      tourId ? this.prisma.tours.findUnique({ where: { id: tourId }, select: { id: true, name: true, slug: true, thumbnail: true, startDate: true } }) : null,
+      (collaborators?.length ? this.prisma.entities.findMany({ where: { id: { in: collaborators } }, select: { id: true, name: true, slug: true, thumbnail: true } }) : []) as Promise<any[]>,
+    ]);
+    return this.mapStoreToResponse(store, { entity: entityRel ?? null, event: event ?? null, tour: tour ?? null, collaborators: collabEntities ?? [] });
   }
 
   // ------------------------------------------------------
@@ -201,70 +152,25 @@ export class StoreService {
       }
     }
 
-    // Prepare collaborators update if provided
-    const collaboratorsUpdate = collaborators
-      ? {
-          set: collaborators.map((entityId) => ({ id: entityId })),
-        }
-      : undefined;
-
-    // Update store
-    const updated = await (this.prisma as any).stores.update({
+    // Update store (stores has no relations; collaborators is String[])
+    const updated = await this.prisma.stores.update({
       where: { id },
       data: {
         ...updateData,
         ...(slug && { slug }),
         ...(name && { name }),
-        ...(collaboratorsUpdate && {
-          entities_StoreCollaborators: collaboratorsUpdate,
-        }),
-      },
-      include: {
-        entities_stores_entityIdToentities: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            type: true,
-            isVerified: true,
-            ownerId: true,
-          },
-        },
-        events: {
-          select: {
-            id: true,
-            name: true,
-            thumbnail: true,
-            startTime: true,
-          },
-        },
-        tours_stores_tourIdTotours: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            startDate: true,
-          },
-        },
-        entities_StoreCollaborators: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-          },
-        },
-        _count: {
-          select: {
-            products: true,
-          },
-        },
+        ...(collaborators && { collaborators }),
+        updatedAt: new Date(),
       },
     });
 
-    return this.mapStoreToResponse(updated);
+    const [entity, event, tour, collabEntities] = await Promise.all([
+      this.prisma.entities.findUnique({ where: { id: updated.entityId }, select: { id: true, name: true, slug: true, thumbnail: true, type: true, isVerified: true, ownerId: true } }),
+      updated.eventId ? this.prisma.events.findUnique({ where: { id: updated.eventId }, select: { id: true, name: true, thumbnail: true, startTime: true } }) : null,
+      updated.tourId ? this.prisma.tours.findUnique({ where: { id: updated.tourId }, select: { id: true, name: true, slug: true, thumbnail: true, startDate: true } }) : null,
+      (updated.collaborators?.length ? this.prisma.entities.findMany({ where: { id: { in: updated.collaborators } }, select: { id: true, name: true, slug: true, thumbnail: true } }) : []) as Promise<any[]>,
+    ]);
+    return this.mapStoreToResponse(updated, { entity: entity ?? null, event: event ?? null, tour: tour ?? null, collaborators: collabEntities ?? [] });
   }
 
   // ------------------------------------------------------
@@ -315,51 +221,34 @@ export class StoreService {
     const skip = (page - 1) * limit;
 
     const [stores, total] = await Promise.all([
-      (this.prisma as any).stores.findMany({
+      this.prisma.stores.findMany({
         where,
-        include: {
-          entities_stores_entityIdToentities: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              thumbnail: true,
-              type: true,
-              isVerified: true,
-            },
-          },
-          events: {
-            select: {
-              id: true,
-              name: true,
-              thumbnail: true,
-              startTime: true,
-            },
-          },
-          tours_stores_tourIdTotours: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              thumbnail: true,
-              startDate: true,
-            },
-          },
-          _count: {
-            select: {
-              products: true,
-            },
-          },
-        },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
       }),
-      (this.prisma as any).stores.count({ where }),
+      this.prisma.stores.count({ where }),
     ]);
 
+    const entityIds = [...new Set(stores.map((s: any) => s.entityId))];
+    const eventIds = [...new Set(stores.map((s: any) => s.eventId).filter(Boolean))];
+    const tourIds = [...new Set(stores.map((s: any) => s.tourId).filter(Boolean))];
+    const [entities, events, tours] = await Promise.all([
+      entityIds.length ? this.prisma.entities.findMany({ where: { id: { in: entityIds } }, select: { id: true, name: true, slug: true, thumbnail: true, type: true, isVerified: true } }) : [],
+      eventIds.length ? this.prisma.events.findMany({ where: { id: { in: eventIds } }, select: { id: true, name: true, thumbnail: true, startTime: true } }) : [],
+      tourIds.length ? this.prisma.tours.findMany({ where: { id: { in: tourIds } }, select: { id: true, name: true, slug: true, thumbnail: true, startDate: true } }) : [],
+    ]);
+    const entityMap = new Map(entities.map((e: any) => [e.id, e] as [string, any]));
+    const eventMap = new Map(events.map((e: any) => [e.id, e] as [string, any]));
+    const tourMap = new Map(tours.map((t: any) => [t.id, t] as [string, any]));
+
     return {
-      data: stores.map((s: any) => this.mapStoreToResponse(s)),
+      data: stores.map((s: any) => this.mapStoreToResponse(s, {
+        entity: entityMap.get(s.entityId) ?? null,
+        event: s.eventId ? eventMap.get(s.eventId) ?? null : null,
+        tour: s.tourId ? tourMap.get(s.tourId) ?? null : null,
+        collaborators: [],
+      })),
       meta: {
         total,
         page,
@@ -388,64 +277,21 @@ export class StoreService {
   // PUBLIC FIND ONE (mapped)
   // ------------------------------------------------------
   async findOne(id: string): Promise<any> {
-    const store = await (this.prisma as any).stores.findUnique({
+    const store = await this.prisma.stores.findUnique({
       where: { id },
-      include: {
-        entities_stores_entityIdToentities: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            type: true,
-            isVerified: true,
-            ownerId: true,
-          },
-        },
-        events: {
-          select: {
-            id: true,
-            name: true,
-            thumbnail: true,
-            startTime: true,
-          },
-        },
-        tours_stores_tourIdTotours: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            startDate: true,
-          },
-        },
-        entities_StoreCollaborators: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-          },
-        },
-        products: {
-          where: {
-            isAvailable: true,
-          },
-          orderBy: { createdAt: "desc" },
-        },
-        _count: {
-          select: {
-            products: true,
-          },
-        },
-      },
     });
 
     if (!store) {
       throw new NotFoundException("Store not found");
     }
 
-    return this.mapStoreToResponse(store);
+    const [entity, event, tour, collabEntities] = await Promise.all([
+      this.prisma.entities.findUnique({ where: { id: store.entityId }, select: { id: true, name: true, slug: true, thumbnail: true, type: true, isVerified: true, ownerId: true } }),
+      store.eventId ? this.prisma.events.findUnique({ where: { id: store.eventId }, select: { id: true, name: true, thumbnail: true, startTime: true } }) : null,
+      store.tourId ? this.prisma.tours.findUnique({ where: { id: store.tourId }, select: { id: true, name: true, slug: true, thumbnail: true, startDate: true } }) : null,
+      (store.collaborators?.length ? this.prisma.entities.findMany({ where: { id: { in: store.collaborators } }, select: { id: true, name: true, slug: true, thumbnail: true } }) : []) as Promise<any[]>,
+    ]);
+    return this.mapStoreToResponse(store, { entity: entity ?? null, event: event ?? null, tour: tour ?? null, collaborators: collabEntities ?? [] });
   }
 
   // ------------------------------------------------------
@@ -461,36 +307,29 @@ export class StoreService {
       throw new NotFoundException("Entity not found");
     }
 
-    const stores = await (this.prisma as any).stores.findMany({
+    const stores = await this.prisma.stores.findMany({
       where: { entityId },
-      include: {
-        events: {
-          select: {
-            id: true,
-            name: true,
-            thumbnail: true,
-            startTime: true,
-          },
-        },
-        tours_stores_tourIdTotours: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            thumbnail: true,
-            startDate: true,
-          },
-        },
-        _count: {
-          select: {
-            products: true,
-          },
-        },
-      },
       orderBy: { createdAt: "desc" },
     });
 
-    return stores.map((s: any) => this.mapStoreToResponse(s));
+    const entityIds = [...new Set(stores.map((s: any) => s.entityId))];
+    const eventIds = [...new Set(stores.map((s: any) => s.eventId).filter(Boolean))];
+    const tourIds = [...new Set(stores.map((s: any) => s.tourId).filter(Boolean))];
+    const [entities, events, tours] = await Promise.all([
+      entityIds.length ? this.prisma.entities.findMany({ where: { id: { in: entityIds } }, select: { id: true, name: true, slug: true, thumbnail: true, type: true, isVerified: true } }) : [],
+      eventIds.length ? this.prisma.events.findMany({ where: { id: { in: eventIds } }, select: { id: true, name: true, thumbnail: true, startTime: true } }) : [],
+      tourIds.length ? this.prisma.tours.findMany({ where: { id: { in: tourIds } }, select: { id: true, name: true, slug: true, thumbnail: true, startDate: true } }) : [],
+    ]);
+    const entityMap = new Map(entities.map((e: any) => [e.id, e] as [string, any]));
+    const eventMap = new Map(events.map((e: any) => [e.id, e] as [string, any]));
+    const tourMap = new Map(tours.map((t: any) => [t.id, t] as [string, any]));
+
+    return stores.map((s: any) => this.mapStoreToResponse(s, {
+      entity: entityMap.get(s.entityId) ?? null,
+      event: s.eventId ? eventMap.get(s.eventId) ?? null : null,
+      tour: s.tourId ? tourMap.get(s.tourId) ?? null : null,
+      collaborators: [],
+    }));
   }
 
   // ------------------------------------------------------
@@ -607,23 +446,19 @@ export class StoreService {
   // DELETE STORE
   // ------------------------------------------------------
   async delete(id: string, userId: string, userRole: UserRole) {
-    const store = await (this.prisma as any).stores.findUnique({
+    const store = await this.prisma.stores.findUnique({
       where: { id },
-      include: {
-        entities_stores_entityIdToentities: {
-          select: {
-            id: true,
-            ownerId: true,
-          },
-        },
-      },
     });
 
     if (!store) {
       throw new NotFoundException("Store not found");
     }
 
-    const ownerId = store.entities_stores_entityIdToentities?.ownerId;
+    const entity = await this.prisma.entities.findUnique({
+      where: { id: store.entityId },
+      select: { ownerId: true },
+    });
+    const ownerId = entity?.ownerId;
 
     // Only owner or admin can delete
     if (ownerId && ownerId !== userId && userRole !== UserRole.ADMIN) {
@@ -650,34 +485,26 @@ export class StoreService {
       return; // Admin can manage anything
     }
 
-    // Check if user owns the entity or has roles on it
-    const entity = await (this.prisma as any).entities.findUnique({
+    // Check if user owns the entity or has roles on it (entities has no entity_roles relation; query separately)
+    const entity = await this.prisma.entities.findUnique({
       where: { id: store.entityId },
-      include: {
-        entity_roles: {
-          where: {
-            userId,
-          },
-        },
-      },
     });
 
     if (!entity) {
       throw new NotFoundException("Entity not found");
     }
 
-    // Direct owner
     if (entity.ownerId === userId) {
       return;
     }
 
-    // Check if user is a manager with ADMIN or MANAGER role
-    const entityRole = entity.entity_roles.find(
-      (role: any) =>
-        role.userId === userId &&
-        (role.role === EntityRoleType.ADMIN ||
-          role.role === EntityRoleType.MANAGER),
-    );
+    const entityRole = await this.prisma.entity_roles.findFirst({
+      where: {
+        entityId: store.entityId,
+        userId,
+        role: { in: [EntityRoleType.ADMIN, EntityRoleType.MANAGER] },
+      },
+    });
 
     if (entityRole) {
       return;

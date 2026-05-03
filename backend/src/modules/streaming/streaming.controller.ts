@@ -85,6 +85,13 @@ export class StreamingController {
   
     // 🔑 Populate eventId from route into DTO
     generateTokenDto.eventId = eventId;
+
+    // Client IP for geofencing (proxy-safe)
+    const forwarded = req.headers?.["x-forwarded-for"];
+    generateTokenDto.clientIp =
+      (typeof forwarded === "string" ? forwarded.split(",")[0]?.trim() : undefined) ||
+      req.ip ||
+      req.socket?.remoteAddress;
   
     // ✅ Call service with EXACTLY two arguments
     return this.streamingService.generateToken(generateTokenDto, {

@@ -1,13 +1,17 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SendInvitationsDto, RegisterDto, ValidateTicketDto } from "./dto";
 import { EmailService } from "../email/email.service";
+import { MessagesService } from "../messages/messages.service";
+import { EventAccessRulesService } from "./event-access-rules.service";
 import { randomUUID } from "crypto";
 
 /**
@@ -20,10 +24,14 @@ export enum EventReminderType {
 
 @Injectable()
 export class RegistrationsService {
+  private readonly logger = new Logger(RegistrationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly accessRulesService: EventAccessRulesService,
+    private readonly messagesService: MessagesService,
   ) {}
 
   /**
@@ -56,11 +64,16 @@ export class RegistrationsService {
     const maxAttempts = 10;
 
     while (attempts < maxAttempts) {
-      const existing = await this.p.event_registrations.findUnique({
-        where: { accessCode: code },
-      });
+      const [existingReg, existingPass] = await Promise.all([
+        this.p.event_registrations.findFirst({
+          where: { accessCode: code },
+        }),
+        this.p.access_passes.findFirst({
+          where: { access_code: code },
+        }),
+      ]);
 
-      if (!existing) {
+      if (!existingReg && !existingPass) {
         return code;
       }
 
@@ -77,7 +90,7 @@ export class RegistrationsService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Send invitations to a guest list
+   * Send invitations to a guest list (or audience FOLLOWERS).
    * Creates EventRegistration records with status = INVITED
    * Generates accessCode for guest users (emails without userId)
    */
@@ -86,7 +99,8 @@ export class RegistrationsService {
     dto: SendInvitationsDto,
     invitedBy: string,
   ): Promise<{ created: number; skipped: number }> {
-    // Validate event exists
+    await this.ensureEventCreator(eventId, invitedBy);
+
     const event = await this.p.events.findUnique({
       where: { id: eventId },
     });
@@ -95,10 +109,56 @@ export class RegistrationsService {
       throw new NotFoundException("Event not found");
     }
 
+    const ticketTypeId =
+      dto.ticketTypeId ??
+      (
+        await this.p.ticket_types.findFirst({
+          where: { event_id: eventId },
+          orderBy: { created_at: "asc" },
+          select: { id: true },
+        })
+      )?.id;
+    if (!ticketTypeId) {
+      throw new BadRequestException(
+        "Event has no ticket types. Add a ticket type or pass ticketTypeId before sending invitations.",
+      );
+    }
+    const ticketType = await this.p.ticket_types.findFirst({
+      where: { id: ticketTypeId, event_id: eventId },
+      select: { id: true },
+    });
+    if (!ticketType) {
+      throw new BadRequestException("ticketTypeId is not valid for this event");
+    }
+
+    let invitees: Array<{ userId?: string; email?: string }> = [];
+
+    if (dto.audience === "FOLLOWERS") {
+      const entityId = (event as any).entityId;
+      if (!entityId) {
+        throw new BadRequestException("Event has no entity; cannot invite followers.");
+      }
+      const follows = await this.p.follows.findMany({
+        where: {
+          targetId: entityId,
+          targetType: "ENTITY",
+        },
+      });
+      invitees = follows.map((f: any) => ({ userId: f.userId }));
+    } else if (dto.audience === "EMAIL_LIST") {
+      const emails = dto.emails?.map((e) => e.trim()).filter(Boolean) ?? [];
+      if (emails.length === 0) {
+        throw new BadRequestException("emails is required when audience is EMAIL_LIST");
+      }
+      invitees = emails.map((email) => ({ email }));
+    } else {
+      invitees = dto.invitees ?? [];
+    }
+
     let created = 0;
     let skipped = 0;
 
-    for (const invitee of dto.invitees) {
+    for (const invitee of invitees) {
       // Must have either userId or email
       if (!invitee.userId && !invitee.email) {
         skipped++;
@@ -121,41 +181,313 @@ export class RegistrationsService {
         continue;
       }
 
-      // Generate accessCode for guest users (email without userId)
-      const accessCode = !invitee.userId ? await this.ensureUniqueAccessCode() : null;
+      const emailNorm = invitee.email?.trim().toLowerCase() || null;
+      const passWhere: Record<string, unknown> = {
+        event_id: eventId,
+        ticket_type_id: ticketTypeId,
+      };
+      if (invitee.userId) {
+        passWhere.user_id = invitee.userId;
+      } else if (emailNorm) {
+        passWhere.email = emailNorm;
+      }
 
-      // Create registration
-      await this.p.event_registrations.create({
+      let accessPass = await this.p.access_passes.findFirst({
+        where: passWhere,
+      });
+
+      let access_code: string;
+      if (accessPass?.access_code) {
+        access_code = accessPass.access_code;
+      } else if (accessPass) {
+        access_code = await this.ensureUniqueAccessCode();
+        await this.p.access_passes.update({
+          where: { id: accessPass.id },
+          data: { access_code: access_code, status: "SENT" },
+        });
+      } else {
+        access_code = await this.ensureUniqueAccessCode();
+        const passSource =
+          dto.audience === "FOLLOWERS"
+            ? "FOLLOWERS"
+            : emailNorm
+              ? "EMAIL"
+              : "INVITATION";
+        await this.p.access_passes.create({
+          data: {
+            event_id: eventId,
+            ticket_type_id: ticketTypeId,
+            user_id: invitee.userId || null,
+            email: emailNorm,
+            access_code: access_code,
+            source: passSource,
+            status: "SENT",
+          },
+        });
+      }
+
+      // Create registration (event_invitations concept stored in event_registrations)
+      const registration = await this.p.event_registrations.create({
         data: {
           id: randomUUID(),
           eventId,
           userId: invitee.userId || null,
-          email: invitee.email || null,
-          accessCode,
+          email: invitee.email?.trim() || null,
+          accessCode: access_code,
           status: "INVITED",
-          invitedBy,
-          invitedAt: new Date(),
         },
       });
 
-      // Store invitation in mailbox
-      await this.addToMailbox({
-        userId: invitee.userId || null,
-        email: invitee.email || null,
-        type: "INVITATION",
-        title: `You're invited to ${event.name}`,
-        message: dto.message || `You've been invited to attend ${event.name}. Click to register.`,
-        metadata: {
-          eventId,
-          eventName: event.name,
-          registrationId: null, // Will be set after registration
+      const inviteRecord = await this.p.invites.create({
+        data: {
+          inviterUserId: invitedBy,
+          email: invitee.email || `user-${invitee.userId}`,
+          targetType: "EVENT",
+          targetId: eventId,
+          status: "PENDING",
         },
       });
+
+      const inviteBodyBase =
+        dto.message || `You've been invited to attend ${event.name}. Click to register.`;
+      const inviteLink = `/events/${eventId}?code=${access_code}`;
+      const inviteBody = `${inviteBodyBase}
+
+Event ID: ${eventId}
+Access Code: ${access_code}
+Join: ${inviteLink}`;
+      let messageAttempted = false;
+
+      if (invitee.userId) {
+        try {
+          const sentMessage = await this.messagesService.sendMessage({
+            senderId: invitedBy,
+            recipientId: invitee.userId,
+            content: inviteBody,
+          });
+          messageAttempted = true;
+
+          await this.p.invites.update({
+            where: { id: inviteRecord.id },
+            data: { status: "SENT" },
+          });
+
+          await this.addToMailbox({
+            userId: invitedBy,
+            email: null,
+            type: "INVITATION",
+            title: `Invitation sent: ${event.name}`,
+            message: `Sent invitation to user ${invitee.userId}.`,
+            metadata: {
+              direction: "SENT",
+              eventId,
+              eventName: event.name,
+              registrationId: registration.id,
+              inviteId: inviteRecord.id,
+              recipientUserId: invitee.userId,
+              messageId: sentMessage.id,
+              accessCode: access_code,
+              inviteLink,
+            },
+            registrationId: registration.id,
+          });
+        } catch (e) {
+          this.logger.warn("sendMessage failed for invitation", e as Error);
+
+          await this.p.invites.update({
+            where: { id: inviteRecord.id },
+            data: { status: "FAILED" },
+          });
+          throw new InternalServerErrorException(
+            "Invitation message dispatch failed for invited user.",
+          );
+        }
+      } else if (invitee.email) {
+        await this.addToMailbox({
+          userId: null,
+          email: invitee.email,
+          type: "INVITATION",
+          title: `You're invited to ${event.name}`,
+          message: inviteBody,
+          metadata: {
+            eventId,
+            eventName: event.name,
+            registrationId: registration.id,
+          },
+        });
+        messageAttempted = true;
+
+        await this.p.invites.update({
+          where: { id: inviteRecord.id },
+          data: { status: "SENT" },
+        });
+
+        await this.addToMailbox({
+          userId: invitedBy,
+          email: null,
+          type: "INVITATION",
+          title: `Invitation sent: ${event.name}`,
+          message: `Sent invitation to ${invitee.email}.`,
+          metadata: {
+            direction: "SENT",
+            eventId,
+            eventName: event.name,
+            registrationId: registration.id,
+            inviteId: inviteRecord.id,
+            recipientEmail: invitee.email,
+            accessCode: access_code,
+            inviteLink,
+          },
+          registrationId: registration.id,
+        });
+      }
+
+      if (!registration.accessCode) {
+        throw new InternalServerErrorException(
+          "Invitation contract violation: registration missing accessCode.",
+        );
+      }
+
+      if (!inviteRecord?.id) {
+        throw new InternalServerErrorException(
+          "Invitation contract violation: invite record missing.",
+        );
+      }
+
+      if (!messageAttempted) {
+        throw new InternalServerErrorException(
+          "Invitation contract violation: invite exists but no message attempt was recorded.",
+        );
+      }
 
       created++;
     }
 
     return { created, skipped };
+  }
+
+  /**
+   * Ensure the user is the event's entity owner (creator). Throws if not.
+   */
+  private async ensureEventCreator(eventId: string, userId: string): Promise<void> {
+    const event = await this.p.events.findUnique({
+      where: { id: eventId },
+      include: { entity: true },
+    });
+    if (!event) throw new NotFoundException("Event not found");
+    const entity = (event as any).entity;
+    if (!entity || entity.ownerId !== userId) {
+      throw new ForbiddenException("Only the event creator can manage invitations");
+    }
+  }
+
+  /**
+   * List invitations (event_registrations) for an event. Creator only.
+   * Schema: id, event_id, user_id, email, access_code, status, created_at.
+   */
+  async listInvitations(eventId: string, userId: string): Promise<{
+    invitations: Array<{
+      id: string;
+      userId: string | null;
+      email: string | null;
+      status: string;
+      createdAt: string;
+      accessCode: string | null;
+      displayName: string | null;
+    }>;
+  }> {
+    await this.ensureEventCreator(eventId, userId);
+    const rows = await this.p.event_registrations.findMany({
+      where: { eventId, status: "INVITED" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const invitations = rows.map((r: any) => ({
+      id: r.id,
+      userId: r.userId ?? null,
+      email: r.email ?? null,
+      status: r.status ?? "INVITED",
+      createdAt: r.createdAt?.toISOString?.() ?? new Date().toISOString(),
+      accessCode: r.accessCode ?? null,
+      displayName: r.email ?? r.userId ?? "—",
+    }));
+    return { invitations };
+  }
+
+  /**
+   * Search users for inviting (creator only). Excludes users already invited to this event.
+   */
+  async searchUsersToInvite(
+    eventId: string,
+    userId: string,
+    q: string,
+  ): Promise<{ users: Array<{ id: string; username: string | null; email: string | null; displayName: string }> }> {
+    await this.ensureEventCreator(eventId, userId);
+    const existing = await this.p.event_registrations.findMany({
+      where: { eventId, userId: { not: null } },
+      select: { userId: true },
+    });
+    const excludedIds = existing.map((r: any) => r.userId).filter(Boolean);
+    if (!q || q.trim().length < 2) {
+      return { users: [] };
+    }
+    const search = q.trim();
+    const where: any = {
+      OR: [
+        { email: { contains: search, mode: "insensitive" } },
+        { user_profiles: { username: { contains: search, mode: "insensitive" } } },
+        { user_profiles: { firstName: { contains: search, mode: "insensitive" } } },
+        { user_profiles: { lastName: { contains: search, mode: "insensitive" } } },
+      ],
+    };
+    if (excludedIds.length) where.id = { notIn: excludedIds };
+    const raw = await this.p.app_users.findMany({
+      where,
+      take: 20,
+      include: { user_profiles: true },
+    });
+    const users = raw.map((u: any) => {
+      const p = u.user_profiles;
+      const namePart = p?.username ?? ([p?.firstName, p?.lastName].filter(Boolean).join(" ") || null);
+      const displayName = (namePart || u.email) ?? "User";
+      return {
+        id: u.id,
+        username: p?.username ?? null,
+        email: u.email ?? null,
+        displayName,
+      };
+    });
+    return { users };
+  }
+
+  /**
+   * Get or create a single shareable access code for the event. Creator only.
+   * Schema: no source column; placeholder row has user_id and email null.
+   */
+  async getOrCreateEventAccessCode(eventId: string, userId: string): Promise<{ accessCode: string }> {
+    await this.ensureEventCreator(eventId, userId);
+    let reg = await this.p.event_registrations.findFirst({
+      where: {
+        eventId,
+        userId: null,
+        email: null,
+      },
+    });
+    if (!reg?.accessCode) {
+      const access_code = await this.ensureUniqueAccessCode();
+      await this.p.event_registrations.create({
+        data: {
+          id: randomUUID(),
+          eventId,
+          userId: null,
+          email: null,
+          accessCode: access_code,
+          status: "INVITED",
+        },
+      });
+      reg = { accessCode: access_code } as any;
+    }
+    return { accessCode: reg.accessCode };
   }
 
   // ---------------------------------------------------------------------------
@@ -200,7 +532,7 @@ export class RegistrationsService {
       throw new NotFoundException("Event not found");
     }
 
-    // 3. Create new FREE ticket
+    // 3. Create new FREE ticket (always tied to registrationId — registration is source of truth)
     const ticket = await this.p.tickets.create({
       data: {
         id: randomUUID(),
@@ -211,6 +543,7 @@ export class RegistrationsService {
         price: 0,
         currency: "USD",
         status: "ACTIVE",
+        updatedAt: new Date(),
         // Generate entryCode if event requires it
         entryCode: event.entryCodeRequired ? await this.ensureUniqueAccessCode() : null,
       },
@@ -220,17 +553,15 @@ export class RegistrationsService {
   }
 
   /**
-   * Register a guest for an event
-   * Updates EventRegistration → REGISTERED
-   * Auto-issues a FREE ticket via ensureFreeTicket()
-   * Associates ticket with userId OR email
+   * Register for an event. Uses unified event_access_rules (or legacy event flags).
+   * Flow: fetch event → fetch access rule → validate rule → create/update event_registration.
+   * Returns { success, registrationId } or throws 403/400/404.
    */
   async register(
     eventId: string,
     dto: RegisterDto,
     userId?: string,
-  ): Promise<{ registration: any; ticket: any }> {
-    // Validate event exists
+  ): Promise<{ success: true; registrationId: string }> {
     const event = await this.p.events.findUnique({
       where: { id: eventId },
     });
@@ -239,102 +570,161 @@ export class RegistrationsService {
       throw new NotFoundException("Event not found");
     }
 
-    // Find existing registration
-    let registration = null;
+    const rule =
+      (await this.accessRulesService.getEffectiveRule(eventId)) ??
+      this.accessRulesService.buildLegacyRule(event);
 
-    if (dto.registrationId) {
-      registration = await this.p.event_registrations.findUnique({
-        where: { id: dto.registrationId },
-      });
-    } else if (dto.accessCode) {
-      registration = await this.p.event_registrations.findFirst({
-        where: {
-          eventId,
-          accessCode: dto.accessCode,
-        },
-      });
-    } else if (userId) {
-      registration = await this.p.event_registrations.findFirst({
-        where: {
-          eventId,
-          userId,
-        },
-      });
-    } else if (dto.email) {
-      registration = await this.p.event_registrations.findFirst({
-        where: {
-          eventId,
-          email: dto.email,
-        },
-      });
+    const existingBefore = await this.findRegistrationCandidate(eventId, dto, userId);
+    const wasRegisteredBefore = existingBefore?.status === "REGISTERED";
+    const wasInvitedBefore = existingBefore?.status === "INVITED";
+
+    const registration = await this.accessRulesService.validateAndResolveRegistration(
+      eventId,
+      rule,
+      dto,
+      userId,
+      event,
+    );
+
+    if (dto.accessCode && wasInvitedBefore && registration.status !== "REGISTERED") {
+      throw new InternalServerErrorException(
+        "Registration contract violation: accessCode usage must transition INVITED to REGISTERED.",
+      );
     }
 
-    if (!registration) {
-      throw new NotFoundException("Registration not found. Please request an invitation first.");
+    if (dto.accessCode) {
+      await this.assertInviteHasMessageAttempt(eventId, registration);
     }
 
     if (registration.status === "REGISTERED") {
-      throw new BadRequestException("Already registered for this event");
-    }
-
-    if (registration.status === "CANCELLED") {
-      throw new BadRequestException("Registration was cancelled");
-    }
-
-    // Update registration status
-    const updatedRegistration = await this.p.event_registrations.update({
-      where: { id: registration.id },
-      data: {
-        status: "REGISTERED",
-        registeredAt: new Date(),
-        userId: userId || registration.userId,
-        email: dto.email || registration.email,
-      },
-    });
-
-    // Auto-issue FREE ticket (idempotent - won't create duplicate)
-    const ticket = await this.ensureFreeTicket({
-      eventId,
-      userId: updatedRegistration.userId || null,
-      email: updatedRegistration.email || null,
-      registrationId: updatedRegistration.id,
-    });
-
-    // Store ticket in mailbox
-    // Check if mailbox item already exists for this registration to avoid duplicates
-    const existingMailboxItem = await this.p.mailbox_items.findFirst({
-      where: {
-        registrationId: updatedRegistration.id,
-        type: "TICKET",
-      },
-    });
-
-    if (!existingMailboxItem) {
-      await this.addToMailbox({
-        userId: updatedRegistration.userId || null,
-        email: updatedRegistration.email || null,
-        type: "TICKET",
-        title: `Your ticket for ${event.name}`,
-        message: `You're registered for ${event.name}! Your ticket is ready.`,
-        metadata: {
+      if (wasRegisteredBefore) {
+        const existingTicket = await this.p.tickets.findFirst({
+          where: {
+            eventId,
+            registrationId: registration.id,
+          },
+        });
+        if (!existingTicket) {
+          throw new InternalServerErrorException(
+            "Registration contract violation: registration exists but no ticket exists.",
+          );
+        }
+      } else {
+        await this.ensureFreeTicket({
           eventId,
-          eventName: event.name,
-          ticketId: ticket.id,
-          entryCode: ticket.entryCode,
-          registrationId: updatedRegistration.id,
-        },
-        registrationId: updatedRegistration.id,
+          userId: registration.userId,
+          email: registration.email,
+          registrationId: registration.id,
+        });
+        const createdOrExistingTicket = await this.p.tickets.findFirst({
+          where: {
+            eventId,
+            registrationId: registration.id,
+          },
+        });
+        if (!createdOrExistingTicket) {
+          throw new InternalServerErrorException(
+            "Registration contract violation: REGISTERED registration must have a ticket.",
+          );
+        }
+      }
+    }
+
+    return { success: true, registrationId: registration.id };
+  }
+
+  private async findRegistrationCandidate(
+    eventId: string,
+    dto: RegisterDto,
+    userId?: string,
+  ): Promise<any | null> {
+    if (dto.registrationId) {
+      return this.p.event_registrations.findFirst({
+        where: { id: dto.registrationId, eventId },
       });
     }
+    if (dto.accessCode?.trim()) {
+      const trimmed = dto.accessCode.trim();
+      const pass = await this.p.access_passes.findFirst({
+        where: { event_id: eventId, access_code: trimmed },
+      });
+      if (!pass) {
+        return null;
+      }
+      const or: Array<{ userId: string } | { email: string }> = [];
+      if (userId) or.push({ userId });
+      if (dto.email?.trim()) or.push({ email: dto.email.trim() });
+      if (pass.user_id) or.push({ userId: pass.user_id });
+      if (pass.email) or.push({ email: pass.email });
+      if (or.length === 0) {
+        return null;
+      }
+      return this.p.event_registrations.findFirst({
+        where: { eventId, OR: or },
+      });
+    }
+    if (userId) {
+      return this.p.event_registrations.findFirst({
+        where: { eventId, userId },
+      });
+    }
+    if (dto.email) {
+      return this.p.event_registrations.findFirst({
+        where: { eventId, email: dto.email },
+      });
+    }
+    return null;
+  }
 
-    // TODO: Send ticket via email
-    // When email service is implemented, send ticket confirmation email here
-    // For now, ticket is only stored in mailbox
+  private async assertInviteHasMessageAttempt(
+    eventId: string,
+    registration: { id: string; userId: string | null; email: string | null; accessCode: string | null },
+  ): Promise<void> {
+    const inviteKey = registration.email || (registration.userId ? `user-${registration.userId}` : null);
+    if (!inviteKey) return;
 
-    return {
-      registration: updatedRegistration,
-      ticket,
-    };
+    const invite = await this.p.invites.findFirst({
+      where: {
+        targetType: "EVENT",
+        targetId: eventId,
+        email: inviteKey,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!invite) return;
+
+    let hasMessageAttempt = false;
+
+    if (registration.userId) {
+      const message = await this.p.messages.findFirst({
+        where: {
+          senderId: invite.inviterUserId,
+          recipientId: registration.userId,
+          content: registration.accessCode
+            ? { contains: registration.accessCode }
+            : undefined,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      hasMessageAttempt = !!message;
+    }
+
+    if (!hasMessageAttempt) {
+      const mailboxAttempt = await this.p.mailbox_items.findFirst({
+        where: {
+          registrationId: registration.id,
+          type: "INVITATION",
+        },
+      });
+      hasMessageAttempt = !!mailboxAttempt;
+    }
+
+    if (!hasMessageAttempt) {
+      throw new InternalServerErrorException(
+        "Invitation contract violation: invite exists but no message attempt found.",
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -370,6 +760,7 @@ export class RegistrationsService {
 
   /**
    * Get mailbox items for a user (includes both mailbox_items and audience_messages)
+   * Resilient to missing or optional relations (event, entity, sender).
    */
   async getMailbox(userId?: string, eventId?: string): Promise<any[]> {
     if (!userId) {
@@ -382,98 +773,309 @@ export class RegistrationsService {
     };
 
     if (eventId) {
-      // Filter by eventId through registration relationship
       const registrations = await this.p.event_registrations.findMany({
         where: { eventId },
         select: { id: true },
       });
       const registrationIds = registrations.map((r) => r.id);
-      
       if (registrationIds.length > 0) {
-        mailboxWhere.registrationId = {
-          in: registrationIds,
-        };
+        mailboxWhere.registrationId = { in: registrationIds };
       } else {
-        // No registrations for this event, skip mailbox_items
         mailboxWhere.registrationId = { in: [] };
       }
     }
 
-    const mailboxItems = await this.p.mailbox_items.findMany({
-      where: mailboxWhere,
-      orderBy: { createdAt: "desc" },
-    });
-
-    // Mark mailbox_items as system messages (audit/internal)
-    const systemMessages = mailboxItems.map((item: any) => ({
-      ...item,
-      _messageClassification: "system_message" as const,
-    }));
-
-    // Get audience_messages (user messages from creators)
-    const audienceWhere: any = {
-      recipientUserId: userId,
-    };
-
-    if (eventId) {
-      audienceWhere.eventId = eventId;
+    let mailboxItems: any[] = [];
+    try {
+      mailboxItems = await this.p.mailbox_items.findMany({
+        where: mailboxWhere,
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (err) {
+      this.logger.warn("mailbox_items findMany failed, continuing with empty list", err);
     }
 
-    const audienceMessages = await (this.p as any).audience_messages.findMany({
-      where: audienceWhere,
-      orderBy: { createdAt: "desc" },
-      include: {
-        events: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        entities: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        app_users_sender: {
-          select: {
-            id: true,
-            email: true,
-          },
-        },
-      },
-    });
+    this.logger.log(`Mailbox items fetched: ${mailboxItems.length} (system)`);
 
-    // Transform audience_messages to match mailbox format
-    const transformedAudienceMessages = audienceMessages.map((msg: any) => ({
-      id: msg.id,
-      type: "AUDIENCE_MESSAGE" as const,
-      title: msg.title,
-      message: msg.message,
-      metadata: {
-        eventId: msg.eventId,
-        eventName: msg.events?.name,
-        entityId: msg.entityId,
-        entityName: msg.entities?.name,
-        senderId: msg.senderId,
-        channel: msg.channel,
-      },
-      isRead: msg.readAt !== null,
-      createdAt: msg.createdAt,
-      updatedAt: msg.createdAt,
-      // Mark as audience message for frontend
-      _isAudienceMessage: true,
-      _messageClassification: "audience_message" as const,
-      _senderEntityName: msg.entities?.name,
-    }));
+    const transformSystemItem = (item: any): any => {
+      try {
+        return {
+          id: item?.id,
+          userId: item?.userId ?? null,
+          email: item?.email ?? null,
+          type: item?.type ?? "NOTIFICATION",
+          title: item?.title ?? "",
+          message: item?.message ?? "",
+          metadata: item?.metadata ?? null,
+          isRead: item?.isRead ?? false,
+          registrationId: item?.registrationId ?? null,
+          createdAt: item?.createdAt ?? new Date().toISOString(),
+          updatedAt: item?.updatedAt ?? item?.createdAt ?? new Date().toISOString(),
+          _messageClassification: "system_message" as const,
+        };
+      } catch (err) {
+        this.logger.error("Mailbox system item transform failed", err);
+        return null;
+      }
+    };
+    const systemMessages = mailboxItems.map(transformSystemItem).filter(Boolean);
 
-    // Combine and sort by createdAt descending
-    const allItems = [...systemMessages, ...transformedAudienceMessages];
+    // Get audience_messages (user messages from creators) – optional; table may not exist
+    let audienceMessages: any[] = [];
+    try {
+      const audienceWhere: any = { recipientUserId: userId };
+      if (eventId) audienceWhere.eventId = eventId;
+      audienceMessages = await (this.p as any).audience_messages.findMany({
+        where: audienceWhere,
+        orderBy: { createdAt: "desc" },
+        include: {
+          events: { select: { id: true, name: true } },
+          entities: { select: { id: true, name: true } },
+          app_users_sender: { select: { id: true, email: true } },
+        },
+      });
+    } catch (err) {
+      this.logger.warn("audience_messages findMany failed, continuing without audience messages", err);
+    }
+
+    this.logger.log(`Audience messages fetched: ${audienceMessages.length}`);
+
+    const transformAudienceItem = (msg: any): any => {
+      try {
+        const eventName = msg.events?.name ?? msg.event?.name ?? null;
+        const entityName = msg.entities?.name ?? msg.entity?.name ?? null;
+        const senderName = msg.app_users_sender?.email ?? msg.sender?.username ?? "System";
+        return {
+          id: msg.id,
+          type: "AUDIENCE_MESSAGE" as const,
+          title: msg.title ?? "",
+          message: msg.message ?? "",
+          metadata: {
+            eventId: msg.eventId ?? null,
+            eventName,
+            entityId: msg.entityId ?? null,
+            entityName,
+            senderId: msg.senderId ?? null,
+            senderName,
+            channel: msg.channel ?? null,
+          },
+          isRead: msg.readAt != null,
+          createdAt: msg.createdAt ?? new Date().toISOString(),
+          updatedAt: msg.createdAt ?? msg.updatedAt ?? new Date().toISOString(),
+          _isAudienceMessage: true,
+          _messageClassification: "audience_message" as const,
+          _senderEntityName: entityName,
+        };
+      } catch (err) {
+        this.logger.error("Mailbox transform failed for audience message", err);
+        return null;
+      }
+    };
+    const transformedAudienceMessages = audienceMessages.map(transformAudienceItem).filter(Boolean);
+
+    // Access passes: invitations (SENT) and claimed tickets (CLAIMED) for this user
+    let accessPassItems: any[] = [];
+    try {
+      const appUser = await this.p.app_users.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      });
+      const emailLower = appUser?.email?.trim().toLowerCase() ?? null;
+
+      const accessPasses = await this.p.access_passes.findMany({
+        where: {
+          status: { in: ["SENT", "CLAIMED"] },
+          OR: [
+            { user_id: userId },
+            ...(emailLower ? [{ email: emailLower }] : []),
+          ],
+        },
+        include: {
+          ticket_types: { select: { id: true, name: true } },
+        },
+        orderBy: { created_at: "desc" },
+      });
+
+      const eventIds = [...new Set(accessPasses.map((ap: any) => ap.event_id).filter(Boolean))];
+      const eventsById = new Map<string, { id: string; name: string; startTime: Date }>();
+      if (eventIds.length > 0) {
+        const rows = await this.p.events.findMany({
+          where: { id: { in: eventIds } },
+          select: { id: true, name: true, startTime: true },
+        });
+        for (const row of rows) {
+          eventsById.set(row.id, row);
+        }
+      }
+
+      accessPassItems = accessPasses.map((ap: any) => {
+        const isTicket = ap.status === "CLAIMED";
+        const eventRow = eventsById.get(ap.event_id);
+        const eventName = eventRow?.name ?? "Event";
+        const tierName = ap.ticket_types?.name ?? "Ticket";
+        return {
+          id: `access-pass-${ap.id}`,
+          userId: ap.user_id ?? undefined,
+          email: ap.email ?? undefined,
+          type: isTicket ? "TICKET" : "INVITATION",
+          title: isTicket ? `Ticket: ${eventName}` : `Invitation: ${eventName}`,
+          message: isTicket
+            ? `Your access pass for ${tierName} is ready.`
+            : `You're invited to ${eventName} — ${tierName}.`,
+          metadata: {
+            eventId: eventRow?.id ?? ap.event_id,
+            eventName,
+            startTime: eventRow?.startTime
+              ? new Date(eventRow.startTime).toISOString()
+              : undefined,
+            ticketTypeId: ap.ticket_type_id,
+            ticketTypeName: tierName,
+            accessPassId: ap.id,
+            source: ap.source ?? undefined,
+            accessCode: ap.access_code ?? undefined,
+            status: ap.status ?? undefined,
+          },
+          isRead: false,
+          registrationId: null,
+          createdAt: ap.created_at
+            ? new Date(ap.created_at).toISOString()
+            : new Date().toISOString(),
+          updatedAt: ap.created_at
+            ? new Date(ap.created_at).toISOString()
+            : new Date().toISOString(),
+          _messageClassification: "system_message" as const,
+          _fromAccessPass: true,
+        };
+      });
+    } catch (err) {
+      this.logger.warn("access_passes mailbox merge failed, continuing", err);
+    }
+
+    let directMessageItems: any[] = [];
+    try {
+      const rows = await this.messagesService.findInboxForUser(userId);
+      directMessageItems = rows.map((m) => ({
+        id: m.id,
+        type: m.type === "EVENT_INVITE" ? "INVITATION" : "MESSAGE",
+        title: m.type === "EVENT_INVITE" ? "Event invite" : "New Message",
+        message: m.content,
+        metadata: {
+          senderId: m.senderId,
+          eventId: m.eventId ?? undefined,
+          ticketId: m.ticketId ?? undefined,
+          ctaUrl: m.ctaUrl ?? undefined,
+          messageType: m.type ?? "DIRECT",
+        },
+        isRead: m.isRead,
+        read: false,
+        registrationId: null,
+        createdAt: m.createdAt.toISOString(),
+        updatedAt: m.createdAt.toISOString(),
+        _messageClassification: "direct_message" as const,
+      }));
+      this.logger.log(`Mailbox messages rows: ${directMessageItems.length}`);
+    } catch (err) {
+      this.logger.warn("messages inbox merge failed, continuing", err);
+    }
+
+    let sentMessageItems: any[] = [];
+    try {
+      const sentRows = await this.messagesService.findSentForUser(userId);
+      sentMessageItems = sentRows.map((m) => ({
+        id: `sent-${m.id}`,
+        type: m.type === "EVENT_INVITE" ? "INVITATION" : "MESSAGE",
+        title: m.type === "EVENT_INVITE" ? "Invitation sent" : "Message sent",
+        message: m.content,
+        metadata: {
+          senderId: userId,
+          recipientId: m.recipientId,
+          direction: "SENT",
+          source: "messages",
+          messageId: m.id,
+          eventId: m.eventId ?? undefined,
+          ticketId: m.ticketId ?? undefined,
+          ctaUrl: m.ctaUrl ?? undefined,
+          messageType: m.type ?? "DIRECT",
+        },
+        isRead: true,
+        read: true,
+        registrationId: null,
+        createdAt: m.createdAt.toISOString(),
+        updatedAt: m.createdAt.toISOString(),
+        _messageClassification: "system_message" as const,
+      }));
+      this.logger.log(`Mailbox sent message rows: ${sentMessageItems.length}`);
+    } catch (err) {
+      this.logger.warn("messages sent merge failed, continuing", err);
+    }
+
+    const allItems = [
+      ...systemMessages,
+      ...transformedAudienceMessages,
+      ...accessPassItems,
+      ...directMessageItems,
+      ...sentMessageItems,
+    ];
     return allItems.sort((a, b) => {
-      const dateA = new Date(a.createdAt).getTime();
-      const dateB = new Date(b.createdAt).getTime();
+      const dateA = new Date(a.createdAt ?? 0).getTime();
+      const dateB = new Date(b.createdAt ?? 0).getTime();
       return dateB - dateA;
     });
+  }
+
+  async markMailboxItemRead(
+    userId: string,
+    itemId: string,
+  ): Promise<{ success: boolean; source: string | null }> {
+    // Direct messages are represented by `messages.id` and read state is tracked in `notifications`.
+    const messageNotificationUpdate = await this.p.notifications.updateMany({
+      where: {
+        userId,
+        messageId: itemId,
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
+    if (messageNotificationUpdate.count > 0) {
+      return { success: true, source: "notifications" };
+    }
+
+    // System mailbox entries.
+    try {
+      const mailboxUpdate = await this.p.mailbox_items.updateMany({
+        where: {
+          id: itemId,
+          userId,
+          isRead: false,
+        },
+        data: { isRead: true },
+      });
+      if (mailboxUpdate.count > 0) {
+        return { success: true, source: "mailbox_items" };
+      }
+    } catch {
+      // mailbox_items may not exist in some environments
+    }
+
+    // Legacy audience messages table.
+    try {
+      const audienceUpdate = await (this.p as any).audience_messages.updateMany({
+        where: {
+          id: itemId,
+          recipientUserId: userId,
+          readAt: null,
+        },
+        data: { readAt: new Date() },
+      });
+      if ((audienceUpdate?.count ?? 0) > 0) {
+        return { success: true, source: "audience_messages" };
+      }
+    } catch {
+      // audience_messages may not exist in some environments
+    }
+
+    // Access-pass derived items are synthetic ids (`access-pass-*`) and not persisted as read/unread.
+    return { success: false, source: null };
   }
 
   // ---------------------------------------------------------------------------
@@ -507,30 +1109,25 @@ export class RegistrationsService {
     if (dto.ticketId) {
       ticket = await this.p.tickets.findUnique({
         where: { id: dto.ticketId },
-        include: {
-          events: true,
-          registrations: true,
-        },
+        include: { event: true },
       });
     } else if (dto.accessCode) {
-      // Check both ticket.entryCode and registration.accessCode
+      // Check ticket.entryCode or event_registration.access_code for this event
       ticket = await this.p.tickets.findFirst({
-        where: {
-          OR: [
-            { entryCode: dto.accessCode },
-            {
-              registrations: {
-                accessCode: dto.accessCode,
-              },
-            },
-          ],
-          eventId,
-        },
-        include: {
-          events: true,
-          registrations: true,
-        },
+        where: { entryCode: dto.accessCode, eventId },
+        include: { event: true },
       });
+      if (!ticket) {
+        const reg = await this.p.event_registrations.findFirst({
+          where: { eventId, accessCode: dto.accessCode },
+        });
+        if (reg?.status === "REGISTERED") {
+          ticket = await this.p.tickets.findFirst({
+            where: { registrationId: reg.id, eventId },
+            include: { event: true },
+          });
+        }
+      }
     }
 
     if (!ticket) {
@@ -589,15 +1186,9 @@ export class RegistrationsService {
         },
       });
 
-      // 2. Fetch all ACTIVE tickets (including those without registrations)
+      // 2. Fetch all ACTIVE tickets
       const tickets = await this.p.tickets.findMany({
-        where: {
-          eventId,
-          status: "ACTIVE",
-        },
-        include: {
-          registrations: true,
-        },
+        where: { eventId, status: "ACTIVE" },
       });
 
       // 3. Build de-duplicated recipient list
@@ -610,7 +1201,7 @@ export class RegistrationsService {
         accessCode?: string;
       }>();
 
-      // Add recipients from registrations
+      // Add recipients from registrations (schema: user_id, email, access_code)
       for (const registration of registrations) {
         const key = registration.userId || registration.email;
         if (key) {
@@ -960,14 +1551,7 @@ export class RegistrationsService {
       // 2. Fetch all ACTIVE tickets (including those without registrations)
       // Exclude tickets where joinedAt is set (user already joined)
       const tickets = await this.p.tickets.findMany({
-        where: {
-          eventId,
-          status: "ACTIVE",
-          joinedAt: null, // Exclude users who already joined
-        },
-        include: {
-          registrations: true,
-        },
+        where: { eventId, status: "ACTIVE" },
       });
 
       // 3. Build de-duplicated recipient list
@@ -983,17 +1567,8 @@ export class RegistrationsService {
         }
       >();
 
-      // Add recipients from registrations (only if they haven't joined via ticket)
+      // Add recipients from registrations (schema: user_id, email, access_code)
       for (const registration of registrations) {
-        // Check if user already joined via ticket
-        const hasJoinedTicket = tickets.some(
-          (t) =>
-            t.registrationId === registration.id ||
-            (t.userId && t.userId === registration.userId),
-        );
-
-        // Skip if user already joined (tracked via ticket.joinedAt)
-        // We check tickets above already filter by joinedAt: null, so we can proceed
         const key = registration.userId || registration.email;
         if (key) {
           recipients.set(key, {
@@ -1008,25 +1583,20 @@ export class RegistrationsService {
       // Add recipients from tickets (may include users without registrations)
       for (const ticket of tickets) {
         const userId = ticket.userId;
-        const email = ticket.registrations?.email || null;
+        const email = (ticket as any).registrations?.email ?? null;
         const key = userId || email;
 
         if (key) {
-          // Prefer existing entry if userId matches, otherwise merge
           const existing = recipients.get(key);
           if (existing) {
-            // Update with ticket info if not already present
-            if (!existing.ticketId) {
-              existing.ticketId = ticket.id;
-            }
+            if (!existing.ticketId) existing.ticketId = ticket.id;
           } else {
-            // New recipient from ticket
             recipients.set(key, {
               userId: userId || null,
               email: email || null,
               ticketId: ticket.id,
               registrationId: ticket.registrationId || undefined,
-              accessCode: ticket.registrations?.accessCode || undefined,
+              accessCode: (ticket as any).registrations?.accessCode ?? undefined,
             });
           }
         }

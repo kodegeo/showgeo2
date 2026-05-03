@@ -59,14 +59,14 @@ describe("FollowService (Idempotent)", () => {
 
       prisma.follows.upsert.mockResolvedValue({
         id: "follow-1",
-        user_id: "user-1",
-        target_id: "entity-1",
+        userId: "user-1",
+        targetId: "entity-1",
       });
 
       const result = await service.followEntity("user-1", "entity-1");
 
       expect(prisma.follows.upsert).toHaveBeenCalled();
-      expect(result.target_id).toBe("entity-1");
+      expect((result as { targetId: string }).targetId).toBe("entity-1");
     });
 
     it("should throw if user not found", async () => {
@@ -182,13 +182,13 @@ describe("FollowService (Idempotent)", () => {
 
       prisma.follows.upsert.mockResolvedValue({
         id: "follow-1",
-        target_id: "event-1",
+        targetId: "event-1",
       });
 
       const result = await service.followEvent("user-1", "event-1");
 
       expect(prisma.follows.upsert).toHaveBeenCalled();
-      expect(result.target_id).toBe("event-1");
+      expect((result as { targetId: string }).targetId).toBe("event-1");
     });
   });
 

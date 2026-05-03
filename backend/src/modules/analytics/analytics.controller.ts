@@ -52,13 +52,13 @@ export class AnalyticsController {
   @Get("event/:eventId")
   @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Get analytics for event" })
+  @ApiOperation({ summary: "Get event analytics dashboard (ticketSales, revenue, registrations, viewers)" })
   @ApiParam({ name: "eventId", type: String })
-  @ApiResponse({ status: 200, description: "Event performance metrics" })
+  @ApiResponse({ status: 200, description: "Event analytics metrics" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   @ApiResponse({ status: 404, description: "Event not found" })
   getEventAnalytics(@Param("eventId") eventId: string) {
-    return this.analyticsService.getEventPerformance(eventId);
+    return this.analyticsService.getEventAnalytics(eventId);
   }
 
   @Get("user/:userId")

@@ -34,25 +34,25 @@ export class FollowService {
     targetId: string,
     targetType: "ENTITY" | "USER" | "EVENT",
   ) {
-    return this.prisma.follows.upsert({
+    return (this.prisma as any).follows.upsert({
       where: {
-        user_id_target_id_target_type: {
-          user_id: userId,
-          target_id: targetId,
-          target_type: targetType,
+        userId_targetId_targetType: {
+          userId,
+          targetId,
+          targetType,
         },
-      } as Prisma.followsWhereUniqueInput,
+      },
       update: {
         updatedAt: new Date(),
       },
       create: {
         id: crypto.randomUUID(),
-        user_id: userId,
-        target_id: targetId,
-        target_type: targetType,
+        userId,
+        targetId,
+        targetType,
         notify: false,
         updatedAt: new Date(),
-      } as Prisma.followsUncheckedCreateInput,
+      },
     });
   }
 
@@ -61,12 +61,12 @@ export class FollowService {
     targetId: string,
     targetType: "ENTITY" | "USER" | "EVENT",
   ) {
-    await this.prisma.follows.deleteMany({
+    await (this.prisma as any).follows.deleteMany({
       where: {
-        user_id: userId,
-        target_id: targetId,
-        target_type: targetType,
-      } as Prisma.followsWhereInput,
+        userId,
+        targetId,
+        targetType,
+      },
     });
 
     return { message: "Unfollowed successfully" };
@@ -121,16 +121,16 @@ export class FollowService {
   // =========================================
 
   async setEventNotify(userId: string, eventId: string, notify: boolean) {
-    const follow = await this.ensureFollow(userId, eventId, EVENT);
+    await this.ensureFollow(userId, eventId, EVENT);
 
-    const updated = await this.prisma.follows.update({
+    const updated = await (this.prisma as any).follows.update({
       where: {
-        user_id_target_id_target_type: {
-          user_id: userId,
-          target_id: eventId,
-          target_type: EVENT,
+        userId_targetId_targetType: {
+          userId,
+          targetId: eventId,
+          targetType: EVENT,
         },
-      } as Prisma.followsWhereUniqueInput,
+      },
       data: {
         notify,
         updatedAt: new Date(),
@@ -145,26 +145,26 @@ export class FollowService {
   // =========================================
 
   async isFollowingEvent(userId: string, eventId: string) {
-    const follow = await this.prisma.follows.findUnique({
+    const follow = await (this.prisma as any).follows.findUnique({
       where: {
-        user_id_target_id_target_type: {
-          user_id: userId,
-          target_id: eventId,
-          target_type: EVENT,
+        userId_targetId_targetType: {
+          userId,
+          targetId: eventId,
+          targetType: EVENT,
         },
-      } as Prisma.followsWhereUniqueInput,
+      },
     });
 
     return !!follow;
   }
 
   async isFollowing(userId: string, entityId: string): Promise<boolean> {
-    const follow = await this.prisma.follows.findUnique({
+    const follow = await (this.prisma as any).follows.findUnique({
       where: {
-        user_id_target_id_target_type: {
-          user_id: userId,
-          target_id: entityId,
-          target_type: ENTITY,
+        userId_targetId_targetType: {
+          userId,
+          targetId: entityId,
+          targetType: ENTITY,
         },
       },
     });
@@ -176,19 +176,19 @@ export class FollowService {
     const skip = (page - 1) * limit;
   
     const [follows, total] = await Promise.all([
-      this.prisma.follows.findMany({
+      (this.prisma as any).follows.findMany({
         where: {
-          target_id: entityId,
-          target_type: ENTITY,
+          targetId: entityId,
+          targetType: ENTITY,
         },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
       }),
-      this.prisma.follows.count({
+      (this.prisma as any).follows.count({
         where: {
-          target_id: entityId,
-          target_type: ENTITY,
+          targetId: entityId,
+          targetType: ENTITY,
         },
       }),
     ]);
@@ -208,19 +208,19 @@ export class FollowService {
     const skip = (page - 1) * limit;
   
     const [follows, total] = await Promise.all([
-      this.prisma.follows.findMany({
+      (this.prisma as any).follows.findMany({
         where: {
-          user_id: userId,
-          target_type: ENTITY,
+          userId,
+          targetType: ENTITY,
         },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
       }),
-      this.prisma.follows.count({
+      (this.prisma as any).follows.count({
         where: {
-          user_id: userId,
-          target_type: ENTITY,
+          userId,
+          targetType: ENTITY,
         },
       }),
     ]);
@@ -241,20 +241,20 @@ export class FollowService {
     type: "entity" | "user",
   ): Promise<{ followers: number; following: number }> {
     if (type === "entity") {
-      const followers = await this.prisma.follows.count({
+      const followers = await (this.prisma as any).follows.count({
         where: {
-          target_id: id,
-          target_type: ENTITY,
+          targetId: id,
+          targetType: ENTITY,
         },
       });
   
       return { followers, following: 0 };
     }
   
-    const following = await this.prisma.follows.count({
+    const following = await (this.prisma as any).follows.count({
       where: {
-        user_id: id,
-        target_type: ENTITY,
+        userId: id,
+        targetType: ENTITY,
       },
     });
   
@@ -262,14 +262,14 @@ export class FollowService {
   }
 
   async getEventFollowStatus(userId: string, eventId: string) {
-    const follow = await this.prisma.follows.findUnique({
+    const follow = await (this.prisma as any).follows.findUnique({
       where: {
-        user_id_target_id_target_type: {
-          user_id: userId,
-          target_id: eventId,
-          target_type: EVENT,
+        userId_targetId_targetType: {
+          userId,
+          targetId: eventId,
+          targetType: EVENT,
         },
-      } as Prisma.followsWhereUniqueInput,
+      },
     });
 
     return {
