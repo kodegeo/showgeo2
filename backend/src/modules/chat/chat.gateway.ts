@@ -19,7 +19,12 @@ interface AuthenticatedSocket extends Socket {
 
 @Injectable()
 @WebSocketGateway({
-  cors: { origin: "*", credentials: true },
+  cors: { 
+    origin: [
+      "http://localhost:5173",
+      "https://showgeo.vercel.app",
+    ],
+  credentials: true },
   namespace: "/chat",
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {

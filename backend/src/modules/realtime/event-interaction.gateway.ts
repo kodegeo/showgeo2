@@ -16,7 +16,14 @@ import { roomNames, ROLE_TOPIC_MAP } from "./room-names";
 // 250ms keeps energy visually responsive without flooding clients.
 const PULSE_INTERVAL_MS = 250;
 
-@WebSocketGateway({ namespace: "/events", cors: { origin: "*" } })
+@WebSocketGateway({ namespace: "/events", 
+  cors: { 
+    origin: [
+      "http://localhost:5173",
+      "https://showgeo.vercel.app",
+    ],
+}
+ })
 export class EventInteractionGateway implements OnGatewayInit, OnGatewayDisconnect {
   @WebSocketServer() private readonly server!: Server;
 

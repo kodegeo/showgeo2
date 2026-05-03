@@ -23,8 +23,11 @@ interface AuthenticatedSocket extends Socket {
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: "*",
-    credentials: true,
+    origin: [
+      "http://localhost:5173",
+      "https://showgeo.vercel.app",
+    ],
+  credentials: true,
   },
   namespace: "/notifications",
 })
