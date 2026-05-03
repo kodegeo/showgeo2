@@ -1,3 +1,8 @@
+# Socket.IO stores Engine.IO sessions in process memory. If more than one Machine
+# serves traffic, polling GETs (?sid=...) can hit a different VM → HTTP 400
+# (unknown session) while CORS headers still look correct. Until you add a
+# Redis-backed Socket.IO adapter, keep this app at a single Machine:
+#   fly scale count 1
 app = "showgeo"
 primary_region = "dfw"
 
