@@ -50,8 +50,8 @@ export class NotificationGateway
         client.handshake.query?.token?.toString();
 
       if (!token) {
-        this.logger.warn(`Client ${client.id} connected without token`);
-        client.disconnect();
+        // Same namespace `/` as event socket; anonymous connections must stay open.
+        this.logger.debug(`Notifications: client ${client.id} without token (event/realtime socket)`);
         return;
       }
 

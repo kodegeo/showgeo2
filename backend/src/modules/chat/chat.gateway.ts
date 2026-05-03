@@ -45,8 +45,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         (typeof client.handshake.query?.token === "string" ? client.handshake.query.token : null);
 
       if (!token) {
-        this.logger.warn(`Chat client ${client.id} connected without token`);
-        client.disconnect();
+        // Same namespace `/` as EventInteractionGateway; shared event socket has no JWT.
+        this.logger.debug(`Chat: client ${client.id} connected without token (event/realtime socket)`);
         return;
       }
 
@@ -102,6 +102,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const message = payload?.message;
 
     if (!eventId || typeof eventId !== "string" || typeof message !== "string") {
+      return;
+    }
+
+    if (!client.userId) {
+      client.emit("send_message_error", { message: "Authentication required" });
       return;
     }
 
