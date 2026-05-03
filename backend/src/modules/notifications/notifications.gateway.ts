@@ -12,6 +12,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { notifications as Notification } from "@prisma/client";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { SOCKET_CORS } from "../realtime/socket.config";
 
 // Local fallback type — avoids Prisma User errors
 type User = any;
@@ -22,14 +23,7 @@ interface AuthenticatedSocket extends Socket {
 
 @Injectable()
 @WebSocketGateway({
-  cors: {
-    origin: [
-      "http://localhost:5173",
-      "https://showgeo.vercel.app",
-    ],
-  credentials: true,
-  },
-  namespace: "/notifications",
+  cors: SOCKET_CORS,
 })
 export class NotificationGateway
   implements OnGatewayConnection, OnGatewayDisconnect

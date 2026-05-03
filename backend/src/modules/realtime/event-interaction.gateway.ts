@@ -11,19 +11,15 @@ import { Server, Socket } from "socket.io";
 import { randomUUID } from "crypto";
 import { PulseAggregatorService } from "./pulse-aggregator.service";
 import { roomNames, ROLE_TOPIC_MAP } from "./room-names";
+import { SOCKET_CORS } from "./socket.config";
 
 // Pulse is broadcast on a fixed interval — never per-tap.
 // 250ms keeps energy visually responsive without flooding clients.
 const PULSE_INTERVAL_MS = 250;
 
-@WebSocketGateway({ namespace: "/events", 
-  cors: { 
-    origin: [
-      "http://localhost:5173",
-      "https://showgeo.vercel.app",
-    ],
-}
- })
+@WebSocketGateway({
+  cors: SOCKET_CORS,
+})
 export class EventInteractionGateway implements OnGatewayInit, OnGatewayDisconnect {
   @WebSocketServer() private readonly server!: Server;
 
