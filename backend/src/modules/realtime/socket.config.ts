@@ -19,21 +19,41 @@ function originFromUrlEnv(name: string): string[] {
   }
 }
 
-/**
- * CORS config for Socket.IO / Engine.IO (and shared with HTTP `enableCors` in main).
- * Includes `FRONTEND_URL` and `SOCKET_IO_CORS_ORIGINS` (comma-separated) when set.
- */
-export function buildSocketIoCors(): { origin: string[]; credentials: true } {
-  const origins = new Set<string>([
+function buildAllowedOriginSet(): Set<string> {
+  return new Set<string>([
     ...DEFAULT_ORIGINS,
     ...originFromUrlEnv("FRONTEND_URL"),
     ...originsFromCommaEnv("SOCKET_IO_CORS_ORIGINS"),
   ]);
+}
+
+/**
+ * Socket.IO / Engine.IO + Express CORS. Uses a dynamic `origin` callback so the
+ * underlying `cors` package never applies its default `{ origin: "*" }` merge
+ * (which breaks `credentials: true` in browsers).
+ */
+export function buildSocketIoCors(): {
+  origin: (
+    requestOrigin: string | undefined,
+    callback: (err: Error | null, allow?: string | boolean) => void,
+  ) => void;
+  credentials: true;
+} {
+  const allowed = buildAllowedOriginSet();
+
   return {
-    origin: [...origins],
     credentials: true,
+    origin(requestOrigin, callback) {
+      if (!requestOrigin) {
+        return callback(null, false);
+      }
+      if (allowed.has(requestOrigin)) {
+        return callback(null, requestOrigin);
+      }
+      callback(new Error(`CORS: origin not allowed (${requestOrigin})`));
+    },
   };
 }
 
-/** Snapshot at load time for `@WebSocketGateway({ cors: SOCKET_CORS })` metadata. */
+/** Used by `@WebSocketGateway({ cors: SOCKET_CORS })` — same rules as HTTP + adapter. */
 export const SOCKET_CORS = buildSocketIoCors();

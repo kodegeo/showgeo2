@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
+import { Logger, ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
@@ -8,9 +8,11 @@ import { AppSocketIoAdapter } from "./socket-io.adapter";
 import { buildSocketIoCors } from "./modules/realtime/socket.config";
 
 async function bootstrap() {
+  const logger = new Logger("Bootstrap");
   const app = await NestFactory.create(AppModule);
 
   app.useWebSocketAdapter(new AppSocketIoAdapter(app.getHttpServer()));
+  logger.log("WebSocket: AppSocketIoAdapter (Socket.IO CORS forced via callback)");
 
   app.enableShutdownHooks();
   app.useGlobalFilters(new AllExceptionsFilter());
@@ -43,7 +45,10 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
 
   await app.listen(port, "0.0.0.0");
-  console.log(`🚀 Server running on 0.0.0.0:${port}`);
+  logger.log(`HTTP listening on 0.0.0.0:${port} (Fly internal_port must match)`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error("Bootstrap failed:", err);
+  process.exit(1);
+});

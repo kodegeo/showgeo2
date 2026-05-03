@@ -3,15 +3,17 @@ import type { ServerOptions } from "socket.io";
 import { buildSocketIoCors } from "./modules/realtime/socket.config";
 
 /**
- * Nest's first WebSocketGateway can win Server construction; merged options can
- * still yield Engine.IO `cors` that falls back to `origin: "*"`, which is
- * invalid with `credentials: true` (browser blocks). Force explicit origins
- * on every Socket.IO server instance.
+ * Drops gateway-supplied `cors` (can be incomplete) and always applies
+ * {@link buildSocketIoCors} so Engine.IO never merges with `cors` defaults
+ * (`origin: "*"`) while `credentials: true` is set.
  */
 export class AppSocketIoAdapter extends IoAdapter {
   createIOServer(port: number, options?: ServerOptions) {
+    const { cors: _ignored, ...rest } = (options ?? {}) as ServerOptions & {
+      cors?: unknown;
+    };
     return super.createIOServer(port, {
-      ...(options ?? {}),
+      ...rest,
       cors: buildSocketIoCors(),
     });
   }
