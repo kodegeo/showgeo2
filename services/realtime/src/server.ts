@@ -9,14 +9,28 @@ import { registerStreamGateway } from "./gateways/stream.gateway.js";
 import { registerEventInteractionGateway } from "./gateways/event-interaction.gateway.js";
 
 const app = express();
-app.use(cors());
+
+// 🔥 FIX: CORS must match credentials usage
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://showgeo.vercel.app",
+  ],
+  credentials: true,
+}));
+
 app.use(express.json());
 
 const server = createServer(app);
 
+// 🔥 FIX: assign to io
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: [
+      "http://localhost:5173",
+      "https://showgeo.vercel.app",
+    ],
+    credentials: true,
   },
 });
 
@@ -28,6 +42,8 @@ registerStreamGateway(io, engineManager);
 registerEventInteractionGateway(io, engineManager);
 
 const PORT = Number(process.env.PORT) || 3001;
-server.listen(PORT, () => {
+
+// 🔥 IMPORTANT for Fly (just in case this runs there)
+server.listen(PORT, "0.0.0.0", () => {
   console.log("Realtime server running on port", PORT);
 });
