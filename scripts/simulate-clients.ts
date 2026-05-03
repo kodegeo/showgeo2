@@ -1,6 +1,13 @@
 import { io } from "socket.io-client";
 
-const URL = "http://localhost:3000"; // ⚠️ THIS MUST MATCH YOUR BACKEND
+function env(name: string): string | undefined {
+  const proc = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } })
+    .process;
+  return proc?.env?.[name];
+}
+
+/** Set `WS_URL` or `VITE_WS_URL` when running with `tsx` (this file is not Vite-bundled). */
+const URL = env("VITE_WS_URL") ?? env("WS_URL") ?? "http://localhost:3001";
 const eventId = "test-event";
 
 function createClient(name: string, role: "audience" | "creator" | "coordinator") {

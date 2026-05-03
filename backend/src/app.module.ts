@@ -34,6 +34,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from "nestjs-pino";
+import { RealtimeGateway } from "../src/modules/realtime/realtime.gateway";
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { LoggerModule } from "nestjs-pino";
   controllers: [AppController],
   providers: [
     AppService,
+    RealtimeGateway,
     // If you want to enforce global auth guard:
     // {
     //   provide: APP_GUARD,

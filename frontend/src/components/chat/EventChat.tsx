@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { io, Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 import { MessageCircle, Send, Loader2 } from "lucide-react";
 import { chatService, type ChatMessage } from "@/services/chat.service";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
-import { getSocketIoOrigin } from "@/lib/apiBase";
+import { createSocketIoClient, getSocketIoOrigin } from "@/lib/apiBase";
 
 const FALLBACK_POLL_INTERVAL_MS = 5000;
 
@@ -54,11 +54,9 @@ export function EventChat({ eventId, className = "" }: EventChatProps) {
       await fetchMessages();
 
       if (socketOrigin && token) {
-        const socket = io(`${socketOrigin}/chat`, {
+        const socket = createSocketIoClient({
           auth: { token },
-          transports: ["websocket"],
           reconnection: true,
-          withCredentials: true,
         });
 
         socket.on("connect", () => {

@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { io, Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
 import { notificationsService } from "@/services";
 import type { QueryParams, Notification } from "@/services";
-import { getSocketIoOrigin } from "@/lib/apiBase";
+import { createSocketIoClient, getSocketIoOrigin } from "@/lib/apiBase";
 import { isDevelopment } from "@/utils/env";
 
 export function useNotifications(params?: QueryParams & { unreadOnly?: boolean }) {
@@ -70,14 +70,12 @@ export function useNotificationsSocket() {
     const token = localStorage.getItem("accessToken");
     if (!token) return;
 
-    const newSocket = io(`${socketOrigin}/notifications`, {
+    const newSocket = createSocketIoClient({
       auth: { token },
-      transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: isDev ? 3 : 5,
       timeout: isDev ? 5000 : 10000,
-      withCredentials: true,
     });
 
     newSocket.on("connect", () => {
