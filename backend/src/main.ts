@@ -4,23 +4,18 @@ import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
-
+import { AppSocketIoAdapter } from "./socket-io.adapter";
+import { buildSocketIoCors } from "./modules/realtime/socket.config";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.useWebSocketAdapter(new AppSocketIoAdapter(app.getHttpServer()));
+
   app.enableShutdownHooks();
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const isProd = process.env.NODE_ENV === "production";
-
-  app.enableCors({
-    origin: [
-      "http://localhost:5173",
-      "https://showgeo.vercel.app",
-    ],
-    credentials: true,
-  });
+  app.enableCors(buildSocketIoCors());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -47,8 +42,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
 
-  // 🔴 THIS IS THE FIX
-  await app.listen(port, '0.0.0.0');
+  await app.listen(port, "0.0.0.0");
   console.log(`🚀 Server running on 0.0.0.0:${port}`);
 }
 
