@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEntityContext } from "@/hooks/useEntityContext";
+import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { CreatorSidebar } from "./CreatorSidebar";
 import { CreatorProfileBanner } from "./CreatorProfileBanner";
 import { CreatorQuickActions } from "./CreatorQuickActions";
@@ -40,22 +41,21 @@ export function CreatorDashboardLayout({
   const content = children ?? <Outlet />;
 
   return (
-    <div className="min-h-screen bg-[#0B0B0B] text-white flex">
-      {/* Sidebar */}
-      <CreatorSidebar />
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      <ProfileHeader />
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col lg:ml-0">
-        {/* Profile Banner */}
-        <CreatorProfileBanner onEditClick={onEditClick} onShareClick={onShareClick} />
+      <div className="flex flex-1 min-h-0 pt-16 md:pt-20">
+        <CreatorSidebar />
 
-        {/* Quick Actions */}
-        <CreatorQuickActions />
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#0B0B0B]">
+          <CreatorProfileBanner onEditClick={onEditClick} onShareClick={onShareClick} />
 
-        {/* Main Content Area */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{content}</div>
-        </main>
+          <CreatorQuickActions />
+
+          <main className="flex-1 min-h-0 overflow-y-auto">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{content}</div>
+          </main>
+        </div>
       </div>
     </div>
   );

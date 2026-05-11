@@ -91,10 +91,10 @@ export function SettingsProfilePage() {
           <div className="absolute -bottom-12 left-6">
             <AvatarUpload
               userId={user.id}
-              onUploadComplete={(avatarUrl) => {
-                // AvatarUpload already updates the profile via useUpdateUserProfile
-                // which updates the ["auth", "me"] cache, so no need to refetch
-                console.log("Avatar uploaded:", avatarUrl);
+              currentAvatarUrl={user.profile?.avatarUrl}
+              profileUpdatedAt={user.profile?.updatedAt}
+              onUploadComplete={() => {
+                /* useUpdateUserProfile updates ["auth", "me"] */
               }}
             />
           </div>

@@ -2,9 +2,21 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useUpdateUserProfile } from "@/hooks/useUsers";
+import { handleApiError } from "@/services";
 import Navigation from "@/components/Navigation/Navigation";
 import { Footer } from "@/components/Footer";
 import { AvatarUpload } from "@/components/uploads/AvatarUpload";
+
+const PROFILE_SETUP_FORM_ID = "profile-setup-form";
+
+function toUiVisibility(v: string | undefined): "public" | "private" {
+  if (!v) return "public";
+  return String(v).toUpperCase() === "PRIVATE" ? "private" : "public";
+}
+
+function toApiVisibility(v: "public" | "private"): "PUBLIC" | "PRIVATE" {
+  return v === "private" ? "PRIVATE" : "PUBLIC";
+}
 
 export function ProfileSetupPage() {
   const navigate = useNavigate();
@@ -34,10 +46,6 @@ export function ProfileSetupPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-
-  localStorage.setItem("profileJustCompleted", "true");
-  navigate("/profile", { replace: true });
-  
   // ------------------------------------------------------------
   // Load existing profile data
   // ------------------------------------------------------------
@@ -53,7 +61,7 @@ export function ProfileSetupPage() {
       timezone: user.profile.timezone || "",
       website: user.profile.website || "",
       avatarUrl: user.profile.avatarUrl || "",
-      visibility: user.profile.visibility || "public",
+      visibility: toUiVisibility(user.profile.visibility as string | undefined),
     });
 
     if (user.profile.socialLinks) {
@@ -139,26 +147,28 @@ export function ProfileSetupPage() {
         Object.entries(socialLinks).filter(([_, v]) => v.trim() !== "")
       );
 
+      const { visibility: uiVisibility, ...profileFields } = formData;
+
       await updateProfile.mutateAsync({
         id: user.id,
         data: {
-          ...formData,
+          ...profileFields,
           avatarUrl: formData.avatarUrl || undefined,
+          visibility: toApiVisibility(uiVisibility),
           socialLinks:
             Object.keys(filteredSocialLinks).length > 0
               ? filteredSocialLinks
               : undefined,
         },
       });
-      
-     } catch (error) {
-       setErrors({
-         submit:
-           error instanceof Error
-             ? error.message
-             : "Failed to update profile. Please try again.",
-       });
-     } finally {
+
+      localStorage.setItem("profileJustCompleted", "true");
+      navigate("/profile", { replace: true });
+    } catch (error) {
+      setErrors({
+        submit: handleApiError(error),
+      });
+    } finally {
        setIsSubmitting(false);
      }
    };
@@ -180,9 +190,9 @@ export function ProfileSetupPage() {
   // Render (UNCHANGED UI)
   // ------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-[#0B0B0B] text-white flex flex-col">
+    <div className="min-h-screen bg-[#0B0B0B] text-white flex flex-col pb-24">
       <Navigation />
-      <main className="flex-1 pt-20 md:pt-24">
+      <main className="flex-1 pt-20 md:pt-24 pb-28 md:pb-32">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">          
           {/* Header */}
           <div className="mb-8">
@@ -245,7 +255,7 @@ export function ProfileSetupPage() {
           </div>
 
           {/* Profile Setup Form */}
-          <form onSubmit={handleSubmit} className="space-y-8">
+          <form id={PROFILE_SETUP_FORM_ID} onSubmit={handleSubmit} className="space-y-8">
             {errors.submit && (
               <div className="bg-red-900/30 border border-[#CD000E] text-[#CD000E] px-4 py-3 rounded-md text-sm font-body">
                 {errors.submit}
@@ -262,6 +272,7 @@ export function ProfileSetupPage() {
               <div className="mb-6">
                 <AvatarUpload
                   currentAvatarUrl={formData.avatarUrl}
+                  profileUpdatedAt={user?.profile?.updatedAt}
                   onUploadComplete={(avatarUrl) => {
                     setFormData((prev) => ({ ...prev, avatarUrl }));
                   }}
@@ -531,13 +542,13 @@ export function ProfileSetupPage() {
               </div>
             </div>
 
-            {/* Form Actions */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-end">
+            {/* Inline actions (duplicated in fixed bar for long forms) */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-end pb-4">
               <button
                 type="button"
-                disabled={!user?.profile}
-                onClick={() => navigate("/profile")}
-                className="px-6 py-3 border border-gray-700 hover:border-[#CD000E] text-white font-heading font-semibold rounded-lg uppercase tracking-wider transition-all duration-300"
+                disabled={isSubmitting || updateProfile.isPending}
+                onClick={() => navigate(user?.profile ? "/profile" : "/")}
+                className="px-6 py-3 border border-gray-700 hover:border-[#CD000E] text-white font-heading font-semibold rounded-lg uppercase tracking-wider transition-all duration-300 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -547,12 +558,34 @@ export function ProfileSetupPage() {
                 disabled={isSubmitting || updateProfile.isPending}
                 className="px-6 py-3 bg-[#CD000E] hover:bg-[#860005] text-white font-heading font-semibold rounded-lg uppercase tracking-wider transition-all duration-300 shadow-lg hover:shadow-[#CD000E]/50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting || updateProfile.isPending ? "Saving..." : "Save Profile"}
+                {isSubmitting || updateProfile.isPending ? "Saving…" : "Save Changes"}
               </button>
             </div>
           </form>
         </div>
       </main>
+
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-800 bg-[#0B0B0B]/95 backdrop-blur-md shadow-[0_-8px_24px_rgba(0,0,0,0.45)]">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end sm:items-center">
+          <button
+            type="button"
+            disabled={isSubmitting || updateProfile.isPending}
+            onClick={() => navigate(user?.profile ? "/profile" : "/")}
+            className="px-6 py-3 border border-gray-700 hover:border-[#CD000E] text-white font-heading font-semibold rounded-lg uppercase tracking-wider transition-all duration-300 disabled:opacity-50 w-full sm:w-auto"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form={PROFILE_SETUP_FORM_ID}
+            disabled={isSubmitting || updateProfile.isPending}
+            className="px-6 py-3 bg-[#CD000E] hover:bg-[#860005] text-white font-heading font-semibold rounded-lg uppercase tracking-wider transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
+          >
+            {isSubmitting || updateProfile.isPending ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+
       <Footer />
     </div>
   );

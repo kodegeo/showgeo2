@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Inject,
   forwardRef,
+  Logger,
 } from "@nestjs/common";
 import { PrismaService, asPrismaDb } from "@/prisma/prisma.service";
 import {
@@ -13,7 +14,16 @@ import {
   EventQueryDto,
   PhaseTransitionDto,
 } from "./dto";
-import { EventPhase, EventStatus, EventType, UserRole, EntityRoleType, EventAccessRole, EventOperationalRole } from "@prisma/client";
+import {
+  EventPhase,
+  EventStatus,
+  EventType,
+  UserRole,
+  EntityRoleType,
+  EventAccessRole,
+  EventOperationalRole,
+  events as EventsRow,
+} from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { RegistrationsService, EventReminderType } from "@/modules/registrations/registrations.service";
@@ -28,6 +38,8 @@ import { TicketTypesService } from "@/modules/tickets/ticket-types.service";
 
 @Injectable()
 export class EventsService {
+  private readonly logger = new Logger(EventsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => RegistrationsService))
@@ -63,43 +75,72 @@ export class EventsService {
         ticketPrice,
       } = createEventDto;
 
-      // ✅ Validate required fields with clear error messages
-      if (!name) {
+      this.logger.log(
+        `create: userId=${userId} entityId=${createEventDto.entityId} name=${name?.slice(0, 80)}`,
+      );
+
+      if (!name?.trim()) {
         throw new BadRequestException("name is required to create an event");
       }
 
-      if (!startTime) {
+      if (!startTime?.trim()) {
         throw new BadRequestException("startTime is required to create an event");
+      }
+
+      const startDate = new Date(startTime);
+      if (Number.isNaN(startDate.getTime())) {
+        throw new BadRequestException(
+          `startTime must be a valid ISO 8601 date string; received: ${String(startTime)}`,
+        );
+      }
+
+      let endDate: Date | undefined;
+      if (endTime?.trim()) {
+        endDate = new Date(endTime);
+        if (Number.isNaN(endDate.getTime())) {
+          throw new BadRequestException(
+            `endTime must be a valid ISO 8601 date string; received: ${String(endTime)}`,
+          );
+        }
       }
 
       if (!createEventDto.entityId) {
         throw new BadRequestException("entityId is required to create an event");
       }
 
-      // Domain Rule: entities blocked by moderation cannot create events
+      const appUser = await this.prisma.app_users.findUnique({
+        where: { id: userId },
+        select: { id: true, role: true },
+      });
+      if (!appUser) {
+        this.logger.error(
+          `create: no app_users row for userId=${userId} (JWT user must exist in app_users)`,
+        );
+        throw new BadRequestException(
+          "Your account profile is not ready yet. Try signing out and back in, or contact support.",
+        );
+      }
+
       const entity = await this.prisma.entities.findUnique({
         where: { id: createEventDto.entityId },
         select: { status: true, name: true, ownerId: true },
       });
 
       if (!entity) {
-        throw new NotFoundException(`Entity with id "${createEventDto.entityId}" not found. entityId is required to create an event.`);
+        throw new NotFoundException(
+          `Entity with id "${createEventDto.entityId}" not found. entityId is required to create an event.`,
+        );
       }
 
       const entityStatus = String(entity.status);
       const blockedStatuses = new Set(["REJECTED", "SUSPENDED", "DISABLED"]);
       if (blockedStatuses.has(entityStatus)) {
         throw new ForbiddenException(
-          `Entity "${entity.name}" is ${entityStatus}. This entity cannot create events.`
+          `Entity "${entity.name}" is ${entityStatus}. This entity cannot create events.`,
         );
       }
 
-      const requester = await this.prisma.app_users.findUnique({
-        where: { id: userId },
-        select: { role: true },
-      });
-
-      if (requester?.role !== UserRole.ADMIN) {
+      if (appUser.role !== UserRole.ADMIN) {
         const hasEntityRole = await this.prisma.entity_roles.findFirst({
           where: {
             userId,
@@ -110,14 +151,16 @@ export class EventsService {
 
         if (entity.ownerId !== userId && !hasEntityRole) {
           throw new ForbiddenException(
-            "You do not have permission to create events for this entity."
+            "You do not have permission to create events for this entity.",
           );
         }
       }
 
-      // Quick create: status DRAFT, single ticket tier from ticketPrice
+      // Studio "Quick Setup" uses workflow step name only; DB enum is PRE_LIVE | LIVE | POST_LIVE.
+      const resolvedPhase = phase ?? EventPhase.PRE_LIVE;
+      // Quick create (ticketPrice): DRAFT + default tier; wizard step 1: SCHEDULED unless overridden.
       const isQuickCreate = ticketPrice != null;
-      const resolvedStatus = isQuickCreate ? EventStatus.DRAFT : (status ?? EventStatus.SCHEDULED);
+      const resolvedStatus = isQuickCreate ? EventStatus.DRAFT : status ?? EventStatus.SCHEDULED;
       const ticketTypesJson = isQuickCreate && ticketPrice != null
         ? [{ name: "General Admission", price: Number(ticketPrice), currency: "USD", quantity: 1000, accessLevel: "GENERAL" as const }]
         : (ticketTypes ?? []).map(t => ({
@@ -129,105 +172,165 @@ export class EventsService {
             ...(t.requiresInvite !== undefined && { requiresInvite: t.requiresInvite }),
           }));
 
+      const registrationAccessDb =
+        registrationAccess === "OPEN"
+          ? "PUBLIC"
+          : registrationAccess === "INVITE_ONLY"
+            ? "INVITE_ONLY"
+            : undefined;
+
       const eventId = randomUUID();
       const sessionKey = `sk_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
       const roomId = randomUUID();
 
-      const event = await this.prisma.$transaction(async (tx) => {
-        const created = await (tx as any).events.create({
-          data: {
-            id: eventId,
-            name,
-            description,
-            startTime: new Date(startTime),
-            endTime: endTime ? new Date(endTime) : undefined,
-            location,
-            isVirtual: isVirtual ?? false,
-            streamUrl,
-            entity: { connect: { id: createEventDto.entityId } },
-            eventCoordinatorId: userId,
-            eventType: eventType ?? "LIVE",
-            phase: phase ?? EventPhase.PRE_LIVE,
-            status: resolvedStatus,
-            geoRestricted: geoRestricted ?? false,
-            ticketRequired: ticketRequired ?? true,
-            ticketTypes: ticketTypesJson as unknown as Prisma.InputJsonValue,
-            entryCodeRequired: entryCodeRequired ?? false,
-            entryCodeDelivery: entryCodeDelivery ?? false,
-            testingEnabled: testingEnabled ?? false,
-            updatedAt: new Date(),
-            customBranding: customBranding as Prisma.InputJsonValue,
-            ...(registrationAccess != null && { registrationAccess }),
-          } as unknown as Prisma.eventsCreateInput,
-        });
+      let createdEvent: EventsRow;
 
-        await (tx as any).streaming_sessions.create({
-          data: {
-            id: randomUUID(),
-            eventId: created.id,
-            entityId: createEventDto.entityId,
-            roomId,
-            sessionKey,
-            accessLevel: "PUBLIC",
-            geoRegions: [],
-            updatedAt: new Date(),
-          },
-        });
-
-        // Grant the entity owner OWNER access so phase-transition guards pass.
-        // Also grant the requesting user (may differ from ownerId if a collaborator
-        // created the event on behalf of the entity) COORDINATOR access.
-        const ownerRoleExists = await (tx as any).event_roles.findUnique({
-          where: { userId_eventId: { userId: entity.ownerId, eventId: created.id } },
-          select: { id: true },
-        });
-        if (!ownerRoleExists) {
-          await (tx as any).event_roles.create({
+      try {
+        createdEvent = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.events.create({
             data: {
-              userId: entity.ownerId,
-              eventId: created.id,
-              accessRole: EventAccessRole.OWNER,
-              operationalRoles: [EventOperationalRole.COORDINATOR, EventOperationalRole.BROADCASTER],
+              id: eventId,
+              name: name.trim(),
+              description,
+              startTime: startDate,
+              endTime: endDate,
+              location,
+              isVirtual: isVirtual ?? false,
+              streamUrl,
+              entity: { connect: { id: createEventDto.entityId } },
+              app_users: { connect: { id: userId } },
+              eventType: eventType ?? "LIVE",
+              phase: resolvedPhase,
+              status: resolvedStatus,
+              geoRestricted: geoRestricted ?? false,
+              ticketRequired: ticketRequired ?? true,
+              ticketTypes: ticketTypesJson as unknown as Prisma.InputJsonValue,
+              entryCodeRequired: entryCodeRequired ?? false,
+              entryCodeDelivery: entryCodeDelivery ?? false,
+              testingEnabled: testingEnabled ?? false,
+              updatedAt: new Date(),
+              ...(customBranding != null && {
+                customBranding: customBranding as Prisma.InputJsonValue,
+              }),
+              ...(registrationAccessDb != null && {
+                registrationAccess: registrationAccessDb,
+              }),
             },
           });
-        }
-        if (userId !== entity.ownerId) {
-          const requesterRoleExists = await (tx as any).event_roles.findUnique({
-            where: { userId_eventId: { userId, eventId: created.id } },
+
+          await tx.streaming_sessions.create({
+            data: {
+              id: randomUUID(),
+              eventId: created.id,
+              entityId: createEventDto.entityId,
+              roomId,
+              sessionKey,
+              accessLevel: "PUBLIC",
+              geoRegions: [],
+              updatedAt: new Date(),
+            },
+          });
+
+          const ownerRoleExists = await tx.event_roles.findUnique({
+            where: { userId_eventId: { userId: entity.ownerId, eventId: created.id } },
             select: { id: true },
           });
-          if (!requesterRoleExists) {
-            await (tx as any).event_roles.create({
+          if (!ownerRoleExists) {
+            await tx.event_roles.create({
               data: {
-                userId,
+                userId: entity.ownerId,
                 eventId: created.id,
-                accessRole: EventAccessRole.ADMIN,
-                operationalRoles: [EventOperationalRole.COORDINATOR],
+                accessRole: EventAccessRole.OWNER,
+                operationalRoles: [EventOperationalRole.COORDINATOR, EventOperationalRole.BROADCASTER],
               },
             });
           }
+          if (userId !== entity.ownerId) {
+            const requesterRoleExists = await tx.event_roles.findUnique({
+              where: { userId_eventId: { userId, eventId: created.id } },
+              select: { id: true },
+            });
+            if (!requesterRoleExists) {
+              await tx.event_roles.create({
+                data: {
+                  userId,
+                  eventId: created.id,
+                  accessRole: EventAccessRole.ADMIN,
+                  operationalRoles: [EventOperationalRole.COORDINATOR],
+                },
+              });
+            }
+          }
+
+          return created;
+        });
+      } catch (err: unknown) {
+        this.logger.error(
+          `create failed userId=${userId} entityId=${createEventDto.entityId}: ${err instanceof Error ? err.message : String(err)}`,
+          err instanceof Error ? err.stack : undefined,
+        );
+        if (err instanceof Prisma.PrismaClientKnownRequestError) {
+          if (err.code === "P2003") {
+            throw new BadRequestException(
+              "Invalid reference when creating the event (entity, user, or related record). Check entityId and that your account exists.",
+            );
+          }
+          if (err.code === "P2002") {
+            throw new BadRequestException("A unique constraint failed while creating the event.");
+          }
         }
-
-        return created;
-      });
-
-      await this.ticketTypesService.syncCatalogFromEventTicketTypesJson(
-        event.id,
-        ticketTypesJson as unknown[],
-      );
-
-      if (event.status === EventStatus.SCHEDULED && createEventDto.entityId) {
-        this.notificationsService
-          .notifyEventScheduled(
-            event.id,
-            createEventDto.entityId,
-            event.name,
-            event.startTime ?? undefined,
-          )
-          .catch((err) => console.warn("[EventsService.create] notifyEventScheduled failed", err));
+        if (err instanceof Prisma.PrismaClientValidationError) {
+          throw new BadRequestException(
+            `Invalid event data for database: ${err.message.split("\n").slice(0, 3).join(" ")}`,
+          );
+        }
+        throw err;
       }
 
-      return event;
+      try {
+        await this.ticketTypesService.syncCatalogFromEventTicketTypesJson(
+          createdEvent.id,
+          ticketTypesJson as unknown[],
+        );
+      } catch (err: unknown) {
+        this.logger.error(
+          `create: ticket catalog sync failed for eventId=${createdEvent.id}: ${err instanceof Error ? err.message : String(err)}`,
+          err instanceof Error ? err.stack : undefined,
+        );
+        // Event row already exists; empty tiers only clear catalog — do not fail the create response.
+      }
+
+      if (createdEvent.status === EventStatus.SCHEDULED && createEventDto.entityId) {
+        this.notificationsService
+          .notifyEventScheduled(
+            createdEvent.id,
+            createEventDto.entityId,
+            createdEvent.name,
+            createdEvent.startTime ?? undefined,
+          )
+          .catch((err) =>
+            this.logger.warn(`[EventsService.create] notifyEventScheduled failed: ${String(err)}`),
+          );
+      }
+
+      const createdWithEntity = await this.prisma.events.findUnique({
+        where: { id: createdEvent.id },
+        include: {
+          entity: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              thumbnail: true,
+              type: true,
+              isVerified: true,
+              createdAt: true,
+            },
+          },
+        },
+      });
+
+      return createdWithEntity ?? createdEvent;
     }
         
     // ------------------------------------------------------------
@@ -688,7 +791,16 @@ export class EventsService {
       throw new NotFoundException(`Event with ID ${id} not found`);
     }
 
-    const catalog = await this.ticketTypesService.getTicketTypes(id);
+    let catalog: Awaited<ReturnType<TicketTypesService["getTicketTypes"]>> = [];
+    try {
+      catalog = await this.ticketTypesService.getTicketTypes(id);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `[EventsService.findOne] ticket catalog load failed for eventId=${id}; falling back to event.ticketTypes JSON: ${detail}`,
+      );
+      catalog = [];
+    }
 
     const ticketTypesFromDb =
       catalog.length > 0

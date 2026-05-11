@@ -1,9 +1,16 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useLayoutEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useUploadAsset } from "@/hooks/useAssets";
 import { useUpdateUserProfile } from "@/hooks/useUsers";
 import { AssetType, AssetOwnerType } from "../../../../packages/shared/types";
 import { Camera, Loader2 } from "lucide-react";
+import {
+  PROFILE_IMAGE_ACCEPT,
+  canonicalImageUrl,
+  withImageCacheBust,
+  versionFromProfile,
+  validateProfileImageFile,
+} from "@/lib/profile-images";
 
 const AvatarUpload: React.FC = () => {
   const { user } = useAuth();
@@ -15,26 +22,17 @@ const AvatarUpload: React.FC = () => {
   // Default avatar (only used as fallback)
   const defaultAvatar = "/assets/defaults/profile-avatar.png";
 
-  // Initialize with user's avatarUrl if available, otherwise null
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(
-    user?.profile?.avatarUrl || null
-  );
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  // ✅ SYNC WITH AUTH STATE - Update ONLY when user.profile.avatarUrl changes
-  // This prevents resetting when other profile fields (like bannerUrl) change
-  useEffect(() => {
-    if (user?.profile) {
-      const profileAvatarUrl = user.profile.avatarUrl;
-      // Only update if avatarUrl actually changed (not when bannerUrl or other fields change)
-      if (profileAvatarUrl !== avatarUrl) {
-        setAvatarUrl(profileAvatarUrl || null);
-      }
-    } else if (user && !user.profile) {
-      // User exists but no profile yet - clear avatar
+  useLayoutEffect(() => {
+    if (!user?.profile?.avatarUrl) {
       setAvatarUrl(null);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.profile?.avatarUrl]); // Only depend on avatarUrl, not entire profile object
+    setAvatarUrl(
+      withImageCacheBust(user.profile.avatarUrl, versionFromProfile(user.profile.updatedAt)),
+    );
+  }, [user?.profile?.avatarUrl, user?.profile?.updatedAt, user?.id]);
 
   // Early return AFTER all hooks are called
   if (!user) return null;
@@ -49,22 +47,15 @@ const AvatarUpload: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
-    if (!file.type.startsWith("image/")) {
-      alert("Please upload an image file");
-      return;
-    }
-
-    // 5MB max as a safety cap
-    const MAX_SIZE = 5 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
-      alert("Please upload an image smaller than 5MB");
+    const msg = validateProfileImageFile(file, 5 * 1024 * 1024, "Profile photo");
+    if (msg) {
+      alert(msg);
       return;
     }
 
     try {
       setIsUploading(true);
 
-      // Upload via the shared hook (uses assets.service.ts pattern)
       const asset = await uploadAsset.mutateAsync({
         file,
         type: AssetType.IMAGE,
@@ -76,27 +67,23 @@ const AvatarUpload: React.FC = () => {
         },
       });
 
-      const newAvatarUrl = asset.url;
+      const canon = canonicalImageUrl(asset.url);
+      setAvatarUrl(withImageCacheBust(canon, Date.now()));
 
-      // ✅ Immediately update UI (optimistic update)
-      setAvatarUrl(newAvatarUrl);
-
-      // Update user profile with new avatar URL
-      // useUpdateUserProfile already updates the ["auth", "me"] cache,
-      // which will trigger the useEffect to sync avatarUrl
       await updateUser.mutateAsync({
         id: user.id,
-        data: { avatarUrl: newAvatarUrl },
+        data: { avatarUrl: canon },
       });
-
-      // Note: No need to call refetchUser() here because useUpdateUserProfile
-      // already updates the ["auth", "me"] cache, which useAuth reads from.
-      // The useEffect will automatically sync avatarUrl when user.profile.avatarUrl changes.
     } catch (err) {
       console.error("Avatar upload failed", err);
       alert("Failed to upload avatar. Please try again.");
-      // Revert to previous avatar on error
-      setAvatarUrl(user?.profile?.avatarUrl || null);
+      if (user?.profile?.avatarUrl) {
+        setAvatarUrl(
+          withImageCacheBust(user.profile.avatarUrl, versionFromProfile(user.profile.updatedAt)),
+        );
+      } else {
+        setAvatarUrl(null);
+      }
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) {
@@ -105,8 +92,7 @@ const AvatarUpload: React.FC = () => {
     }
   };
 
-  // Determine what to display: uploaded avatar, default avatar, or placeholder
-  const displayAvatarUrl = avatarUrl || defaultAvatar;
+  const displayAvatarUrl = avatarUrl ?? defaultAvatar;
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -138,7 +124,7 @@ const AvatarUpload: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={PROFILE_IMAGE_ACCEPT}
         className="hidden"
         onChange={handleFileChange}
       />

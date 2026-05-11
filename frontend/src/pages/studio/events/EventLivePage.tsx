@@ -18,13 +18,22 @@ export function EventLivePage() {
   const { user } = useAuth();
   const { data: event, isLoading: eventLoading } = useEvent(eventId!);
   const { currentEntity } = useEntityContext();
-  const { session, loading: sessionLoading, endSession } = useStreaming(eventId!);
+  const {
+    session,
+    loading: sessionLoading,
+    endSession,
+    createSession,
+    refetch: refetchStreamingSession,
+    error: streamingQueryError,
+  } = useStreaming(eventId!);
   const { room, setRoom, connected } = useLiveKitRoom();
 
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
-  const [publishing, setPublishing] = useState(false);
   const [localTracks, setLocalTracks] = useState<any[]>([]);
+  const [startingSession, setStartingSession] = useState(false);
+  const [startSessionError, setStartSessionError] = useState<string | null>(null);
+  const [refreshingSession, setRefreshingSession] = useState(false);
   const hasRequestedTokenRef = useRef(false);
 
   const isBroadcaster = !!(
@@ -118,6 +127,36 @@ export function EventLivePage() {
     }
   }, [eventId, session, event, isBroadcaster, room, connected, setRoom]);
 
+  const handleStartStream = useCallback(async () => {
+    if (!eventId || startingSession) return;
+    setStartSessionError(null);
+    setStartingSession(true);
+    try {
+      console.log("[EventLivePage] Creating streaming session (POST /streaming/session)", {
+        eventId,
+        isBroadcaster,
+      });
+      const created = await createSession();
+      if (created) {
+        console.log("[EventLivePage] Session ready", {
+          sessionId: created.id,
+          active: created.active,
+          roomId: created.roomId,
+        });
+        return;
+      }
+      // Hook returns null on 400 "already active" — pull latest from GET /streaming/active
+      console.log("[EventLivePage] createSession returned null; refetching active sessions");
+      await refetchStreamingSession({ silent: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not start stream";
+      console.error("[EventLivePage] Start stream failed:", err);
+      setStartSessionError(message);
+    } finally {
+      setStartingSession(false);
+    }
+  }, [eventId, createSession, refetchStreamingSession, startingSession, isBroadcaster]);
+
   // Auto-join when session becomes active
   useEffect(() => {
     if (session?.active && !connected && !joining && !hasRequestedTokenRef.current) {
@@ -173,40 +212,103 @@ export function EventLivePage() {
     }
   }, [session, room, localTracks, isBroadcaster, eventId, navigate, setRoom]);
 
-    // Loading OR session/event not yet hydrated
-    if (sessionLoading || eventLoading || session === null || !event) {
-        return (
-        <div className="min-h-screen bg-[#0B0B0B] flex items-center justify-center text-gray-400">
-            <div className="text-center">
-            <div className="animate-pulse mb-2">Connecting to live stream...</div>
-            </div>
+  // Initial load only: `session === null` after fetch means "no active session", not "still connecting".
+  if (eventLoading || sessionLoading || !event) {
+    const label = eventLoading ? "Loading event…" : "Checking for a live session…";
+    return (
+      <div className="min-h-screen bg-[#0B0B0B] flex items-center justify-center text-gray-400">
+        <div className="text-center px-6">
+          <div className="animate-pulse mb-2">{label}</div>
+          {streamingQueryError && (
+            <p className="text-sm text-amber-500/90 mt-2 max-w-md">{streamingQueryError}</p>
+          )}
         </div>
-        );
-    }
-    
-    // No active session (REAL case)
-    if (!session.active) {
-        // Debug log before rendering "No active stream"
-        console.log("Streaming decision", {
-            session,
-            sessionLoading,
-            eventId,
-        });
-        
-        return (
-        <div className="min-h-screen bg-[#0B0B0B] flex items-center justify-center">
-            <div className="text-center text-gray-400 p-6">
-            <p className="mb-4">No active stream for this event.</p>
+      </div>
+    );
+  }
+
+  // No row in GET /streaming/active for this event (body was [] or no matching eventId)
+  if (!session) {
+    console.log("[EventLivePage] No active streaming session for event", {
+      eventId,
+      isBroadcaster,
+      hint: "POST /api/streaming/session/:eventId creates an active session when permitted",
+    });
+
+    return (
+      <div className="min-h-screen bg-[#0B0B0B] flex items-center justify-center p-6">
+        <div className="text-center text-gray-300 max-w-md space-y-4">
+          <h1 className="text-lg font-semibold text-white">No live session yet</h1>
+          <p className="text-sm text-gray-400">
+            {isBroadcaster
+              ? "Start a stream to create an active session and connect to LiveKit. Your event must be allowed to go live (entity active, permissions OK)."
+              : "The host has not started broadcasting yet. You can wait here — we check every few seconds — or go back."}
+          </p>
+          {startSessionError && (
+            <p className="text-sm text-red-400 bg-red-950/30 border border-red-900/50 rounded-lg px-3 py-2">
+              {startSessionError}
+            </p>
+          )}
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            {isBroadcaster && (
+              <button
+                type="button"
+                disabled={startingSession}
+                onClick={() => void handleStartStream()}
+                className="px-4 py-2 bg-[#CD000E] text-white rounded-lg hover:bg-[#860005] disabled:opacity-50 text-sm font-medium"
+              >
+                {startingSession ? "Starting stream…" : "Start stream"}
+              </button>
+            )}
             <button
-                onClick={() => navigate(`/studio/events/${eventId}/dashboard`)}
-                className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700"
+              type="button"
+              disabled={refreshingSession}
+              onClick={async () => {
+                setRefreshingSession(true);
+                try {
+                  await refetchStreamingSession({ silent: true });
+                } finally {
+                  setRefreshingSession(false);
+                }
+              }}
+              className="px-4 py-2 border border-gray-600 text-white rounded-lg hover:bg-white/5 text-sm disabled:opacity-50"
             >
-                Go Back
+              {refreshingSession ? "Refreshing…" : "Refresh status"}
             </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => navigate(`/studio/events/${eventId}/dashboard`)}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 text-sm"
+            >
+              Go to event
+            </button>
+          </div>
         </div>
-        );
-    }
+      </div>
+    );
+  }
+
+  // Session row exists but marked inactive (unusual for /active list; defensive)
+  if (!session.active) {
+    console.warn("[EventLivePage] Session present but inactive", {
+      sessionId: session.id,
+      eventId,
+    });
+    return (
+      <div className="min-h-screen bg-[#0B0B0B] flex items-center justify-center p-6">
+        <div className="text-center text-gray-400 max-w-md space-y-4">
+          <p>This stream session is not active.</p>
+          <button
+            type="button"
+            onClick={() => navigate(`/studio/events/${eventId}/dashboard`)}
+            className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700"
+          >
+            Go to event
+          </button>
+        </div>
+      </div>
+    );
+  }
   
   // Joining state
   if (joining || !connected || !room) {
@@ -214,7 +316,7 @@ export function EventLivePage() {
       <div className="min-h-screen bg-[#0B0B0B] flex items-center justify-center">
         <div className="text-center text-gray-400 p-6">
           <div className="animate-pulse mb-2">
-            {joining ? "Joining stream..." : publishing ? "Starting broadcast..." : "Connecting..."}
+            {joining ? "Joining stream…" : "Connecting to room…"}
           </div>
           {joinError && (
             <div className="mt-4 text-red-400 text-sm">

@@ -40,6 +40,16 @@ function mapJsonToTicketTypes(raw: unknown[]): EventTicketType[] {
   });
 }
 
+/** Stable fallback so useQuery + useMemo deps do not change identity every render. */
+const EMPTY_CATALOG: CatalogTicketType[] = [];
+const EMPTY_SERVER_TICKETS: EventTicketType[] = [];
+
+function serverTicketListsEqual(a: EventTicketType[], b: EventTicketType[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * Ticket tier editor: loads from `ticket_types` (GET) with fallback to `event.ticketTypes` JSON.
  * Saves via POST /events/:id/ticket-types (single source of truth in DB).
@@ -52,10 +62,16 @@ export function EventTicketTypesSection({
 }: EventTicketTypesSectionProps) {
   const queryClient = useQueryClient();
 
-  const { data: catalogRows = [] } = useQuery({
+  const { data: catalogData } = useQuery({
     queryKey: ["ticket-types", eventId],
     queryFn: () => eventsService.getTicketTypes(eventId),
   });
+  const catalogRows = catalogData ?? EMPTY_CATALOG;
+
+  // Primitives only: avoids useMemo invalidating when parent passes a new array ref with same JSON.
+  const eventTicketTypesFingerprint = JSON.stringify(
+    Array.isArray(event?.ticketTypes) ? event?.ticketTypes : null,
+  );
 
   const serverTickets = useMemo(() => {
     if (catalogRows.length > 0) {
@@ -65,14 +81,17 @@ export function EventTicketTypesSection({
     if (Array.isArray(json) && json.length > 0) {
       return mapJsonToTicketTypes(json as unknown[]);
     }
-    return [];
-  }, [catalogRows, event?.ticketTypes]);
+    return EMPTY_SERVER_TICKETS;
+  }, [eventId, catalogRows, eventTicketTypesFingerprint]);
 
+  // Local edits (add/remove before save) need mutable state; sync from server only when data meaningfully changes.
   const [tickets, setTickets] = useState<EventTicketType[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
-    setTickets(serverTickets);
+    setTickets(prev =>
+      serverTicketListsEqual(prev, serverTickets) ? prev : serverTickets,
+    );
   }, [serverTickets]);
 
   const saveMutation = useMutation({

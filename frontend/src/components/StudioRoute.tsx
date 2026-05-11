@@ -88,34 +88,6 @@ export function StudioRoute({
     switchToEntity,
   ]);
 
-  console.log("[StudioRoute]", {
-    pathname: location.pathname,
-    isAuthenticated,
-    authLoading,
-    userId,
-    userRole: user?.role,
-    userIsEntity: user?.isEntity,
-    userHasCreatorFlag,
-    shouldWaitForEntities,
-    hasEntities,
-    entitiesData,
-    entitiesLoading,
-    entitiesError: entitiesError
-      ? {
-          message:
-            entitiesError instanceof Error
-              ? entitiesError.message
-              : String(entitiesError),
-          status: (entitiesError as any)?.response?.status,
-          data: (entitiesError as any)?.response?.data,
-        }
-      : null,
-    userIsCreator,
-    currentEntity: currentEntity?.id,
-    entityLoading,
-    requireEntity,
-  });
-
   const latestApplication = useMemo(() => {
     if (!applicationsData?.data || applicationsData.data.length === 0) {
       return null;
@@ -159,16 +131,6 @@ export function StudioRoute({
   }
 
   const entitiesQueryCompleted = !entitiesLoading && !entitiesError;
-
-  console.log("[StudioRoute] Entities check:", {
-    hasEntities,
-    entitiesLoading,
-    entitiesQueryCompleted,
-    entitiesError: entitiesError ? "Query failed" : "No error",
-    decision: entitiesQueryCompleted && !hasEntities
-      ? "REDIRECT to /studio/application"
-      : "ALLOW (has entities or query incomplete/failed)",
-  });
 
   if (entitiesQueryCompleted && !hasEntities) {
     return <Navigate to="/studio/application" replace />;

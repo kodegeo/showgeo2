@@ -552,7 +552,7 @@ model entities {
   app_users                             app_users             @relation(fields: [ownerId], references: [id])
   entity_applications                   entity_applications[]
   entity_roles                          entity_roles[]
-  events                                 events[]              @relation("events_entityIdToentities")
+  events                                events[]              @relation("events_entityIdToentities")
   notifications                         notifications[]
   orders                                orders[]
   stores_stores_entityIdToentities      stores[]              @relation("stores_entityIdToentities")
@@ -617,51 +617,52 @@ model event_roles {
 }
 
 model events {
-  id                                 String                 @id
-  name                               String
-  description                        String?
-  thumbnail                          String?
-  eventType                          EventType              @default(LIVE)
-  phase                              EventPhase             @default(PRE_LIVE)
-  startTime                          DateTime
-  endTime                            DateTime?
-  location                           String?
-  status                             EventStatus            @default(DRAFT)
-  entityId                           String
-  eventCoordinatorId                 String?
-  tourId                             String?
-  isVirtual                          Boolean                @default(false)
-  streamUrl                          String?
-  testStreamUrl                      String?
-  videoUrl                           String?
-  streamingAccessLevel               GeofencingAccessLevel?
-  geoRegions                         String[]
-  geoRestricted                      Boolean                @default(false)
-  ticketRequired                     Boolean                @default(true)
-  ticketTypes                        Json?
-  entryCodeRequired                  Boolean                @default(false)
-  entryCodeDelivery                  Boolean                @default(false)
-  ticketEmailTemplate                String?
-  testingEnabled                     Boolean                @default(false)
-  testResultLogs                     Json?
-  liveMetrics                        Json?
-  customBranding                     Json?
-  createdAt                          DateTime               @default(now())
-  updatedAt                          DateTime
-  lastLaunchedBy                     String?
-  admin_reports                      admin_reports[]
-  analytics_summaries                analytics_summaries[]
-  chat_rooms                         chat_rooms[]
-  event_roles                        event_roles[]
-  entity                                entities              @relation("events_entityIdToentities", fields: [entityId], references: [id])
-  app_users                          app_users?             @relation(fields: [eventCoordinatorId], references: [id])
-  tours                              tours?                 @relation(fields: [tourId], references: [id])
-  geofencing                         geofencing?
-  orders                             orders[]
-  stores                             stores?
-  streaming_sessions                 streaming_sessions[]
-  tickets                            tickets[]
-  entities_EventCollaborators        entities[]             @relation("EventCollaborators")
+  id                          String                 @id
+  name                        String
+  description                 String?
+  thumbnail                   String?
+  eventType                   EventType              @default(LIVE)
+  phase                       EventPhase             @default(PRE_LIVE)
+  startTime                   DateTime
+  endTime                     DateTime?
+  location                    String?
+  status                      EventStatus            @default(DRAFT)
+  entityId                    String
+  eventCoordinatorId          String?
+  tourId                      String?
+  isVirtual                   Boolean                @default(false)
+  streamUrl                   String?
+  testStreamUrl               String?
+  videoUrl                    String?
+  streamingAccessLevel        GeofencingAccessLevel?
+  geoRegions                  String[]
+  geoRestricted               Boolean                @default(false)
+  ticketRequired              Boolean                @default(true)
+  ticketTypes                 Json?
+  entryCodeRequired           Boolean                @default(false)
+  entryCodeDelivery           Boolean                @default(false)
+  ticketEmailTemplate         String?
+  testingEnabled              Boolean                @default(false)
+  testResultLogs              Json?
+  liveMetrics                 Json?
+  customBranding              Json?
+  registrationAccess          String?                @default("PUBLIC")
+  createdAt                   DateTime               @default(now())
+  updatedAt                   DateTime
+  lastLaunchedBy              String?
+  admin_reports               admin_reports[]
+  analytics_summaries         analytics_summaries[]
+  chat_rooms                  chat_rooms[]
+  event_roles                 event_roles[]
+  entity                      entities               @relation("events_entityIdToentities", fields: [entityId], references: [id])
+  app_users                   app_users?             @relation(fields: [eventCoordinatorId], references: [id])
+  tours                       tours?                 @relation(fields: [tourId], references: [id])
+  geofencing                  geofencing?
+  orders                      orders[]
+  stores                      stores?
+  streaming_sessions          streaming_sessions[]
+  tickets                     tickets[]
+  entities_EventCollaborators entities[]             @relation("EventCollaborators")
 
   @@schema("public")
 }
@@ -672,7 +673,7 @@ model follows {
   targetId   String             @map("target_id")
   createdAt  DateTime           @default(now())
   updatedAt  DateTime
-  targetType  follow_target_type @default(ENTITY) @map("target_type")
+  targetType follow_target_type @default(ENTITY) @map("target_type")
   notify     Boolean?           @default(false)
 
   @@unique([userId, targetId, targetType], map: "follows_unique")
@@ -862,7 +863,7 @@ model stores {
 
 model streaming_sessions {
   id          String               @id
-  eventId     String
+  eventId     String               @map("event_id")
   entityId    String
   roomId      String               @unique
   sessionKey  String

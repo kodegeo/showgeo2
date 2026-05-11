@@ -5,25 +5,26 @@ import { useAuth } from "@/hooks/useAuth";
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { loginAsync, loginLoading, loginError, isAuthenticated, isLoading } = useAuth();
+  const { loginAsync, loginLoading, loginError, isAuthenticated, isLoading, user } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
-  // Redirect already-authenticated users (deep link from e.g. event ticket flow)
+  // Redirect only after `/auth/me` succeeds — avoids racing guards with "session but no user"
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      const returnTo = sessionStorage.getItem("showgeo_return_to");
-      if (returnTo) {
-        sessionStorage.removeItem("showgeo_return_to");
-        navigate(returnTo, { replace: true });
-        return;
-      }
-      navigate("/home", { replace: true });
+    if (isLoading || !isAuthenticated || !user) {
+      return;
     }
-  }, [isAuthenticated, isLoading, navigate]);
+    const returnTo = sessionStorage.getItem("showgeo_return_to");
+    if (returnTo) {
+      sessionStorage.removeItem("showgeo_return_to");
+      navigate(returnTo, { replace: true });
+      return;
+    }
+    navigate("/home", { replace: true });
+  }, [isAuthenticated, isLoading, user, navigate]);
   
   // Check for registration message in location state
   useEffect(() => {

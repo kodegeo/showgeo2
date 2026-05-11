@@ -1,25 +1,46 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
 import { useUploadAsset } from "@/hooks/useAssets";
 import { useUpdateUserProfile } from "@/hooks/useUsers";
 import { AssetType, AssetOwnerType } from "../../../../packages/shared/types";
+import {
+  PROFILE_IMAGE_ACCEPT,
+  canonicalImageUrl,
+  withImageCacheBust,
+  validateProfileImageFile,
+  versionFromProfile,
+} from "@/lib/profile-images";
 
 interface AvatarUploadProps {
   currentAvatarUrl?: string;
+  profileUpdatedAt?: string;
   onUploadComplete: (avatarUrl: string) => void;
   className?: string;
-  userId: string;   // ADD THIS
+  userId: string;
 }
 
 export function AvatarUpload({
   currentAvatarUrl,
+  profileUpdatedAt,
   onUploadComplete,
   className = "",
   userId,
 }: AvatarUploadProps) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(
-    currentAvatarUrl || null
+  const [previewUrl, setPreviewUrl] = useState<string | null>(() =>
+    currentAvatarUrl
+      ? withImageCacheBust(currentAvatarUrl, versionFromProfile(profileUpdatedAt))
+      : null,
   );
+
+  useEffect(() => {
+    if (!currentAvatarUrl) {
+      setPreviewUrl(null);
+      return;
+    }
+    setPreviewUrl(
+      withImageCacheBust(currentAvatarUrl, versionFromProfile(profileUpdatedAt)),
+    );
+  }, [currentAvatarUrl, profileUpdatedAt]);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadAsset = useUploadAsset();
@@ -31,15 +52,9 @@ export function AvatarUpload({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      setError("Please select an image file");
-      return;
-    }
-
-    // Validate size < 5 MB
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image must be under 5MB");
+    const msg = validateProfileImageFile(file, 5 * 1024 * 1024, "Profile photo");
+    if (msg) {
+      setError(msg);
       return;
     }
 
@@ -60,27 +75,29 @@ export function AvatarUpload({
         metadata: { purpose: "avatar" },
       });
 
-      const publicUrl = asset.url;
+      const canon = canonicalImageUrl(asset.url);
 
-      // Update user profile with new avatar URL
-      // This ensures the profile is saved to the backend
       await updateUser.mutateAsync({
         id: userId,
-        data: { avatarUrl: publicUrl },
+        data: { avatarUrl: canon },
       });
 
-      // Update preview to use the actual URL (not local preview)
-      setPreviewUrl(publicUrl);
+      URL.revokeObjectURL(localPreview);
+      setPreviewUrl(withImageCacheBust(canon, Date.now()));
 
-      // Notify parent
-      onUploadComplete(publicUrl);
+      onUploadComplete(canon);
     } catch (err: any) {
       console.error(err);
       setError(
         err.response?.data?.message ||
           "Could not upload image. Please try again."
       );
-      setPreviewUrl(currentAvatarUrl || null);
+      URL.revokeObjectURL(localPreview);
+      setPreviewUrl(
+        currentAvatarUrl
+          ? withImageCacheBust(currentAvatarUrl, versionFromProfile(profileUpdatedAt))
+          : null,
+      );
     }
   };
 
@@ -153,7 +170,7 @@ export function AvatarUpload({
           <input
             type="file"
             className="hidden"
-            accept="image/*"
+            accept={PROFILE_IMAGE_ACCEPT}
             ref={fileInputRef}
             disabled={uploadAsset.isPending}
             onChange={handleFileSelect}
@@ -173,7 +190,7 @@ export function AvatarUpload({
             </button>
 
             <p className="text-xs text-[#9A9A9A]">
-              JPG, PNG, GIF • Max 5MB • Recommended 400×400px
+              JPG, PNG, WebP • Max 5MB • Recommended 400×400px
             </p>
 
             {error && (

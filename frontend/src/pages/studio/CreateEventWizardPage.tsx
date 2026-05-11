@@ -1,8 +1,6 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { apiClient } from "@/services/api";
-import { API } from "@/services/apiRoutes";
 import { useEntityContext } from "@/hooks/useEntityContext";
 import { assetsService } from "@/services/assets.service";
 import { eventsService } from "@/services/events.service";
@@ -73,8 +71,8 @@ export function CreateEventWizardPage() {
         startTime: state.startTime,
         ...(state.description.trim() ? { description: state.description.trim() } : {}),
       };
-      const res = await apiClient.post<{ id: string }>(API.events, payload);
-      const eventId = res.data?.id;
+      const created = await eventsService.create(payload);
+      const eventId = created?.id;
       if (!eventId) {
         toast.error("Event could not be created");
         setStepError("Event could not be created");

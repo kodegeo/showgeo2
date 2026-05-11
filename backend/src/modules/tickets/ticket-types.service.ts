@@ -68,7 +68,11 @@ export class TicketTypesService {
   }
 
   async getTicketTypes(eventId: string) {
-    return this.ext.ticket_types.findMany({
+    const ticketTypes = this.ext.ticket_types;
+    if (!ticketTypes) {
+      return [];
+    }
+    return ticketTypes.findMany({
       where: { event_id: eventId },
       orderBy: { created_at: "asc" },
     });

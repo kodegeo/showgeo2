@@ -36,8 +36,11 @@ export function useStreaming(eventId: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSession = useCallback(async () => {
-    setLoading(true);
+  const fetchSession = useCallback(async (options?: { silent?: boolean }) => {
+    // Only show global loading on initial/hydrating fetch — not on background polls
+    if (!options?.silent) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -88,6 +91,16 @@ export function useStreaming(eventId: string) {
       }
       
       setStreamSession(sessionForEvent);
+      if (sessionForEvent) {
+        if (isDevelopment) {
+          console.log("[useStreaming] Active session for event", eventId, {
+            sessionId: sessionForEvent.id,
+            active: sessionForEvent.active,
+          });
+        }
+      } else if (isDevelopment) {
+        console.log("[useStreaming] No active session for event", eventId, "(GET /streaming/active empty or no match)");
+      }
     } catch (e) {
       // Only log errors in development to reduce console spam
       if (isDevelopment) {
@@ -257,7 +270,7 @@ export function useStreaming(eventId: string) {
       if (isDevelopment) {
         console.log("[useStreaming] Polling for active session (current session inactive or null)");
       }
-      fetchSession();
+      void fetchSession({ silent: true });
     }, isDevelopment ? 8000 : 4000); // Slower polling in dev (8s) vs prod (4s)
 
     return () => clearInterval(pollInterval);

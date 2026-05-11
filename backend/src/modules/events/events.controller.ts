@@ -62,6 +62,7 @@ export class EventsController {
   // CREATE EVENT
   // ------------------------------------------------------------
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   @UseGuards(SupabaseAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a new event" })

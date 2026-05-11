@@ -24,7 +24,8 @@ export interface UpdateUserProfileRequest {
   website?: string;
   socialLinks?: Record<string, string>;
   preferences?: Record<string, unknown>;
-  visibility?: "public" | "private";
+  /** Backend expects `ProfileVisibility` enum strings */
+  visibility?: "PUBLIC" | "PRIVATE" | "UNLISTED";
 }
 
 export interface ConvertToEntityRequest {

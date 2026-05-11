@@ -11,13 +11,13 @@ import { UserRole } from "../../../packages/shared/types";
  * avoid redirect loops and provide a single source of truth for post-auth navigation.
  * 
  * Rules:
- * - Only redirects when user is on "/" or "/login" (entry points)
+ * - Redirects when user is on "/" or "/login" (entry points) after auth is ready.
  * - Only redirects when authentication is fully resolved (user object exists)
  * - Respects deep links (does not override if user navigates to protected routes)
  * - Uses replace navigation to avoid cluttering browser history
  * - Redirects based on app_users.role from /auth/me:
  *   - ADMIN → /admin/dashboard
- *   - ENTITY → /studio/overview
+ *   - ENTITY, MANAGER, COORDINATOR → /studio/overview
  *   - USER → /profile
  * 
  * This ensures:
@@ -42,7 +42,7 @@ export function AuthRedirect() {
     // 1. Auth is still loading
     // 2. User object is not yet loaded (waiting for /auth/me)
     // 3. We've already redirected in this session
-    // 4. User is not on an entry point ("/" or "/login")
+    // 4. User is not on the post-login entry point
     if (
       isLoading ||
       !user ||
@@ -60,11 +60,13 @@ export function AuthRedirect() {
         redirectPath = "/admin/dashboard";
         break;
       case UserRole.ENTITY:
+      case UserRole.MANAGER:
+      case UserRole.COORDINATOR:
         redirectPath = "/studio/overview";
         break;
       case UserRole.USER:
-      case UserRole.MANAGER:
-      case UserRole.COORDINATOR:
+        redirectPath = "/profile";
+        break;
       default:
         redirectPath = "/profile";
         break;

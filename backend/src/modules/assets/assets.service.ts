@@ -123,9 +123,20 @@ export class AssetsService {
         await this.validateOwnership(uploadDto.ownerType, uploadDto.ownerId, userId, userRole);
         effectiveOwnerType = uploadDto.ownerType;
         effectiveOwnerId = uploadDto.ownerId;
-        const fileName = `${randomUUID()}${fileExtension}`;
-        const folderPath = this.generateFolderPath(uploadDto.ownerType, uploadDto.ownerId);
-        filePath = `${folderPath}/${fileName}`;
+
+        const purpose = uploadDto.metadata?.purpose as string | undefined;
+        if (
+          uploadDto.ownerType === AssetOwnerType.USER &&
+          (purpose === "avatar" || purpose === "banner")
+        ) {
+          this.assertUserProfileImageMime(file.mimetype);
+          const profileExt = this.profileImageExtFromMime(file.mimetype);
+          filePath = `profiles/${uploadDto.ownerId}/${purpose}${profileExt}`;
+        } else {
+          const fileName = `${randomUUID()}${fileExtension}`;
+          const folderPath = this.generateFolderPath(uploadDto.ownerType, uploadDto.ownerId);
+          filePath = `${folderPath}/${fileName}`;
+        }
       }
 
       this.logger.debug(`Generated file path: ${filePath}`);
@@ -136,6 +147,15 @@ export class AssetsService {
         typeof providerConfig === "string"
           ? (providerConfig.toUpperCase() as StorageProvider)
           : providerConfig ?? StorageProvider.SUPABASE;
+
+      const profilePurpose = uploadDto.metadata?.purpose as string | undefined;
+      if (
+        filePath.startsWith("profiles/") &&
+        uploadDto.ownerId &&
+        (profilePurpose === "avatar" || profilePurpose === "banner")
+      ) {
+        await this.removeUserProfileSlotFilesFromBucket(uploadDto.ownerId, profilePurpose);
+      }
 
       // Upload to storage
       const publicUrl = await this.uploadToStorage(file, filePath, provider);
@@ -159,7 +179,26 @@ export class AssetsService {
             
       // Atomic DB write (createdAt has @default(now()); updatedAt is required)
       const now = new Date();
+      const purposeForSlot = uploadDto.metadata?.purpose as string | undefined;
       const asset = await this.prisma.$transaction(async (tx) => {
+        if (
+          uploadDto.ownerType === AssetOwnerType.USER &&
+          uploadDto.ownerId &&
+          (purposeForSlot === "avatar" || purposeForSlot === "banner")
+        ) {
+          const pathPrefix =
+            purposeForSlot === "avatar"
+              ? `profiles/${uploadDto.ownerId}/avatar`
+              : `profiles/${uploadDto.ownerId}/banner`;
+          await tx.assets.deleteMany({
+            where: {
+              ownerId: uploadDto.ownerId,
+              ownerType: AssetOwnerType.USER,
+              path: { startsWith: pathPrefix },
+            },
+          });
+        }
+
         const createdAsset = await (tx as any).assets.create({
           data: {
             id: randomUUID(),
@@ -233,13 +272,16 @@ export class AssetsService {
       if (profile) {
         await (tx as any).user_profiles.update({
           where: { userId },
-          data: updateData,
+          data: { ...updateData, updatedAt: new Date() },
         });
         this.logger.debug(`Updated user profile ${purpose} for userId=${userId}`);
       } else {
+        const now = new Date();
         await (tx as any).user_profiles.create({
           data: {
+            id: randomUUID(),
             userId,
+            updatedAt: now,
             ...updateData,
           },
         });
@@ -705,6 +747,46 @@ export class AssetsService {
     });
 
     return entity.ownerId === userId || role !== null;
+  }
+
+  /** Allowed MIME types for user profile avatar / banner (deterministic storage paths). */
+  private assertUserProfileImageMime(mime: string): void {
+    const m = (mime || "").toLowerCase();
+    const ok = ["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(m);
+    if (!ok) {
+      throw new BadRequestException("Profile images must be JPEG, PNG, or WebP");
+    }
+  }
+
+  private profileImageExtFromMime(mime: string): string {
+    const m = (mime || "").toLowerCase();
+    if (m === "image/png") return ".png";
+    if (m === "image/webp") return ".webp";
+    return ".jpg";
+  }
+
+  /**
+   * Remove existing avatar.* / banner.* objects under profiles/{userId}/ so only one file per slot remains.
+   */
+  private async removeUserProfileSlotFilesFromBucket(
+    userId: string,
+    slot: "avatar" | "banner",
+  ): Promise<void> {
+    if (!this.supabase) return;
+    const folder = `profiles/${userId}`;
+    const { data: items, error } = await this.supabase.storage
+      .from(this.supabaseBucket)
+      .list(folder, { limit: 100 });
+    if (error || !items?.length) return;
+    const prefix = `${slot}.`;
+    const paths = items
+      .filter((f) => f.name.startsWith(prefix))
+      .map((f) => `${folder}/${f.name}`);
+    if (paths.length === 0) return;
+    const { error: rmErr } = await this.supabase.storage.from(this.supabaseBucket).remove(paths);
+    if (rmErr) {
+      this.logger.warn(`removeUserProfileSlotFilesFromBucket: ${rmErr.message}`);
+    }
   }
 
   /**

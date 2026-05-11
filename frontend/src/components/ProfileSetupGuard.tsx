@@ -12,7 +12,6 @@ export function ProfileSetupGuard({ children }: ProfileSetupGuardProps) {
   const location = useLocation();
 
   const pathname = location.pathname;
-  const isSetupPage = pathname === "/profile/setup";
 
   useEffect(() => {
     // 0️⃣ Never redirect while auth is settling
@@ -32,31 +31,20 @@ export function ProfileSetupGuard({ children }: ProfileSetupGuardProps) {
       return;
     }
 
-    // 2️⃣ ENTITY users always go to profile
+    // 2️⃣ ENTITY users: hub is /profile; allow /profile/setup without bouncing
     if (user.isEntity) {
-      if (pathname !== "/profile") {
+      if (pathname !== "/profile" && pathname !== "/profile/setup") {
         navigate("/profile", { replace: true });
       }
       return;
     }
 
-    // 3️⃣ USER without profile → must complete setup
-    const hasProfile = !!user.profile;
-
-    if (!hasProfile && !isSetupPage) {
-      navigate("/profile/setup", { replace: true });
-      return;
-    }
-
-    // 4️⃣ USER with profile should not see setup page again
-    if (hasProfile && isSetupPage) {
-      navigate("/profile", { replace: true });
-    }
+    // No forced /profile ↔ /profile/setup redirects: fans use /profile as hub and may open
+    // /profile/setup voluntarily (e.g. first-time completion or later edits).
   }, [
     isLoading,
     isAuthenticated,
-    user?.id,          // stable dependency
-    user?.profile,     // profile presence only
+    user?.id,
     pathname,
     navigate,
   ]);

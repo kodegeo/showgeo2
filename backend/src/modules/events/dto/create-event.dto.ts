@@ -81,6 +81,7 @@ export class CreateEventDto {
   @IsIn(RuntimeEnums.EventType)
   eventType?: EventType;
 
+  /** DB lifecycle phase. Studio “Quick Setup” is PRE_LIVE (there is no QUICK_SETUP enum value). */
   @ApiPropertyOptional({ enum: RuntimeEnums.EventPhase, default: "PRE_LIVE" })
   @IsOptional()
   @IsIn(RuntimeEnums.EventPhase)

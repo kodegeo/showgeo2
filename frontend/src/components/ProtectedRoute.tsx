@@ -28,18 +28,16 @@ export function ProtectedRoute({
     );
   }
 
-  // Redirect unauthenticated users to home (not /login)
-  // Only redirect if we're sure the user is not authenticated (not just loading)
+  // Unauthenticated: single entry for sign-in (matches CreatorRouteGuard)
   if (requireAuth && !isLoading && !isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
   // Check role requirements
   if (requireRole && user) {
     const userRole = user.role;
     if (!requireRole.includes(userRole)) {
-      // User doesn't have required role, redirect to home
-      return <Navigate to="/" replace />;
+      return <Navigate to="/home" replace />;
     }
   }
 

@@ -1,5 +1,5 @@
 // Authentication hooks
-export { useAuth } from "./useAuth";
+export { useAuth, AuthProvider } from "./useAuth";
 
 // User hooks
 export {

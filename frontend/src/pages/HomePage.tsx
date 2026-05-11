@@ -17,7 +17,7 @@ export function HomePage() {
   // The page will update when auth state resolves
   const showAuthenticated = !isLoading && isAuthenticated;
 
-  // Fans (USER): marketing home is not their default — send them to profile.
+  // Authenticated fans: hub is /profile (not the public marketing home).
   if (!isLoading && isAuthenticated && user?.role === UserRole.USER) {
     return <Navigate to="/profile" replace />;
   }

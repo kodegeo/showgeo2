@@ -206,7 +206,10 @@ export class UsersService {
       }
       updated = await this.prisma.user_profiles.update({
         where: { userId },
-        data: updateData,
+        data: {
+          ...updateData,
+          updatedAt: new Date(),
+        },
       });
     }
     const appUser = await this.prisma.app_users.findUnique({

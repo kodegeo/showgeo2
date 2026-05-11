@@ -5,41 +5,17 @@ import { Footer } from "@/components/Footer";
 
 interface ProfileLayoutProps {
   children: ReactNode;
-
-  // Capability flags
-  isEntity?: boolean;
-  isOwner?: boolean;
-
-  // Optional creator controls (CTA row, buttons, etc.)
-  creatorActions?: ReactNode;
 }
 
-export function ProfileLayout({
-  children,
-  isEntity = false,
-  isOwner = false,
-  creatorActions,
-}: ProfileLayoutProps) {
+export function ProfileLayout({ children }: ProfileLayoutProps) {
   return (
-    <div className="min-h-screen bg-[#0B0B0B] text-white flex flex-col">
+    <div className="min-h-screen bg-black text-white flex flex-col">
       <ProfileHeader />
 
-      <div
-        className="flex-1 flex relative overflow-y-auto"
-        style={{ paddingTop: "80px" }}
-      >
+      <div className="flex flex-1 min-h-0 pt-16 md:pt-20">
         <ProfileSidebar />
 
-        <main className="flex-1 w-full">
-          {/* Creator action bar */}
-          {isEntity && isOwner && creatorActions && (
-            <div className="border-b border-white/10 bg-black/60 backdrop-blur px-6 py-4">
-              {creatorActions}
-            </div>
-          )}
-
-          {children}
-        </main>
+        <main className="flex-1 min-h-0 overflow-y-auto flex flex-col bg-[#0B0B0B]">{children}</main>
       </div>
 
       <Footer />

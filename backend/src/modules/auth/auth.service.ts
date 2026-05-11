@@ -69,18 +69,23 @@ export class AuthService {
       throw new ForbiddenException(statusMessage);
     }
 
+    const userWithRelationsInclude = {
+      user_profiles: true,
+      entity_roles: true,
+    } as const;
+
     try {
-      // Try to find existing app user tied to this Supabase auth user
-      // app_users has no user_profiles or entity_roles relation in schema; fetch scalar fields only
+      // Load app user with profile + roles so /auth/me matches frontend `profile` contract
       let dbUser = await this.prisma.app_users.findUnique({
         where: { authUserId: authUser.id },
+        include: userWithRelationsInclude,
       });
 
       // If none exists, create one on the fly (auto-provisioning)
       if (!dbUser) {
         try {
           const now = new Date();
-          dbUser = await this.prisma.app_users.create({
+          await this.prisma.app_users.create({
             data: {
               id: authUser.id,
               authUserId: authUser.id,
@@ -89,6 +94,10 @@ export class AuthService {
               password: null,
               updatedAt: now,
             },
+          });
+          dbUser = await this.prisma.app_users.findUnique({
+            where: { authUserId: authUser.id },
+            include: userWithRelationsInclude,
           });
         } catch (createError) {
           // If creation fails, return minimal user object based on Supabase auth data
@@ -101,6 +110,7 @@ export class AuthService {
             authUserId: authUser.id,
             email: authUser.email ?? "",
             role: UserRole.USER,
+            profile: null,
             user_profiles: null,
             entity_roles: [],
           };
@@ -119,11 +129,16 @@ export class AuthService {
         throw new ForbiddenException(statusMessage);
       }
 
-      // Normalize shape for callers that expect user_profiles and entity_roles (not on app_users in schema)
+      if (!dbUser) {
+        return null;
+      }
+
+      const { user_profiles, entity_roles, password: _pw, ...userScalars } = dbUser as any;
       return {
-        ...dbUser,
-        user_profiles: (dbUser as any).user_profiles ?? null,
-        entity_roles: (dbUser as any).entity_roles ?? [],
+        ...userScalars,
+        profile: user_profiles ?? null,
+        user_profiles: user_profiles ?? null,
+        entity_roles: entity_roles ?? [],
       };
     } catch (prismaError) {
       // Re-throw ForbiddenException for disabled users
@@ -141,6 +156,7 @@ export class AuthService {
         email: authUser.email ?? "",
         role: UserRole.USER,
         isEntity: false,
+        profile: null,
         user_profiles: null,
         entity_roles: [],
       };
